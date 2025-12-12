@@ -1,0 +1,5 @@
+# Ignore output folder
+/ref_outs
+
+# Ignore job output and error files
+*.[oe]*
