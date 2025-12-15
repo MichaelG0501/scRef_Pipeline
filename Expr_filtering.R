@@ -350,11 +350,7 @@ for (name in names(tmdata_annotated)) {
   })
 }
 
-gc()
-
-all_genes <- Reduce(union, lapply(tmdata_annotated, function(obj) {
-  rownames(GetAssayData(obj, layer = "counts"))
-}))
+#################################################################
 
 pad_matrix <- function(mat, all_genes) {
   missing_genes <- setdiff(all_genes, rownames(mat))
@@ -367,6 +363,71 @@ pad_matrix <- function(mat, all_genes) {
   mat <- mat[all_genes, , drop = FALSE]
   return(mat)
 }
+
+celltypes_ordered <- c("macrophage", "endothelial", "fibroblast", "t.cell")
+ct_col <- "celltype_update"
+
+tmdata_annotated <- lapply(tmdata_annotated, function(o) {
+  o@meta.data$study_id <- sub("^([^_]+_[^_]+).*", "\\1", o@meta.data$orig.ident)
+  o
+})
+
+obj_sid <- vapply(tmdata_annotated,
+                  function(o) unique(o@meta.data$study_id)[1],
+                  FUN.VALUE = character(1))
+groups <- split(seq_along(tmdata_annotated), obj_sid)
+study_refs <- setNames(vector("list", length(groups)), names(groups))
+
+for (sid in names(groups)) {
+  print(paste0("writing reference for ", sid))
+  idxs <- groups[[sid]]
+  all_genes <- Reduce(union, lapply(names(obj_sid[idxs]), function(id) {
+    rownames(GetAssayData(tmdata_annotated[[id]], layer = "counts"))
+  }))
+  cpm_list <- lapply(names(obj_sid[idxs]), function(id) {
+    mat <- GetAssayData(tmdata_annotated[[id]], layer = "CPM")
+    colnames(mat) <- paste(id, colnames(mat), sep = "_")
+    pad_matrix(mat, all_genes)
+  })
+  meta_list <- lapply(names(obj_sid[idxs]), function(id) {
+    md <- tmdata_annotated[[id]]@meta.data[
+      , c("orig.ident", "celltype_update", "coexpression", "celltype_initial")
+    ]
+    rownames(md) <- paste(id, rownames(md), sep = "_")
+    md
+  })
+  mat  <- do.call(cbind, cpm_list)
+  meta <- do.call(rbind, meta_list)
+  meta <- subset(meta, coexpression == "singlet" & celltype_initial == celltype_update)
+  
+  existing_ct <- intersect(celltypes_ordered, unique(meta[[ct_col]]))
+  if (length(existing_ct) < 2) {
+    for (sample in names(obj_sid[idxs])) {
+      saveRDS("Not enough reference cell types", paste0("by_samples/", sample, "/no_ref"))
+    }
+    next
+  }
+  ref_ct <- head(existing_ct, 2)
+  cells <- rownames(meta)[meta[[ct_col]] %in% ref_ct]
+  mat_ref <- mat[, cells, drop = FALSE]
+  meta <- meta[cells, c("orig.ident", "celltype_update")]
+  ref <- setNames(lapply(ref_ct, function(ct) cells[meta[cells, ct_col] == ct]), ref_ct)
+  print(table(meta$celltype_update))
+  
+  saveRDS(list(matrix = mat_ref,
+               ref_ct = ref_ct,
+               ref = ref,
+               meta = meta),
+          paste0(sid, "_reference.rds"))
+}
+
+#################################################################
+
+gc()
+
+all_genes <- Reduce(union, lapply(tmdata_annotated, function(obj) {
+  rownames(GetAssayData(obj, layer = "counts"))
+}))
 
 counts_list <- lapply(names(tmdata_annotated), function(id) {
   mat <- GetAssayData(tmdata_annotated[[id]], layer = "counts")

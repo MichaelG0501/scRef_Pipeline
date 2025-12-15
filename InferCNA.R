@@ -26,39 +26,24 @@ if (sum(tmdata$coexpression_loose == "singlet" & tmdata$marker_expression == "go
   stop("No cells")
 }
 
-celltypes_ordered <- c("macrophage", "b.cell", "t.cell", "nk.cell", "plasma", "mast")
-existing_celltypes <- intersect(celltypes_ordered, unique(tmdata$celltype_update))
-
 if (sum(tmdata$celltype_update == "epithelial") > 0) {
   data <- subset(
     tmdata,
-    celltype_update %in% c("epithelial") |
-      celltype_update %in% existing_celltypes[1:2]
+    celltype_update %in% c("epithelial")
   )
 } else {
   saveRDS("No epithelial cells", paste0("by_samples/", sample, "/no_epi"))
   stop("No epithelial cells")
 }
 
+reference <- readRDS(paste0(sub("^([^_]+_[^_]+).*", "\\1", tmdata@meta.data$orig.ident[1]), "_reference.rds"))
 meta <- data@meta.data[, c("orig.ident", "celltype_update")]
-
+meta <- rbind(meta, reference$meta)
 matrix <- as.matrix(data@assays$RNA$CPM)
-
-ref_ct <- existing_celltypes[1:2]
-if (sum(is.na(ref_ct)) > 0) {
-  saveRDS("Not enough reference cell types", paste0("by_samples/", sample, "/no_ref"))
-  stop("Not enough reference cell types")
-}
-
-ct_col <- "celltype_update"
-
-ref <- lapply(ref_ct, function(ct) {
-  colnames(data)[data@meta.data[[ct_col]] == ct]  # Extract cell IDs for each type
-})
-names(ref) <- ref_ct
+matrix <- cbind(matrix, as.matrix(reference$matrix[rownames(matrix), ]))
+ref <- reference$ref
 
 outs <- infercna(matrix, refCells = ref)
-
 saveRDS(outs, paste0("by_samples/", sample, "/", sample, "_outs.rds"))
 
 sd_k_cor <- 2
