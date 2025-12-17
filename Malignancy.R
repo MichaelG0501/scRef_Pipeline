@@ -59,20 +59,20 @@ cluster_labels <- tapply(epi$malignant_clus, epi$seurat_clusters, function(x) {
 })
 for (cl in names(cluster_labels)) {
   if (cluster_labels[cl] == "non_malignant_clus") {
-    epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_non_malignant"] <- "non_malignant_good"
-    epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_unresolved"] <- "non_malignant_ok"
-    epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_malignant"] <- "unresolved"
+    epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_non_malignant"] <- "non_malignant_level_1"
+    epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_unresolved"] <- "non_malignant_level_2"
+    epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_malignant"] <- "non_malignant_unresolved"
     
   } else {
-    if ("classification" %in% colnames(epi@meta.data)) {
-      malignant <- epi$seurat_clusters == cl & (epi$classification == "cna_malignant" | epi$cc_status == "cc_malignant" | epi$cs_status == "cs_malignant")
-    } else {
-      malignant <- epi$seurat_clusters == cl & (epi$cc_status == "cc_malignant" | epi$cs_status == "cs_malignant")
-    }
+    #if ("classification" %in% colnames(epi@meta.data)) {
+    malignant <- epi$seurat_clusters == cl & (epi$classification == "cna_malignant" | epi$cc_status == "cc_malignant" | epi$cs_status == "cs_malignant")
+    #} else {
+    #  malignant <- epi$seurat_clusters == cl & (epi$cc_status == "cc_malignant" | epi$cs_status == "cs_malignant")
+    #}
     if (sum(malignant) / sum(epi$seurat_clusters == cl) >= 0.5) {
-      epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_malignant"] <- "malignant_good"
-      epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_unresolved"] <- "malignant_ok"
-      epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_non_malignant"] <- "unresolved"
+      epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_malignant"] <- "malignant_level_1"
+      epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_unresolved"] <- "malignant_level_2"
+      epi$malignancy[epi$seurat_clusters == cl & epi$classification == "cna_non_malignant"] <- "malignant_unresolved"
     } else {
       epi$malignancy[epi$seurat_clusters == cl] <- "unresolved"
     }

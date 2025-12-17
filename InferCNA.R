@@ -19,6 +19,7 @@ sample <- args[1]
 print(sample)
 
 tmdata <- readRDS(paste0("by_samples/", sample, "/", sample, "_anno.rds"))
+colnames(tmdata) <- paste0(tmdata$orig.ident, "_", colnames(tmdata))
 if (sum(tmdata$coexpression_loose == "singlet" & tmdata$marker_expression == "good") > 0) {
   tmdata <- subset(tmdata, coexpression_loose == "singlet" & marker_expression == "good")
 } else {
@@ -94,123 +95,104 @@ tmdata@meta.data <- bind_cols(
 epi <- subset(tmdata, celltype_update == "epithelial")
 ncells <- ncol(epi)
 
-for (do in 1) {
-  if (ncells > 30) {
-    
-    epi <- FindVariableFeatures(epi, nfeatures = 3000)
-    epi <- ScaleData(epi, verbose = FALSE)
-    epi <- RunPCA(epi, npcs = min(50, ncells - 10), verbose = FALSE)
-    k_use  <- min(30, max(10, round(sqrt(ncells) - 2)))
-    pc_use <- 1:min(30, ncells - 10)
-    epi <- FindNeighbors(epi, dims = pc_use, k.param = k_use, verbose = FALSE)
-    epi <- FindClusters(epi, resolution = 0.3, algorithm = 1, verbose = FALSE)
-    epi <- RunUMAP(epi, dims = pc_use, n.neighbors = 30, min.dist = 0.3, verbose = FALSE)
-    
-    tab <- table(epi$classification, epi$seurat_clusters)
-    clusters <- colnames(tab)
-    cluster_labels <- setNames(rep(NA, length(clusters)), clusters)
-    for (cl in clusters) {
-      malignant     <- if ("cna_malignant"     %in% rownames(tab)) tab["cna_malignant", cl]     else 0
-      non_malignant <- if ("cna_non_malignant" %in% rownames(tab)) tab["cna_non_malignant", cl] else 0
-      unresolved    <- if ("cna_unresolved"    %in% rownames(tab)) tab["cna_unresolved", cl]    else 0
-      total         <- sum(tab[, cl])
-      
-      pct_non_malignant <- non_malignant / total
-      pct_malignant <- malignant / total
-      
-      if (pct_non_malignant > 0.50) {
-        cluster_labels[cl] <- "non_malignant_clus"
-      } else {
-        if (pct_malignant > 0.50) {
-          cluster_labels[cl] <- "malignant_clus"
-        } else {
-          cluster_labels[cl] <- "unresolved_clus"
-        }
-      }
-    }
-    epi$malignant_clus <- as.character(cluster_labels[as.character(epi$seurat_clusters)]) 
-    
-    malignant_ref <- colnames(epi)[epi$malignant_clus == "malignant_clus" & epi$classification == "cna_malignant"]
-    
-    cell_cycle_genes <- read.csv("/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Cell_Cycle_Genes.csv", 
-                                 header = TRUE, stringsAsFactors = FALSE)[, 1:3]
-    cc_candidates <- cell_cycle_genes$Gene[cell_cycle_genes$Consensus == 1]
-    cc_candidates <- intersect(cc_candidates, rownames(epi))
-    rna <- GetAssayData(epi, assay = "RNA", slot = "data")
-    
-    if (length(malignant_ref) > 0) {
-      avg_expr_malignant <- rowMeans(rna[cc_candidates, malignant_ref, drop = FALSE])
-      cc_genes <- names(sort(avg_expr_malignant, decreasing = TRUE))[1:min(20, length(avg_expr_malignant))]
-    } else {
-      epi@meta.data$malignancy <- rep("unresolved", ncol(epi))
-      print("Not enough malignant cells, assigning all as unresolved")
-      saveRDS(epi, paste0("by_samples/", sample, "/", sample, "_epi.rds"))
-      break
-    }
-    
-    cc_score <- colMeans(rna[cc_genes, , drop = FALSE])
-    epi$CCscore1 <- cc_score
-    ref_cc_scores <- cc_score[malignant_ref]
-    cc_mean <- mean(ref_cc_scores, na.rm = TRUE)
-    cc_sd   <- sd(ref_cc_scores, na.rm = TRUE)
-    cc_thr <- cc_mean - 1 * cc_sd
-    cc_status <- rep("cc_unresolved", ncol(epi))
-    names(cc_status) <- colnames(epi)
-    cc_status[malignant_ref] <- "cc_reference"
-    other_cells <- setdiff(colnames(epi), malignant_ref)
-    cc_status[other_cells[cc_score[other_cells] >= cc_thr]] <- "cc_malignant"
-    epi$cc_status <- cc_status
-    
-    epi$malignancy <- rep("unresolved", ncol(epi))
-    for (cl in names(cluster_labels)) {
-      if (cluster_labels[cl] == "malignant_clus") {
-        epi$malignancy[epi$seurat_clusters == cl] <- "malignant"
-      } else if (cluster_labels[cl] == "non_malignant_clus") {
-        epi$malignancy[epi$seurat_clusters == cl] <- "non_malignant"
-      } else if (cluster_labels[cl] == "unresolved_clus") {
-        malignant <- epi$seurat_clusters == cl & (epi$classification == "cna_malignant" | epi$cc_status == "cc_malignant")
-        if (sum(malignant) / sum(epi$seurat_clusters == cl) >= 0.8) {
-          epi$malignancy[epi$seurat_clusters == cl] <- "malignant"
-        } else {
-          epi$malignancy[epi$seurat_clusters == cl] <- "unresolved"
-        }
-      }
-    }
-    
-    saveRDS(epi, paste0("by_samples/", sample, "/", sample, "_epi.rds"))
-    
-    #######################################
-    
-    nonmalignant_ref <- colnames(epi)[
-      epi$malignant_clus == "non_malignant_clus" &
-        epi$classification == "cna_non_malignant" &
-        epi$cc_status != "cc_malignant"
-    ]
-    cs_genes <- character(0)
-    if (length(malignant_ref) > 10 && length(nonmalignant_ref) > 10) {
-      epi$signature <- rep("sig_unresolved", ncol(epi))
-      epi$signature[malignant_ref]    <- "sig_malignant_ref"
-      epi$signature[nonmalignant_ref] <- "sig_non_malignant_ref"
-      Idents(epi) <- "signature"
-      dge <- FindMarkers(
-        epi,
-        ident.1 = "sig_malignant_ref",
-        ident.2 = "sig_non_malignant_ref",
-        assay = "RNA",
-        logfc.threshold = 1,
-        min.pct = 0.8,
-        only.pos = TRUE
-      )
-      cs_genes <- rownames(dge[dge$p_val_adj < 0.05, ])
-      saveRDS(cs_genes, paste0("by_samples/", sample, "/", sample, "_signatures.rds"))
-    } else {
-      print("Not enough reference cells for cancer signature scoring")
-      break
-    }
-    
+if (ncells > 30) {
+  nfeat <- min(3000, max(2, nrow(epi)))
+  epi <- FindVariableFeatures(epi, nfeatures = nfeat, verbose = FALSE)
+  epi <- ScaleData(epi, features = VariableFeatures(epi), verbose = FALSE)
+  max_pcs <- max(1, min(length(VariableFeatures(epi)), ncells - 1))
+  npcs <- min(50, max(1, round(sqrt(ncells))))
+  npcs <- min(npcs, max_pcs)
+  epi <- RunPCA(epi, npcs = npcs, verbose = FALSE)
+  pc_use <- 1:npcs
+  if (ncells <= 10) {
+    k_use <- max(1, ncells - 1)
+  } else if (ncells <= 500) {
+    k_use <- max(5, min(15, ncells - 1))
+  } else if (ncells <= 5000) {
+    k_use <- 30
+  } else if (ncells <= 50000) {
+    k_use <- 30
   } else {
-    print("Not enough cells, assigning all as unresolved")
-    epi@meta.data$malignancy <- rep("unresolved", ncol(epi))
-    saveRDS(epi, paste0("by_samples/", sample, "/", sample, "_epi.rds"))
+    k_use <- min(50, round(sqrt(ncells)))   # LOWER cap than before
   }
+  nn_method <- if (ncells > 20000) "annoy" else "rann"
+  resolution <- if (ncells < 1000) 0.8 else if (ncells < 5000) 1.0 else 1.2
+  epi <- FindNeighbors(
+    epi,
+    dims = pc_use,
+    k.param = max(1, k_use),
+    nn.method = nn_method,
+    annoy.metric = "euclidean",
+    verbose = FALSE
+  )
+  if (ncells >= 3) {
+    epi <- FindClusters(epi, resolution = resolution, algorithm = 1, verbose = FALSE)
+  }
+  
+  epi <- RunUMAP(
+    epi,
+    dims = pc_use,
+    n.neighbors = max(2, k_use),
+    min.dist = if (ncells > 5000) 0.15 else 0.3,
+    spread = if (ncells > 5000) 1.5 else 1.0,
+    verbose = FALSE
+  )
+} else {
+  print("Not enough cells, assigning same X clusters")
+  epi$seurat_clusters <- rep("X", ncol(epi))
+  Idents(epi) <- "seurat_clusters"
+}
+
+tab <- table(epi$classification, epi$seurat_clusters)
+clusters <- colnames(tab)
+cluster_labels <- setNames(rep(NA, length(clusters)), clusters)
+for (cl in clusters) {
+  malignant     <- if ("cna_malignant"     %in% rownames(tab)) tab["cna_malignant", cl]     else 0
+  non_malignant <- if ("cna_non_malignant" %in% rownames(tab)) tab["cna_non_malignant", cl] else 0
+  unresolved    <- if ("cna_unresolved"    %in% rownames(tab)) tab["cna_unresolved", cl]    else 0
+  total         <- sum(tab[, cl])
+  
+  pct_non_malignant <- non_malignant / total
+  pct_malignant <- malignant / total
+  
+  if (pct_non_malignant > 0.50) {
+    cluster_labels[cl] <- "non_malignant_clus"
+  } else {
+    if (pct_malignant > 0.50) {
+      cluster_labels[cl] <- "malignant_clus"
+    } else {
+      cluster_labels[cl] <- "unresolved_clus"
+    }
+  }
+}
+epi$malignant_clus <- as.character(cluster_labels[as.character(epi$seurat_clusters)])
+
+malignant_ref <- colnames(epi)[epi$malignant_clus == "malignant_clus" & epi$classification == "cna_malignant"]
+nonmalignant_ref <- colnames(epi)[epi$malignant_clus == "non_malignant_clus" & epi$classification == "cna_non_malignant" ]
+
+if (length(malignant_ref) > 50 && length(nonmalignant_ref) > 50) {
+  cs_genes <- character(0)
+  epi$signature <- rep("sig_unresolved", ncol(epi))
+  epi$signature[malignant_ref]    <- "sig_malignant_ref"
+  epi$signature[nonmalignant_ref] <- "sig_non_malignant_ref"
+  Idents(epi) <- "signature"
+  dge <- FindMarkers(
+    epi,
+    ident.1 = "sig_malignant_ref",
+    ident.2 = "sig_non_malignant_ref",
+    assay = "RNA",
+    logfc.threshold = 1,
+    min.pct = 0.5,
+    only.pos = TRUE
+  )
+  cs_genes <- rownames(dge[dge$p_val_adj < 0.01 & dge$pct.2 < 0.1, ])
+  if (length(cs_genes) > 0) {
+    saveRDS(cs_genes, paste0("by_samples/", sample, "/", sample, "_signatures.rds"))
+  } else {
+    print("Not enough significant cancer signatures")
+  }
+  saveRDS(epi, paste0("by_samples/", sample, "/", sample, "_epi.rds"))
+} else {
+  saveRDS(epi, paste0("by_samples/", sample, "/", sample, "_epi.rds"))
+  print("Not enough reference cells for cancer signature scoring")
 }
