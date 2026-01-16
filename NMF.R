@@ -13,11 +13,16 @@ sample <- args[1]
 print(sample)
 epi <- readRDS(paste0("by_samples/", sample, "/", sample, "_epi_f.rds"))
 
-epi <- subset(epi, malignancy == "malignant_good" | malignancy == "malignant_ok")
-if (ncol(epi) < 10) {
-  saveRDS("Not enough malignant cells for NMF", paste0("by_samples/", sample, "/no_cancer"))
+cancer <- sum(
+  epi$malignancy == "malignant_level_1" |
+    epi$malignancy == "malignant_level_2"
+)
+if (cancer < 10) {
+  saveRDS("Not enough malignant cells for NMF",
+          paste0("by_samples/", sample, "/no_cancer"))
   stop("Not enough cells for NMF")
 }
+epi <- subset(epi, malignancy == "malignant_level_1" | malignancy == "malignant_level_2")
 
 nmf.options(parallel = 6)
 

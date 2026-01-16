@@ -17,7 +17,7 @@ for (sample in sample_dirs) {
   if (file.exists(rds_path)) {
     tmdata_list[[sample]] <- readRDS(rds_path)
     if (ncol(tmdata_list[[sample]]) < 50) {
-      tmdata_list[[sample]]$celltype_final <- rep("unresolved", ncol(tmdata_list[[sample]]))
+      tmdata_list[[sample]]$celltype_update <- rep("unresolved", ncol(tmdata_list[[sample]]))
     }
   } else {
     warning(paste("Missing RDS file for sample:", sample))
@@ -337,12 +337,12 @@ for (sample in sample_dirs) {
   cl_map <- step2_calls$step2
   names(cl_map) <- step2_calls$cluster
   
-  tmdata$celltype_final <- as.character(cl_map[as.character(tmdata$seurat_clusters)])
+  tmdata$celltype_update <- as.character(cl_map[as.character(tmdata$seurat_clusters)])
   
   saveRDS(tmdata, paste0("by_samples/", sample, "/", sample, "_anno.rds"))
   
   # 4a) per-sample % table
-  tab <- table(tmdata$celltype_final)
+  tab <- table(tmdata$celltype_update)
   pct <- 100 * tab / sum(tab)
   pct_df <- data.frame(
     study    = sample,

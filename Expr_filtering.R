@@ -337,7 +337,7 @@ for (name in names(tmdata_annotated)) {
   
   tmdata_annotated[[name]] <- tryCatch({
     tmp <- subset(tmdata_annotated[[name]],
-                  subset = (marker_expression == "good" | is.na(marker_expression)) & coexpression == "singlet")
+                  subset = (marker_expression == "good" | is.na(marker_expression)) & coexpression_loose == "singlet")
     if (ncol(tmp) <= 1) {
       message(name, ": ≤1 cell after subset — skipping")
       NULL

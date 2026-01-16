@@ -13,6 +13,7 @@ source activate dmtcp
 WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
 
 cd ${WD}
+mkdir -p ref_outs
 Rscript QC_Pipeline.R
 
 echo $(date +%T)
