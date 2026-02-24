@@ -10,7 +10,7 @@ WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
 cd $WD
 
 for sample_folder in ref_outs/by_samples/*_*_*/; do
-  while [[ $(qstat | wc -l) -gt 46 ]]; do
+  while [[ $(qstat | grep sg3723 | wc -l) -gt 46 ]]; do
     sleep 180
   done
   sample=$(basename "$sample_folder")

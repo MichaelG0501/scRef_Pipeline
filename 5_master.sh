@@ -16,7 +16,7 @@ no_epi_samples=()
 no_cell_samples=()
 
 for sample_folder in ref_outs/by_samples/*_*_*/; do
-  while [[ $(qstat | wc -l) -gt 46 ]]; do
+  while [[ $(qstat | grep sg3723 | wc -l) -gt 46 ]]; do
     sleep 180
   done
 

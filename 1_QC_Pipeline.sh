@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -l select=1:ncpus=8:mem=921gb
+#PBS -l select=1:ncpus=8:mem=256gb
 #PBS -l walltime=8:00:00
 #PBS -N qc_pipeline
 
@@ -7,8 +7,8 @@ echo $(date +%T)
 
 module purge
 module load tools/dev
-module load anaconda3/personal
-source activate dmtcp
+eval "$(~/miniforge3/bin/conda shell.bash hook)"
+source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
 
 WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
 

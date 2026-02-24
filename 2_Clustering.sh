@@ -7,8 +7,8 @@ echo $(date +%T)
 
 module purge
 module load tools/dev
-module load anaconda3/personal
-source activate dmtcp
+eval "$(~/miniforge3/bin/conda shell.bash hook)"
+source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
 
 WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
 
