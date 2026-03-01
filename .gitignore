@@ -3,3 +3,17 @@
 
 # Ignore job output and error files
 *.[oe]*
+
+# LaTeX build artifacts
+*.pdf
+*.tex
+*.png
+*.aux
+*.log
+*.out
+*.toc
+*.nav
+*.snm
+*.synctex.gz
+*.fls
+*.fdb_latexmk
