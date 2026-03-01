@@ -1,0 +1,34 @@
+Your research project, titled "Single-cell Multiomic Profiling of Intratumoural Heterogeneity to Tackle Oesophageal Cancer Cell Adaptation to Chemotherapy," investigates the non-genetic mechanisms driving chemotherapy resistance in Oesophageal Adenocarcinoma (OAC).
+Here is a comprehensive overview of your project's goals, datasets, analytical pipeline, identified metaprogrammes, and key findings:
+Main Goals
+Understand Intratumoural Heterogeneity (ITH): Resolve the spatial and temporal variation in OAC tumour cell populations and the tumour microenvironment (TME) to understand how non-genetic plasticity drives treatment evasion.
+Identify Drug-Tolerant Persisters (DTPs): Locate and characterize rare, transcriptionally distinct subpopulations of cancer cells that survive drug stress through reversible, slow-cycling, or plastic states.
+Track Dynamic Adaptation: Use longitudinal matched pre- and post-neoadjuvant chemotherapy samples to monitor how malignant cell states and the TME evolve during treatment.
+Map Spatial Niches: Determine how spatially organized interactions between OAC cells and the TME (such as fibroblasts, immune cells, and hypoxic regions) promote chemoresistance.
+Discover Biomarkers: Identify candidate transcriptional signatures and cell states that can predict chemotherapy response, overall survival, or serve as novel therapeutic targets.
+Datasets Used
+To capture the full biological spectrum of OAC, your project integrates four complementary data modalities:
+OAC Public scRNA-seq Atlas (scATLAS): Integration of 10 publicly available datasets, yielding ~500,000 cells across 161 OAC samples to establish a consensus reference map.
+In-House Longitudinal snRNA-seq & snATAC-seq: 84 samples generated from 32 patients, comprising matched pre-treatment (biopsy) and post-treatment (resection) samples. This yielded ~91,000 filtered nuclei, allowing you to bypass dissociation-induced artifacts and capture fragile persister cells.
+Spatial Transcriptomics: CosMx 6K profiling of post-treatment samples (29 patients, 109 regions of interest, ~560,000 high-quality cells) and Visium HD for matched pre/post samples to retain intact tissue architecture and TME cell–cell interactions.
+Patient-Derived Organoids (PDOs): 20 samples from 17 patients (some treated with chemotherapy in vitro) sequenced via scRNA-seq to serve as a functional validation model.
+Analytical Pipeline
+Your methodology emphasizes retaining true biological variance while strictly controlling for technical noise:
+Rigorous Quality Control (QC): You applied study-specific QC thresholds based on unique dataset distributions rather than a one-size-fits-all approach. You filtered for cellular complexity (gene counts), mitochondrial DNA, and crucially, housekeeping gene expression to remove damaged cells. For CosMx data, you utilized custom BIDCell resegmentation and cell area filtering to eliminate artifacts and doublets.
+Robust Cell Type Annotation: You employed a two-step, cluster-based manual annotation. First, you assigned high-confidence cells using pan-cancer markers, then derived an OAC-specific marker list to refine the remaining cells and rigorously filter out doublets showing multi-lineage expression.
+Malignant Cell Classification: Because OAC has high genomic instability, you primarily used InferCNA to identify malignant cells by their chromosomal gains/losses, using endothelial cells and macrophages as non-malignant baselines. You further salvaged ambiguous cells by scoring them for OAC-specific malignant signatures and cell cycle activity.
+Metaprogramme (MP) Derivation via NMF: To prevent batch correction algorithms from erasing genuine biological variations, you analyzed each tumour independently. You applied Non-negative Matrix Factorisation (NMF) to identify co-regulated gene modules per sample, then clustered these across all samples to find robust, consensus "metaprogrammes" (MPs) that explain ITH.
+Defining Cell States: By explicitly scoring cells for binary combinations of MP activation (while regressing out cell-cycle confounders), you mapped individual cells via cosine similarity to define highly recurrent "malignant cell states".
+Identified Metaprogrammes and Biological Meanings
+From the public scATLAS, your unsupervised NMF analysis identified 7 high-quality, robust MPs contextualized within the established pathogenesis of OAC:
+MP1 (G2M Cell Cycle) & MP7 (G1S Cell Cycle): Classic proliferation signatures representing actively dividing malignant cells.
+MP5 (MYC-associated biosynthesis): Highly metabolically active proliferating cells, enriched with MYC targets and primitive streak signatures.
+MP9 (Squamous transition): Enriched in normal developing squamous epithelium, reflecting a highly plastic state reverting backward along the early OAC developmental lineage.
+MP3 (IFN-activated columnar): Associated with interferon response and partial EMT. Represents an early metaplastic and more plastic malignant state.
+MP6 (Intestinal differentiation): Expresses mucin-related genes (MUC13, DMBT1) linked to Barrett's esophagus. Represents a more mature, differentiated intestinal metaplasia-like state.
+MP8 (Stress-induced plasticity): Enriched with p53 and IL2-STAT signaling pathways, indicating a state of stress-induced plasticity and potential tolerance.
+Key Findings So Far
+Putative Malignant Cell States: Based on how the MPs combinatorially activate, you have defined four preliminary malignant cell states: Classic Proliferative, Squamous Transition, Intestinal Metaplasia, and Plastic/Tolerant.
+Clinical Relevance: In a preliminary comparison, the Intestinal Metaplasia state (linked to partial EMT) showed increased abundance in post-treatment samples, while the Proliferative state was linked to worse patient survival in external TCGA bulk RNA-seq data.
+Validation of PDO Models: Comparing organoid MPs to primary tumour MPs revealed that PDOs faithfully recapitulate the cell cycle, MYC biosynthesis, and Intestinal Metaplasia states. However, PDOs fail to capture the stress-induced plasticity (MP8) and squamous transition (MP9) programs, suggesting these specific resistant phenotypes rely heavily on signals from the in vivo tumour microenvironment which standard cultures lack.
+TME and Spatial Insights: Your CosMx data highlights that scRNA-seq severely underrepresents stromal cells due to dissociation bias (fibroblasts are 16.9% in CosMx vs. 10.1% in scRNA-seq). Spatial scoring also showed that hypoxia signatures are significantly higher in cancer cores versus normal cores, and trending higher in non-responders to chemotherapy. Furthermore, whole slide image analysis confirmed that the Tumour-to-Stroma Ratio (TSR) correlates effectively with the clinical Mandard tumour regression grade.

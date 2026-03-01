@@ -1,0 +1,47 @@
+{
+    // ── LaTeX Workshop: HPC module-aware build ──────────────────────────
+    // ~/bin/lualatex is a wrapper script that loads HPC modules (tools/prod,
+    // texlive) then exec's the real lualatex binary. Using absolute path so
+    // LaTeX Workshop can spawn it without relying on $PATH.
+
+    "latex-workshop.latex.tools": [
+        {
+            "name": "lualatex",
+            "command": "/rds/general/user/sg3723/home/bin/lualatex",
+            "args": [
+                "--synctex=1",
+                "--interaction=nonstopmode",
+                "%DOC%.tex"
+            ],
+            "env": {}
+        },
+        {
+            "name": "bibtex",
+            "command": "/rds/general/user/sg3723/home/bin/bibtex",
+            "args": [
+                "%DOCFILE%"
+            ],
+            "env": {}
+        }
+    ],
+
+    "latex-workshop.latex.recipes": [
+        {
+            "name": "lualatex x2",
+            "tools": ["lualatex", "lualatex"]
+        },
+        {
+            "name": "lualatex",
+            "tools": ["lualatex"]
+        }
+    ],
+
+    // Use the first recipe by default
+    "latex-workshop.latex.recipe.default": "first",
+
+    // Auto-build on save
+    "latex-workshop.latex.autoBuild.run": "onSave",
+
+    // Show the PDF in the VS Code tab (SyncTeX works with lualatex --synctex=1)
+    "latex-workshop.view.pdf.viewer": "tab"
+}

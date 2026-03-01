@@ -1,0 +1,15 @@
+=== Parse Verification for Task 5 — Enrichment Reorganization ===
+Date: Sun  1 Mar 00:38:14 GMT 2026
+
+=== enrichment_analysis.R ===
+PASS
+=== enrichment_annotation.R ===
+PASS
+=== enrichment_plotting.R ===
+PASS
+=== nmf_enrichment.R ===
+PASS
+=== wnt_pathway.R ===
+PASS
+
+All 5 scripts parse successfully.

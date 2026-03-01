@@ -1,0 +1,30 @@
+Task 4: Metaprograms analysis reorganization — Parse verification evidence
+Date: 2026-03-01
+
+R Script Parse Verification (Rscript -e "parse(file='...')" via dmtcp conda env):
+  PARSE analysis/metaprograms/mp_correlation_sc.R: PASS (822 lines, from MP_analysis_sc.R)
+  PARSE analysis/metaprograms/mp_correlation_pdo.R: PASS (902 lines, from MP_analysis_pdos.R)
+  PARSE analysis/metaprograms/mp_correlation_crossdata.R: PASS (887 lines, from compare_pdos_sc.R)
+  PARSE analysis/metaprograms/mp_ucell_scoring.R: PASS (393 lines, from Auto_MP19_analysis.R)
+  PARSE analysis/metaprograms/mp_database_correlation.R: PASS (486 lines, from Auto_MP_correlation_v2.R)
+  PARSE analysis/metaprograms/mp_external_scoring.R: PASS (411 lines, from score_other_MPs.R)
+  PARSE analysis/metaprograms/robust_nmf.R: PASS (387 lines, from robust_NMF.R)
+
+Shell Script Syntax Check (bash -n):
+  BASH SYNTAX analysis/metaprograms/mp_database_correlation.sh: PASS (23 lines, from Auto_MP_correlation.sh)
+
+Shell Script Modifications:
+  - Shebang #!/bin/bash kept as line 1
+  - Header comment block added after shebang (lines 2-5)
+  - Line 21: Rscript path updated from "analysis/Auto_MP_correlation_v2.R" to "analysis/metaprograms/mp_database_correlation.R"
+  - PBS resource allocations unchanged: select=1:ncpus=8:mem=128gb, walltime=4:00:00
+
+File Mapping:
+  analysis/MP_analysis_sc.R         -> analysis/metaprograms/mp_correlation_sc.R
+  analysis/MP_analysis_pdos.R       -> analysis/metaprograms/mp_correlation_pdo.R
+  analysis/compare_pdos_sc.R        -> analysis/metaprograms/mp_correlation_crossdata.R
+  analysis/Auto_MP19_analysis.R     -> analysis/metaprograms/mp_ucell_scoring.R
+  analysis/Auto_MP_correlation_v2.R -> analysis/metaprograms/mp_database_correlation.R
+  analysis/score_other_MPs.R        -> analysis/metaprograms/mp_external_scoring.R
+  analysis/robust_NMF.R             -> analysis/metaprograms/robust_nmf.R
+  analysis/Auto_MP_correlation.sh   -> analysis/metaprograms/mp_database_correlation.sh

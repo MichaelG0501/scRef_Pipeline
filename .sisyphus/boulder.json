@@ -1,0 +1,9 @@
+{
+  "active_plan": "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/.sisyphus/plans/analysis-reorg.md",
+  "started_at": "2026-03-01T00:05:23.803Z",
+  "session_ids": [
+    "ses_359751460ffeVdzvEIV53gBLcU"
+  ],
+  "plan_name": "analysis-reorg",
+  "agent": "atlas"
+}

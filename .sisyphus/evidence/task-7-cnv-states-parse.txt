@@ -1,0 +1,34 @@
+Task 7: CNV + Cell States Reorganization — Parse Evidence
+==========================================================
+Date: 2026-03-01
+All parse checks run with: Rscript -e "parse(file='<script>')"
+Conda env: /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
+
+=== analysis/cnv/cnv_profiling.R ===
+PASS (74 lines, moved from analysis/cnv_profile_sc.R)
+
+=== analysis/cnv/cnv_subsetting.R ===
+PASS (332 lines, moved from analysis/cnv_subset.R)
+
+=== analysis/cnv/cnv_plotting.R ===
+PASS (195 lines, moved from analysis/plot_CNV.R)
+
+=== analysis/cell_states/states_umap.R ===
+PASS (172 lines, moved from analysis/states_umap.R)
+
+=== analysis/cell_states/states_qc.R ===
+PASS (526 lines, merged from analysis/states_qccheck.R + analysis/qc_unresolved_states.R)
+
+Deleted files:
+- analysis/cnv_profile_sc.R (moved to analysis/cnv/cnv_profiling.R)
+- analysis/cnv_subset.R (moved to analysis/cnv/cnv_subsetting.R)
+- analysis/plot_CNV.R (moved to analysis/cnv/cnv_plotting.R)
+- analysis/states_umap.R (moved to analysis/cell_states/states_umap.R)
+- analysis/states_qccheck.R (merged into analysis/cell_states/states_qc.R)
+- analysis/qc_unresolved_states.R (merged into analysis/cell_states/states_qc.R)
+- analysis/quick.R (deleted — CNA scratch, classify_one_ident() covered by InferCNA.R)
+
+Existing files NOT modified:
+- analysis/cell_states/cancer_summary.R
+- analysis/cell_states/cell_annotation.R
+- analysis/cell_states/cell_typing.R

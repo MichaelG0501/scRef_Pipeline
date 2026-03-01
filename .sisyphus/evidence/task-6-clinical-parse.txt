@@ -1,0 +1,26 @@
+Task 6 — Clinical Script Reorganization Parse Evidence
+======================================================
+Date: 2026-03-01
+Conda env: dmtcp
+
+=== tcga_data_prep.R ===
+Command: Rscript -e "parse(file='analysis/clinical/tcga_data_prep.R')"
+Result: PASS (parsed successfully, 208 lines)
+Source: analysis/TCGA_data.R (203 lines original + 5 header lines)
+
+=== survival_cibersort.R ===
+Command: Rscript -e "parse(file='analysis/clinical/survival_cibersort.R')"
+Result: PASS (parsed successfully, 801 lines)
+Source: analysis/cibersort_result.R (796 lines original + 5 header lines)
+Verified: slice_max(n = 100, order_by = avg_log2FC) present at line 236
+
+=== survival_clinical_mps.R ===
+Command: Rscript -e "parse(file='analysis/clinical/survival_clinical_mps.R')"
+Result: PASS (parsed successfully, 404 lines)
+Source: analysis/evaluate_clinical_MPs.R (400 lines original + 4 header lines)
+
+All 3 scripts parse cleanly. No R logic modified — only header comments prepended.
+External path references preserved exactly as-is:
+- /rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT (setwd in cibersort)
+- /rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/tcga_esca_meta.rds (evaluate_clinical)
+- /rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv (evaluate_clinical)

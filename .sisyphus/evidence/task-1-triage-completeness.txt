@@ -1,0 +1,23 @@
+Files processed: 7/7
+1. analysis/temp_plot.R — DELETE (redundant scratch, superseded by temp_plot_new.R)
+2. analysis/temp_plot_new.R — MERGE (enrich_heatmap v2 + utilities → enrich_plot.R)
+3. analysis/quick.R — DELETE (CNA exploration scratch, covered by cnv_profile_sc.R + plot_CNV.R + InferCNA.R)
+4. analysis/geneNMF.R — DELETE (file does not exist)
+5. analysis/expr.R — DELETE (no-I/O scratch, enrich_one() + AUCell in Clustering.R)
+6. analysis/ref_pipeline.R — KEEP (archive as legacy/ref_pipeline_archive.R; unique write_count_matrix, manual_celltyping, commented InSituType)
+7. analysis/heatmap.R — KEEP (rename to qc_heatmap.R; unique plot_heatmap() not in main pipeline)
+Status: COMPLETE
+
+Lines read per file:
+- temp_plot.R: 146/146 (all)
+- temp_plot_new.R: 693/693 (all)
+- quick.R: 428/428 (all)
+- geneNMF.R: FILE NOT FOUND (confirmed via glob — only root geneNMF.R exists)
+- expr.R: 120/120 (all)
+- ref_pipeline.R: 1166/1166 (all)
+- heatmap.R: 407/407 (all)
+
+Overlap verification methods:
+- grep for all function definitions across codebase
+- glob for file existence confirmation
+- Cross-referenced with AGENTS.md documented scripts
