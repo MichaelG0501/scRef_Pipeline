@@ -1,3 +1,11 @@
+####################
+# developmental.R
+# Builds developmental gene reference from 4 external xlsx files:
+# Early Embryogenesis, Organogenesis, Normal Development, Adult Epithelium.
+# Outputs: ref_outs/enrich_dev.rds — used by enrichment_plotting.R
+# Environment: dmtcp
+####################
+
 ALL_TERM2GENE <- list()
 ALL_TERM2NAME <- list()
 
