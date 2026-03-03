@@ -12,12 +12,16 @@ export FONTCONFIG_PATH=/etc/fonts
 fc-cache -f ~/.fonts/ 2>/dev/null
 luaotfload-tool --update --force
 
-WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/weekly_updates
+# Usage: qsub -v TEXFILE=updates/02mar/update_02mar.tex compile_weekly_update.sh
+# Or set TEXFILE below for a default.
+TEXFILE=${TEXFILE:-updates/02mar/update_02mar.tex}
+
+WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
 cd "$WD"
 
 # Two passes for TOC and cross-references
-lualatex --interaction=nonstopmode weekly_update_22feb.tex
-lualatex --interaction=nonstopmode weekly_update_22feb.tex
+lualatex --interaction=nonstopmode "$TEXFILE"
+lualatex --interaction=nonstopmode "$TEXFILE"
 
 echo "Done: $(date +%T)"
-echo "Output: $WD/weekly_update_22feb.pdf"
+echo "Output: ${TEXFILE%.tex}.pdf"

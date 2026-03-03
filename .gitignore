@@ -8,6 +8,8 @@
 *.pdf
 *.tex
 *.png
+*.txt
+*.pptx
 *.aux
 *.log
 *.out

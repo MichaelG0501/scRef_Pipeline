@@ -251,6 +251,12 @@ Note: all 3 CNV scripts share identical library set: `data.table, dplyr, Complex
 | `states_qc.R` | QC comparison of Defined vs Unresolved cells across 8 continuous + categorical features (merged from 2 original scripts) | `EAC_Ref_epi.rds`, state assignments | `states_status_quality_comparison.pdf` |
 | `states_umap.R` | UMAP embedding coloured by manual states | `EAC_Ref_epi.rds`, state assignments | UMAP PDFs |
 | `cancer_summary.R` | Summary statistics of cancer/malignant cell counts per sample | per-sample `_epi_f.rds` files | summary CSV/plots |
+| `Auto_states_cluster.R` | Louvain clustering on CC-regressed, Z-normed MP scores (PCA → FindNeighbors → FindClusters at res 0.5/0.8/1.0), UMAP, 5 visualisations | `EAC_Ref_epi.rds`, `geneNMF_metaprograms_nMP_19.rds`, `UCell_nMP19_filtered.rds` | `Auto_cluster_states.rds`, `Auto_cluster_umap_embeddings.rds`, `Auto_cluster_mp_adj.rds`, cluster PDFs |
+| `Auto_states_topmp.R` | Assign cells to dominant non-CC MP (max Z-score, threshold 0.5 → Unresolved), 4 visualisations | `EAC_Ref_epi.rds`, `geneNMF_metaprograms_nMP_19.rds`, `UCell_nMP19_filtered.rds` | `Auto_topmp_states.rds`, `Auto_topmp_mp_adj.rds`, topmp PDFs |
+| `Auto_states_comparison.R` | Compare cluster vs top-MP states: confusion matrix, ARI/NMI, side-by-side UMAP, bootstrap stability (100×80%), Cramér's V study-bias, DEG + fgsea Hallmark coherence | `Auto_cluster_states.rds`, `Auto_topmp_states.rds`, `Auto_cluster_umap_embeddings.rds`, `Auto_cluster_mp_adj.rds`, `Auto_topmp_mp_adj.rds` | `Auto_comparison_summary.csv`, comparison PDFs |
+| `Auto_states_cluster.sh` | PBS wrapper for `Auto_states_cluster.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
+| `Auto_states_topmp.sh` | PBS wrapper for `Auto_states_topmp.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
+| `Auto_states_comparison.sh` | PBS wrapper for `Auto_states_comparison.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
 
 ### `analysis/plotting/` — Publication Figures
 | File | Purpose | Key Inputs | Key Outputs |
@@ -341,3 +347,90 @@ Future agents must update this file when they:
 - Create a new `Auto_` script.
 
 Append new findings to the appropriate section. Don't rewrite existing documentation unless fixing an error.
+
+## Subagent Model Tier Policy (MANDATORY)
+
+When delegating work to subagents or background tasks, you **MUST** restrict model choices based on the tier of the primary model you are currently running as. Check your own model identity and apply the corresponding rule:
+
+### Tier Classification
+
+**Free Tier** (zero cost):
+- `opencode/big-pickle`
+- `opencode/minimax-m2.5-free`
+- `opencode/trinity-large-preview-free`
+- `github-copilot/gpt-4.1`
+- `github-copilot/gpt-4o`
+- `github-copilot/gpt-5-mini`
+
+**0.33X Tier** (reduced cost):
+- `github-copilot/gemini-3-flash-preview`
+- `github-copilot/claude-haiku-4.5`
+- `github-copilot/gpt-5.1-codex-mini`
+- `github-copilot/grok-code-fast-1`
+
+**All Other Models** = Paid Tier (full cost)
+
+### Delegation Rules
+
+| Your Primary Model Tier | Allowed Subagent Models |
+|------------------------|------------------------|
+| **Free** | Free tier models ONLY |
+| **0.33X** | Free + 0.33X tier models |
+| **Paid** (any other) | Any model — no restrictions |
+
+### How to Apply
+
+1. **Identify your tier**: Check which model you are running as. If it appears in the Free list → you are Free tier. If in the 0.33X list → you are 0.33X tier. Otherwise → Paid tier.
+2. **Constrain task() calls**: When using the `task()` tool or delegating to subagents, prefer models from your allowed tier. If a category default model exceeds your tier, override it with a model from your allowed list.
+3. **Recommended free-tier subagent assignments**:
+   - Quick/trivial tasks → `github-copilot/gpt-5-mini`
+   - Code implementation → `github-copilot/gpt-4.1`
+   - Reasoning/analysis → `github-copilot/gpt-4o`
+   - Research/exploration → `github-copilot/gpt-4.1`
+   - Fallback/general → `opencode/big-pickle`
+4. **Do not escalate**: Never use a paid model as a subagent when your primary is free or 0.33X tier. This is a hard rule.
+
+## Uploading Files to Google Drive (rclone)
+
+rclone is configured with a remote named `gdrive`. Always upload into the `IMPERIAL/` folder:
+
+```bash
+module load rclone
+rclone copy <local_file> gdrive:IMPERIAL/ --progress
+```
+
+To upload all `.pdf`, `.png`, and `.csv` files generated within the last 8 hours from `ref_outs/`:
+
+```bash
+module load rclone
+find ref_outs -name '*.pdf' -o -name '*.png' -o -name '*.csv' | xargs -I{} find {} -mmin -480 2>/dev/null | while read f; do rclone copy "$f" gdrive:IMPERIAL/ --progress; done
+```
+
+Or more simply with `find`'s `-mmin` flag:
+
+```bash
+module load rclone
+find ref_outs \( -name '*.pdf' -o -name '*.png' -o -name '*.csv' \) -mmin -480 -exec rclone copy {} gdrive:IMPERIAL/ --progress \;
+```
+
+- Remote name: `gdrive`
+- Target folder: `gdrive:IMPERIAL/` (always use this, not the root)
+- Must `module load rclone` before any rclone command on HPC
+
+## Progress Updates (Bi-Weekly)
+
+Updates generated every **Monday and Thursday**. Workflow: `updates/weekly_update_workflow.md`.
+
+**Discovery:** `git status --short` — untracked files = new work since last commit.
+Associated outputs identified from script header comments (`# Output:` lines).
+
+**Slide style:** Result-focused. Large figures, 1–2 sentence key points per slide.
+The `.md` companion doc retains full technical detail.
+
+**Directory structure:** Each update cycle gets its own subfolder:
+`updates/DDmon/` containing `figures/`, `summaries/`, `.tex`, `.md`, and `_plan.md`.
+
+**Machine-readable summaries (convention for all future `Auto_` scripts):**
+Every script that produces plots must also save a small (< 100 KB) `.csv` or `.txt`
+summary of key metrics directly into `updates/DDmon/summaries/` so AI agents
+can read results on the login node without loading heavy `.rds` files.
