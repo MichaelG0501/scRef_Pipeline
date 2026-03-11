@@ -1,7 +1,6 @@
 # Progress Update Workflow — Repeatable Instructions
 
-**Purpose:** Generate supervisor-facing slides and progress markdown every Monday and Thursday.  
-**Time target:** ~5 minutes total.  
+**Purpose:** Generate supervisor-facing slides and progress markdown most Mondays and Thursdays when needed.  
 **Location:** `updates/`  
 **Discovery method:** `git status` — untracked files = new work since last commit.
 
@@ -13,7 +12,7 @@
 
 ---
 
-## Step 1: Discover This Cycle's Files (~30s)
+## Step 1: Discover This Cycle's Files
 
 Untracked files in git represent all new work since the last commit:
 
@@ -45,9 +44,9 @@ git log --oneline -3
 
 ---
 
-## Step 2: Select Key Figures (~1 min)
+## Step 2: Select Key Figures
 
-Pick **5–10 figures max** for a concise slide deck. Prioritise:
+Pick **informative and critical figures** for a concise slide deck but do not miss information. Prioritise:
 
 1. **The main result** (e.g., ComplexHeatmap at the chosen nMP resolution)
 2. **Cell state / classification result** (e.g., stacked bar chart, state composition)
@@ -94,24 +93,22 @@ All future `Auto_` scripts **must** also save a small, machine-readable summary 
 
 ---
 
-## Step 3: Write the .tex Slides (~2 min)
+## Step 3: Write the .tex Slides
 
-Slides are **results-focused** — straight to figures, no overview or next-steps slides. Supervisor does not need methods detail.
+Slides are **results-focused** — straight to figures, with an optional brief overview slide when comparing methods. Supervisor does not need methods detail.
 
 ### Rules
-- **No title slide**. No `\titlepage`. Jump straight into result figures.
-- **No overview slide**. No "this week I did..." bullets.
+- **No title slide**. No `\titlepage`. Jump straight into result figures or a brief methods overview if needed.
+- **Optional overview slide**. Use only when introducing or comparing methods (e.g., Approach A vs B). Keep to bullet points, small font. Example: frame title "Two Approaches to State Definition" with itemized description of each approach.
 - **No next-steps slide**. Those go in the `.md` document only.
-- **Every slide = one figure**, full-width, with an optional 1-line footnote in `\footnotesize`.
+- **Every slide = one figure**, full-width or side-by-side, with an optional 1-line footnote in `\footnotesize`. Footnotes must be **informative** — explain what the figure shows or a key finding, not just "as requested".
 - **Text slides** only when a brief methods note is essential (e.g., describing two approaches). Keep to bullet points, small font.
-- **Figure size**: always `width=\textwidth,height=0.88\textheight,keepaspectratio`.
 - **Side-by-side figures**: use `\begin{columns}` with `0.5\textwidth` each when comparing two plots.
 - **Tables**: use `booktabs` (`\toprule`, `\midrule`, `\bottomrule`) for clean metric tables.
 
 ### LaTeX Template
 
 ```latex
-% !TEX program = lualatex
 \documentclass[aspectratio=169,10pt]{beamer}
 
 \usepackage{graphicx}
@@ -199,6 +196,7 @@ Row 2 & val & val \\
 
 ### Known LaTeX Gotchas
 
+- **DO NOT** use magic comments like `% !TEX program = lualatex` at the top of the file. This bypasses our custom wrapper and causes `ENOENT` errors.
 - **DO NOT** use `\usepackage{enumitem}` — conflicts with beamer.
 - **DO NOT** use `\setcounter{enumi}` — use `\item[N.]` for manual numbering.
 - Figures in `figures/` subfolder are automatically copied to `/tmp` by the lualatex wrapper.
@@ -208,20 +206,20 @@ Row 2 & val & val \\
 
 ---
 
-## Step 4: Compile LaTeX (~10s)
+## Step 4: Compile LaTeX
+
+Compile within VS Code by saving (Ctrl+S). If you need to compile manually in the terminal:
 
 ```bash
-module purge && module load tools/dev
 cd updates/DDmon
-~/bin/lualatex -interaction=nonstopmode update_DDmon.tex
-~/bin/lualatex -interaction=nonstopmode update_DDmon.tex
+~/bin/lualatex --synctex=1 --interaction=nonstopmode update_DDmon.tex
 ```
 
 The `~/bin/lualatex` wrapper compiles via `/tmp` for speed (~7s vs 82s on NFS).
 
 ---
 
-## Step 5: Convert to PPTX (~15s)
+## Step 5: Convert to PPTX
 
 Convert the compiled PDF to high-resolution PNG slides, then assemble into PPTX:
 
@@ -250,7 +248,7 @@ rclone copy updates/DDmon/update_DDmon.pptx gdrive:IMPERIAL/ --progress
 
 ---
 
-## Step 7: Write the .md Progress Document (~2 min)
+## Step 7: Write the .md Progress Document
 
 Same git-based discovery as Step 1. Date range = "since last commit".
 
@@ -315,5 +313,7 @@ updates/
 ```
 
 ---
+
+## Update after each update cycle, in case style or focus change
 
 *Last updated: 2 March 2026*

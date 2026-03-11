@@ -9,6 +9,7 @@
 *.tex
 *.png
 *.txt
+*.csv
 *.pptx
 *.aux
 *.log

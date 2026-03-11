@@ -25,6 +25,10 @@ library(gridExtra)
 library(grid)
 library(dplyr)
 library(tidyr)
+####################
+# Added dependencies for MP15 CNV/UMAP plots
+library(ggplot2)
+####################
 
 setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
 
@@ -530,6 +534,420 @@ for (samp in top3_samples) {
   dev.off()
   cat(sprintf("  Saved: Auto_MP15_top3_%s.png\n", safe_name))
 }
+
+####################
+# 8B. Top-3 MP15 samples — CNV + UMAP comparisons (high vs low)
+####################
+cat("\n========================================\n")
+cat("APPROACH A2: Top-3 MP15 samples — CNV & UMAP comparisons\n")
+cat("========================================\n")
+
+####################
+# Helper: compute CNA signal from infercna outs
+compute_cna_signal <- function(outs_mat, use_quantile = 0.9) {
+  infercna::cnaSignal(outs_mat, gene.quantile = use_quantile)
+}
+####################
+
+####################
+# Helper: build binned CNV matrix (genes x cells) using 100-gene bins
+bin_cnv_matrix <- function(outs_mat, gene_order, bin_size = 100L) {
+  chrom_levels <- c(paste0("chr", 1:22), "chrX", "chrY")
+  go <- gene_order %>%
+    filter(gene_id %in% rownames(outs_mat), chromosome %in% chrom_levels) %>%
+    mutate(chromosome = factor(chromosome, levels = chrom_levels)) %>%
+    arrange(chromosome, start)
+  outs_mat <- outs_mat[go$gene_id, , drop = FALSE]
+  go <- go %>%
+    group_by(chromosome) %>%
+    mutate(
+      g_rank = row_number(),
+      bin_in_chr = ((g_rank - 1L) %/% bin_size) + 1L,
+      bin_key = paste(chromosome, bin_in_chr, sep = "_")
+    ) %>%
+    ungroup()
+  ordered_bin_keys <- unique(go$bin_key)
+  bins_idx <- split(seq_len(nrow(go)), factor(go$bin_key, levels = ordered_bin_keys))
+  binned_mat <- do.call(rbind, lapply(bins_idx, function(ix) colMeans(outs_mat[ix, , drop = FALSE])))
+  rownames(binned_mat) <- names(bins_idx)
+  list(binned_mat = binned_mat, go = go)
+}
+####################
+
+####################
+# Load gene order (hg38) for CNV binning
+gene_order_path <- "/rds/general/project/spatialtranscriptomics/live/ITH_all/all_samples/hg38_gencode_v27.txt"
+if (!file.exists(gene_order_path)) {
+  stop("Gene order file not found: ", gene_order_path)
+}
+gene_order <- read.table(
+  gene_order_path,
+  header = FALSE, col.names = c("gene_id", "chromosome", "start", "end")
+)
+####################
+
+####################
+# Prepare summary collector
+summary_rows <- list()
+####################
+
+for (samp in top3_samples) {
+  cat(sprintf("\n[CNV/UMAP] Processing sample: %s\n", samp))
+
+  samp_cells <- common_cells[tmdata_all$orig.ident[common_cells] == samp]
+  if (length(samp_cells) < 20) {
+    cat(sprintf("  Skipping CNV/UMAP: too few cells (%d)\n", length(samp_cells)))
+    next
+  }
+
+  ####################
+  # MP15 high/low within sample
+  samp_mp15_z <- mp_adj[samp_cells, "MP15"]
+  mp15_group <- ifelse(samp_mp15_z > MP15_Z_THRESHOLD, "MP15_high", "MP15_low")
+  names(mp15_group) <- samp_cells
+  ####################
+
+  ####################
+  # CNV: load infercna outs + CNA signal distribution
+  ####################
+  outs_path <- file.path("by_samples", samp, paste0(samp, "_outs.rds"))
+  if (!file.exists(outs_path)) {
+    cat(sprintf("  No infercna outs found: %s (skipping CNV plots)\n", outs_path))
+  } else {
+    outs <- readRDS(outs_path)
+    common_cnv_cells <- intersect(colnames(outs), samp_cells)
+    if (length(common_cnv_cells) < 20) {
+      cat("  Too few cells with CNV outs for this sample.\n")
+    } else {
+      outs <- outs[, common_cnv_cells, drop = FALSE]
+
+      ####################
+      # CNA signal
+      cna_signal <- compute_cna_signal(outs, use_quantile = 0.9)
+      cna_df <- data.frame(
+        cell = names(cna_signal),
+        cna_signal = as.numeric(cna_signal),
+        mp15_group = mp15_group[names(cna_signal)],
+        stringsAsFactors = FALSE
+      )
+      cna_df <- cna_df[!is.na(cna_df$mp15_group), ]
+
+      ####################
+      # Save CNA signal distribution plot
+      safe_name <- gsub("[^A-Za-z0-9_]", "_", samp)
+      p_cna <- ggplot(cna_df, aes(x = mp15_group, y = cna_signal, fill = mp15_group)) +
+        geom_violin(trim = FALSE, alpha = 0.7) +
+        geom_boxplot(width = 0.15, outlier.shape = NA, alpha = 0.8) +
+        scale_fill_manual(values = c(MP15_high = "#D73027", MP15_low = "#4575B4")) +
+        labs(title = paste0("CNA signal: ", samp), x = NULL, y = "CNA signal (mean sq.)") +
+        theme_classic() +
+        theme(legend.position = "none")
+
+      ggsave(filename = paste0("Auto_MP15_CNA_signal_", safe_name, ".pdf"),
+             plot = p_cna, width = 6, height = 4)
+
+      ####################
+      # Binned CNV heatmap (subset to 2000 cells max)
+      set.seed(42)
+      if (ncol(outs) > 2000) {
+        keep_cells <- sample(colnames(outs), 2000)
+        outs_heat <- outs[, keep_cells, drop = FALSE]
+      } else {
+        outs_heat <- outs
+      }
+
+      bin_res <- bin_cnv_matrix(outs_heat, gene_order, bin_size = 100L)
+      binned_mat <- bin_res$binned_mat
+      binned_mat <- binned_mat[, order(mp15_group[colnames(binned_mat)])]
+
+      ####################
+      # Heatmap annotation by MP15 group
+      row_ann <- rowAnnotation(
+        MP15 = mp15_group[rownames(t(binned_mat))],
+        col = list(MP15 = c(MP15_high = "#D73027", MP15_low = "#4575B4")),
+        show_annotation_name = TRUE
+      )
+
+      col_fun <- colorRamp2(c(-1, 0, 1), c("#2166AC", "white", "#B2182B"))
+
+      pdf(paste0("Auto_MP15_CNV_heatmap_", safe_name, ".pdf"), width = 8, height = 6)
+      draw(
+        Heatmap(
+          t(binned_mat),
+          name = "CNV",
+          col = col_fun,
+          cluster_rows = TRUE,
+          cluster_columns = FALSE,
+          show_row_names = FALSE,
+          show_column_names = FALSE,
+          left_annotation = row_ann,
+          use_raster = TRUE
+        )
+      )
+      dev.off()
+
+      cat(sprintf("  Saved CNV plots for %s\n", samp))
+
+      ####################
+      # Summary row
+      summary_rows[[length(summary_rows) + 1]] <- data.frame(
+        sample = samp,
+        n_cells_cnv = ncol(outs),
+        n_cells_heat = ncol(outs_heat),
+        cna_signal_median_high = median(cna_df$cna_signal[cna_df$mp15_group == "MP15_high"], na.rm = TRUE),
+        cna_signal_median_low  = median(cna_df$cna_signal[cna_df$mp15_group == "MP15_low"], na.rm = TRUE),
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+
+  ####################
+  # UMAP: re-run per-sample and color by MP15 high/low
+  ####################
+  sub_obj <- subset(tmdata_all, cells = samp_cells)
+  sub_obj$MP15_activity <- mp15_group[colnames(sub_obj)]
+
+  sub_obj <- NormalizeData(sub_obj, verbose = FALSE)
+  sub_obj <- FindVariableFeatures(sub_obj, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+  sub_obj <- ScaleData(sub_obj, verbose = FALSE)
+  sub_obj <- RunPCA(sub_obj, features = VariableFeatures(object = sub_obj), verbose = FALSE)
+  sub_obj <- RunUMAP(sub_obj, dims = 1:15, verbose = FALSE)
+
+  p_umap <- DimPlot(
+    sub_obj,
+    reduction = "umap",
+    group.by = "MP15_activity",
+    cols = c(MP15_high = "#D73027", MP15_low = "#4575B4"),
+    pt.size = 0.4,
+    shuffle = TRUE
+  ) +
+    labs(title = paste0("UMAP: ", samp), subtitle = "MP15 high vs low") +
+    theme_minimal()
+
+  safe_name <- gsub("[^A-Za-z0-9_]", "_", samp)
+  ggsave(filename = paste0("Auto_MP15_UMAP_", safe_name, ".pdf"),
+         plot = p_umap, width = 6, height = 5)
+  cat(sprintf("  Saved UMAP plot for %s\n", samp))
+}
+
+####################
+# Save summary CSV if any
+if (length(summary_rows) > 0) {
+  summary_df <- bind_rows(summary_rows)
+  write.csv(summary_df, file = "Auto_MP15_CNV_summary.csv", row.names = FALSE)
+  updates_dir <- "../updates/02mar/summaries"
+  if (dir.exists(updates_dir)) {
+    write.csv(summary_df,
+              file = file.path(updates_dir, "Auto_MP15_CNV_summary.csv"),
+              row.names = FALSE)
+  } else {
+    cat(sprintf("WARNING: updates summaries dir not found: %s\n", updates_dir))
+  }
+  cat("Saved: Auto_MP15_CNV_summary.csv\n")
+}
+####################
+
+####################
+# 8C. Combined PDF: UMAP → CNV → CNA signal (Top-3 samples)
+####################
+cat("\n========================================\n")
+cat("APPROACH A3: Combined PDF for Top-3 samples\n")
+cat("========================================\n")
+
+combined_pdf <- "Auto_MP15_top3_combined.pdf"
+pdf(combined_pdf, width = 9, height = 7)
+####################
+#################### 20#################### 20####################
+# Combined PDF - ordered: all UMAPs, then all CNV heatmaps, then all CNA signal plots
+#################### 20#################### 20####################
+
+# 1) UMAPs for all top3 samples
+for (samp in top3_samples) {
+  cat(sprintf("\n[Combined-UMAP] Processing sample: %s\n", samp))
+  samp_cells <- common_cells[tmdata_all$orig.ident[common_cells] == samp]
+  if (length(samp_cells) < 20) next
+  samp_mp15_z <- mp_adj[samp_cells, "MP15"]
+  mp15_group <- ifelse(samp_mp15_z > MP15_Z_THRESHOLD, "MP15_high", "MP15_low")
+  names(mp15_group) <- samp_cells
+  n_high <- sum(mp15_group == "MP15_high")
+  n_low  <- sum(mp15_group == "MP15_low")
+
+  sub_obj <- subset(tmdata_all, cells = samp_cells)
+  sub_obj$MP15_activity <- mp15_group[colnames(sub_obj)]
+  sub_obj <- NormalizeData(sub_obj, verbose = FALSE)
+  sub_obj <- FindVariableFeatures(sub_obj, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+  sub_obj <- ScaleData(sub_obj, verbose = FALSE)
+  sub_obj <- RunPCA(sub_obj, features = VariableFeatures(object = sub_obj), verbose = FALSE)
+  sub_obj <- RunUMAP(sub_obj, dims = 1:15, verbose = FALSE)
+
+  p_umap <- DimPlot(
+    sub_obj,
+    reduction = "umap",
+    group.by = "MP15_activity",
+    cols = c(MP15_high = "#D73027", MP15_low = "#4575B4"),
+    pt.size = 0.4,
+    shuffle = TRUE
+  ) + labs(title = paste0("UMAP: ", samp), subtitle = paste0("MP15_high: ", n_high, " | MP15_low: ", n_low)) + theme_minimal()
+  print(p_umap)
+}
+
+# 2) CNV heatmaps for all top3 samples (fallback style from cnv_subsetting.R)
+for (samp in top3_samples) {
+  cat(sprintf("\n[Combined-CNV] Processing sample: %s\n", samp))
+  samp_cells <- common_cells[tmdata_all$orig.ident[common_cells] == samp]
+  if (length(samp_cells) < 20) next
+
+  samp_mp15_z <- mp_adj[samp_cells, "MP15"]
+  mp15_group <- ifelse(samp_mp15_z > MP15_Z_THRESHOLD, "MP15_high", "MP15_low")
+  names(mp15_group) <- samp_cells
+  n_high <- sum(mp15_group == "MP15_high")
+  n_low  <- sum(mp15_group == "MP15_low")
+
+  outs_path <- file.path("by_samples", samp, paste0(samp, "_outs.rds"))
+  epi_file  <- file.path("by_samples", samp, paste0(samp, "_epi_f.rds"))
+  if (!file.exists(outs_path)) { cat("  outs not found, skipping\n"); next }
+  outs <- readRDS(outs_path)
+  common_cnv_cells <- intersect(colnames(outs), samp_cells)
+  if (length(common_cnv_cells) < 20) { cat("  too few CNV cells, skipping\n"); next }
+  outs <- outs[, common_cnv_cells, drop = FALSE]
+
+  ####################
+  # Balance MP15_high vs MP15_low cell counts for comparable heatmap width
+  mp15_group_cnv <- mp15_group[colnames(outs)]
+  keep_high <- names(mp15_group_cnv)[mp15_group_cnv == "MP15_high"]
+  keep_low  <- names(mp15_group_cnv)[mp15_group_cnv == "MP15_low"]
+  n_each <- min(length(keep_high), length(keep_low))
+  if (n_each > 0) {
+    set.seed(42)
+    keep_high <- sample(keep_high, n_each)
+    keep_low  <- sample(keep_low, n_each)
+    keep_cells <- c(keep_high, keep_low)
+    outs <- outs[, keep_cells, drop = FALSE]
+  }
+  ####################
+
+  # Binning (reuse helper)
+  bin_res <- bin_cnv_matrix(outs, gene_order, bin_size = 100L)
+  binned_mat <- bin_res$binned_mat
+
+  # chromosome per bin
+  row_chr_labels <- sub("_.*$", "", rownames(binned_mat))
+  row_chr <- factor(row_chr_labels, levels = unique(row_chr_labels))
+
+  # load epi meta for top annotation if available
+  meta <- NULL
+  if (file.exists(epi_file)) {
+    epi <- readRDS(epi_file)
+    meta <- epi@meta.data
+    meta <- meta[colnames(outs), , drop = FALSE]
+  } else {
+    meta <- data.frame(row.names = colnames(outs))
+  }
+
+  # build top annotation fields if present
+  ann_list <- list()
+  ann_cols <- list()
+  if ("cs_score" %in% colnames(meta)) { ann_list$cancer_signature <- as.numeric(meta$cs_score); ann_cols$cancer_signature <- colorRamp2(c(min(meta$cs_score, na.rm=TRUE), median(meta$cs_score, na.rm=TRUE), max(meta$cs_score, na.rm=TRUE)), c("white","grey80","black")) }
+  if ("cc_score" %in% colnames(meta)) { ann_list$cell_cycling <- as.numeric(meta$cc_score); ann_cols$cell_cycling <- colorRamp2(c(min(meta$cc_score, na.rm=TRUE), median(meta$cc_score, na.rm=TRUE), max(meta$cc_score, na.rm=TRUE)), c("white","grey80","black")) }
+  if ("study" %in% colnames(meta)) { ann_list$study <- factor(meta$study); study_levels <- levels(droplevels(ann_list$study)); ann_cols$study <- setNames(colorRampPalette(brewer.pal(8, "Set3"))(length(study_levels)), study_levels) }
+
+  if (length(ann_list) > 0) {
+    top_ha <- do.call(HeatmapAnnotation, c(ann_list, list(col = ann_cols, annotation_name_side = "left", annotation_name_gp = gpar(fontsize = 9), annotation_name_offset = unit(2, "mm"), annotation_height = unit(rep(4, length(ann_list)), "mm"), show_legend = TRUE)))
+  } else {
+    top_ha <- NULL
+  }
+
+  # left chr bar
+  chr_used <- levels(droplevels(row_chr))
+  base_cols <- c(brewer.pal(12, "Paired"), brewer.pal(8, "Dark2"), brewer.pal(9, "Set1"), brewer.pal(12, "Set3"))
+  chr_cols <- setNames(base_cols[seq_along(chr_used)], chr_used)
+  left_chr_bar <- rowAnnotation(chr = row_chr, col = list(chr = chr_cols), show_annotation_name = FALSE, show_legend = FALSE, gp = gpar(col = NA), width = unit(4, "mm"))
+
+  # column split by mp15_group
+  col_split <- factor(mp15_group[colnames(binned_mat)], levels = c("MP15_high", "MP15_low"))
+
+  # chromosome boundaries
+  chr_bounds <- which(head(row_chr_labels, -1L) != tail(row_chr_labels, -1L))
+  line_gp <- gpar(col = "black", lwd = 1, lineend = "square")
+
+  # stronger contrast for CNV
+  # compute robust color limits using quantiles to avoid faint colours
+  flat_vals <- as.numeric(binned_mat)
+  if (all(is.na(flat_vals))) {
+    qlims <- c(-2, 2)
+  } else {
+    qlims <- quantile(flat_vals, probs = c(0.01, 0.99), na.rm = TRUE)
+    if (!is.finite(qlims[1]) || !is.finite(qlims[2]) || qlims[1] == qlims[2]) {
+      qlims <- c(min(flat_vals, na.rm = TRUE), max(flat_vals, na.rm = TRUE))
+    }
+    # expand towards symmetric around zero if required
+    qmax <- max(abs(qlims))
+    qlims <- c(-qmax, qmax)
+  }
+  col_fun <- colorRamp2(c(qlims[1], 0, qlims[2]), c("#08306B", "white", "#99000D"))
+
+  ht <- Heatmap(
+    binned_mat,
+    name = "CNV",
+    col = col_fun,
+    cluster_rows = FALSE,
+    cluster_columns = TRUE,
+    column_split = col_split,
+    column_title_rot = 0,
+    cluster_column_slices = FALSE,
+    show_column_dend = FALSE,
+    column_gap = unit(2, "mm"),
+    show_row_names = FALSE,
+    show_column_names = FALSE,
+    top_annotation = top_ha,
+    left_annotation = left_chr_bar,
+    row_split = row_chr,
+    row_gap = unit(0, "mm"),
+    row_title_rot = 0,
+    rect_gp = gpar(col = NA),
+    border = NA,
+    layer_fun = function(j, i, x, y, w, h, fill) {
+      hits <- intersect(i, chr_bounds)
+      if (length(hits)) {
+        id <- match(hits, i)
+        yy <- y[id] - h[id] / 2
+        grid.segments(x0 = unit(0, "npc"), x1 = unit(1, "npc"), y0 = yy, y1 = yy, gp = line_gp)
+      }
+    }
+  )
+
+  # Remove explicit bold annotation on the heatmap canvas (sample name & counts)
+  draw(ht, heatmap_legend_side = "right", annotation_legend_side = "right")
+}
+
+# 3) CNA signal plots for all top3 samples
+for (samp in top3_samples) {
+  cat(sprintf("\n[Combined-CNA] Processing sample: %s\n", samp))
+  samp_cells <- common_cells[tmdata_all$orig.ident[common_cells] == samp]
+  if (length(samp_cells) < 20) next
+  samp_mp15_z <- mp_adj[samp_cells, "MP15"]
+  mp15_group <- ifelse(samp_mp15_z > MP15_Z_THRESHOLD, "MP15_high", "MP15_low")
+  names(mp15_group) <- samp_cells
+  outs_path <- file.path("by_samples", samp, paste0(samp, "_outs.rds"))
+  if (!file.exists(outs_path)) { cat("  outs not found, skipping CNA plot\n"); next }
+  outs <- readRDS(outs_path)
+  common_cnv_cells <- intersect(colnames(outs), samp_cells)
+  if (length(common_cnv_cells) < 20) { cat("  too few CNV cells, skipping\n"); next }
+  outs <- outs[, common_cnv_cells, drop = FALSE]
+  cna_signal <- compute_cna_signal(outs, use_quantile = 0.9)
+  cna_df <- data.frame(cell = names(cna_signal), cna_signal = as.numeric(cna_signal), mp15_group = mp15_group[names(cna_signal)], stringsAsFactors = FALSE)
+  cna_df <- cna_df[!is.na(cna_df$mp15_group), ]
+  n_high <- sum(cna_df$mp15_group == "MP15_high", na.rm = TRUE)
+  n_low <- sum(cna_df$mp15_group == "MP15_low", na.rm = TRUE)
+  p_cna <- ggplot(cna_df, aes(x = mp15_group, y = cna_signal, fill = mp15_group)) + geom_violin(trim = FALSE, alpha = 0.7) + geom_boxplot(width = 0.15, outlier.shape = NA, alpha = 0.8) + scale_fill_manual(values = c(MP15_high = "#D73027", MP15_low = "#4575B4")) + labs(title = paste0("CNA signal: ", samp), subtitle = paste0("MP15_high: ", n_high, " | MP15_low: ", n_low), x = NULL, y = "CNA signal (mean sq.)") + theme_classic() + theme(legend.position = "none")
+  print(p_cna)
+}
+
+dev.off()
+cat(sprintf("Saved combined PDF: %s\n", combined_pdf))
+
+#################### 20#################### 20####################
+####################
 
 # ============================================================================
 # 9. APPROACH B: Compare all MP15_high cells vs an equal number of MP15_low cells

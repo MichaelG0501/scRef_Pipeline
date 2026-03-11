@@ -432,5 +432,5 @@ The `.md` companion doc retains full technical detail.
 
 **Machine-readable summaries (convention for all future `Auto_` scripts):**
 Every script that produces plots must also save a small (< 100 KB) `.csv` or `.txt`
-summary of key metrics directly into `updates/DDmon/summaries/` so AI agents
-can read results on the login node without loading heavy `.rds` files.
+summary of key metrics directly into `updates/new_updates/summaries/` so AI agents
+can read results on the login node without loading heavy `.rds` files, create folder if not exist.

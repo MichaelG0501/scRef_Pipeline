@@ -122,10 +122,13 @@ clin <- clin %>%
 meta <- ss2 %>%
   left_join(clin, by = "case_barcode")
 
-meta <- meta[meta$type == "Adenomas and Adenocarcinomas" & !is.na(meta$type), ]
+####################
+# Keep both major ESCA histologies (EAC + ESCC) instead of EAC-only
+####################
+meta <- meta[meta$type %in% c("Adenomas and Adenocarcinomas", "Squamous Cell Neoplasms") & !is.na(meta$type), ]
 saveRDS(meta, "tcga_esca_meta.rds")
 
-files <- list.files(pattern = "\\.rna_seq\\.augmented_star_gene_counts\\.tsv$", 
+files <- list.files(path = "../", pattern = "\\.rna_seq\\.augmented_star_gene_counts\\.tsv$", 
                     recursive = TRUE, full.names = TRUE)
 file_map <- tibble(path = files, file_name = basename(files))
 meta2 <- meta %>%

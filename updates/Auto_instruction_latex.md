@@ -8,8 +8,13 @@ LuaLaTeX setup guide for compiling `.tex` files via VS Code LaTeX Workshop on th
 
 VS Code LaTeX Workshop tries to spawn `lualatex` as a subprocess. On HPC, `lualatex` is only available after loading HPC environment modules (`tools/prod` + `texlive/...`). The VS Code server process has a minimal PATH that does not include any module-loaded binaries, so the `spawn` call fails immediately with `ENOENT` (executable not found).
 
-**Why `bash -c "module load ..."` in settings.json does not work:**
-LaTeX Workshop substitutes its `%DOC%` / `%DOCFILE%` placeholders into the args array *before* spawning the process. When using `bash -c "... command"`, the placeholders end up inside the quoted string and are not expanded by LaTeX Workshop — they arrive as literal text. The extension effectively ignores the workspace `settings.json` tool definitions if they use `bash -c` and falls back to its built-in default tool (bare `lualatex`), which still fails with ENOENT.
+---
+
+## CRITICAL: Do NOT use Magic Comments
+
+**DO NOT** include magic comments like `% !TEX program = lualatex` at the top of your `.tex` files.
+
+**Why:** LaTeX Workshop's magic comment feature intercepts the build process and tries to run the bare `lualatex` command. This **bypasses our custom wrapper** and ignores the workspace `settings.json` tools. Since the login node's default PATH does not contain `lualatex`, the build will fail immediately with `spawn lualatex ENOENT`.
 
 ---
 
@@ -212,6 +217,7 @@ time ~/bin/lualatex --synctex=1 --interaction=nonstopmode methods_slides.tex
 ## Troubleshooting
 
 **`spawn lualatex ENOENT` still appears:**
+- **CRITICAL:** Check if the file has `% !TEX program = lualatex` at the top. **Remove it.**
 - Reload VS Code window (Ctrl+Shift+P → "Developer: Reload Window") — settings.json changes require this
 - Confirm the wrapper file exists: `ls -la ~/bin/lualatex`
 - Confirm it is executable: `~/bin/lualatex --version`
@@ -230,7 +236,7 @@ time ~/bin/lualatex --synctex=1 --interaction=nonstopmode methods_slides.tex
 
 ## HPC module reference (for manual terminal use only)
 
-If you need to use lualatex manually in a terminal (not via VS Code), the correct module sequence is:
+If you need to use lualatex manually in a terminal (not via VS Code or our wrapper), the correct sequence is:
 
 ```bash
 source /etc/profile.d/modules.sh
