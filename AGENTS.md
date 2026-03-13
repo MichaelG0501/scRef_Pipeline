@@ -193,6 +193,9 @@ All paths are relative to the project root unless absolute paths are specified.
 | NMF geneNMF outs | `ref_outs/geneNMF_outs.rds` | Raw geneNMF output object |
 | NMF MP outs default | `ref_outs/MP_outs_default.rds` | Processed MP outputs |
 | DEG cache | `ref_outs/states_degs.rds` | FindAllMarkers result for 4 cell states |
+| **State RDS (reg)** | `ref_outs/Auto_topmp_v2_reg_states_B.rds` | Approach B states (CC-regressed) |
+| **State RDS (noreg)** | `ref_outs/Auto_topmp_v2_noreg_states_B.rds` | Approach B states (No CC regression) |
+| Barretts metadata | `ref_outs/meta_barretts.rds` | Specifically for the new Barretts dataset |
 
 ### `analysis/utils.R` — Reference Patterns (NOT sourced)
 Documents 4 canonical patterns used across 3+ scripts each. Not sourced by any script — reference only.
@@ -257,6 +260,9 @@ Note: all 3 CNV scripts share identical library set: `data.table, dplyr, Complex
 | `Auto_states_cluster.sh` | PBS wrapper for `Auto_states_cluster.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
 | `Auto_states_topmp.sh` | PBS wrapper for `Auto_states_topmp.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
 | `Auto_states_comparison.sh` | PBS wrapper for `Auto_states_comparison.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
+| `Auto_states_topmpB_reg_noreg.R` | Unified Approach B state assignment with `reg/noreg` parameter; runs both modes and writes paired heatmap/proportion/CC-score figures in shared PDFs | `EAC_Ref_epi.rds`, `geneNMF_metaprograms_nMP_19.rds`, `UCell_nMP19_filtered.rds`, `meta_full_epi.rds`, `Cell_Cycle_Genes.csv` | `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds`, reg+noreg comparison PDFs, combined summary CSV |
+| `Auto_states_hybrid_pairwise_nodeplot.R` | Pairwise hybrid network plot (real-state nodes + pairwise hybrid edges), excludes >2-class hybrids from edges | `Auto_topmp_v2_states_B.rds`, `Auto_topmp_v2_mp_adj.rds` | `Auto_topmp_v2_hybrid_pairwise_nodeplot.pdf`, pairwise summary CSV |
+| `Auto_states_unresolved_pan_cancer_reg_noreg.R` | Unified unresolved-cell pan-cancer subclassification with `reg/noreg` parameter; outputs per-mode subclass calls and paired heatmaps (with CNA + CC annotations) | `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `UCell_3CA_MPs.rds`, `meta_full_epi.rds` | `Auto_topmp_v2_reg_noreg_unresolved_pan_cancer_heatmap.pdf`, per-mode unresolved CSV/RDS, combined summary CSV |
 
 ### `analysis/plotting/` — Publication Figures
 | File | Purpose | Key Inputs | Key Outputs |
@@ -264,7 +270,13 @@ Note: all 3 CNV scripts share identical library set: `data.table, dplyr, Complex
 | `publication_umap.R` | Publication-ready UMAP figures (DimPlot, FeaturePlot) with polished themes | `EAC_Ref_epi.rds`, state metadata | UMAP PDFs |
 | `gene_expression_heatmap.R` | Gene expression heatmap using ComplexHeatmap (averaged by state/cluster) | `EAC_Ref_epi.rds`, gene lists | expression heatmap PDFs |
 | `clinical_variable_plots.R` | Boxplots and violin plots of clinical variables (treatment, stage) by cell state | `meta_full_epi.rds`, state assignments | clinical variable PDFs |
+| `Auto_clinical_variable_plots_topmp_v2B_reg_noreg.R` | Unified clinical association workflow with `reg/noreg` parameter; full variable coverage and paired outputs in one combined PDF | `meta_full_epi.rds`, `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds`, concise clinical xlsx | `Auto_clinical_assoc_topmp_v2B_reg_noreg_combined.pdf`, combined summary CSV |
 | `qc_heatmap.R` | QC metric heatmap via `plot_heatmap()` — unique function not in main pipeline | per-sample RDS, QC metadata | QC heatmap PDFs |
+
+### `analysis/clinical/` — Survival & Clinical Analysis
+| File | Purpose | Key Inputs | Key Outputs |
+| :--- | :--- | :--- | :--- |
+| `Auto_survival_clinical_mps_v2_reg_noreg.R` | Unified TCGA state survival workflow with `reg/noreg` parameter; separate state volcano panels and KM panels per histology in shared PDFs | `geneNMF_metaprograms_nMP_19.rds`, TCGA meta+TPM inputs, `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds` | `Auto_survival_tcga_state_volcano_reg_noreg.pdf`, `Auto_survival_tcga_state_km_reg_noreg.pdf`, combined state Cox CSV, summary CSV |
 
 ### `analysis/summary/` — Cross-Sample Summary
 | File | Purpose | Key Inputs | Key Outputs |
@@ -322,6 +334,12 @@ Use `orig.ident` from the Seurat metadata to group by sample. Avoid barcode mani
 
 **Metaprogram Resolution**
 The pipeline explores nMP range 8 to 30. **nMP=19** is the current selected working resolution.
+
+**reg vs noreg Sensitivity Analysis**
+Evaluate the impact of cell-cycle (CC) regression on state assignments and downstream associations (survival, clinical). 
+- **reg**: Z-score MP scores *after* regressing out CC MPs (CC_G1S, CC_G2M).
+- **noreg**: Z-score MP scores directly.
+Required for establishing the robustness of state-linked clinical findings.
 
 ## NotebookLM Skill (HPC Prerequisites)
 

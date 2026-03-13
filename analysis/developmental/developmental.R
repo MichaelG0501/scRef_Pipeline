@@ -15,7 +15,7 @@ ALL_TERM2NAME <- list()
 library(readxl)
 library(dplyr)
 
-xlsx_path  <- "/rds/general/ephemeral/project/spatialtranscriptomics/ephemeral/developmental/Early embryogenesis.xls"
+xlsx_path  <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/Early embryogenesis.xls"
 sheet_name <- " temp.human.mk.tsv"
 marker_term2gene <- read_excel(xlsx_path, sheet = sheet_name) %>%
   transmute(
@@ -51,7 +51,7 @@ library(dplyr)
 library(tidyr)
 library(stringr)
 
-xlsx_path <- "/rds/general/ephemeral/project/spatialtranscriptomics/ephemeral/developmental/Organogenesis.xlsx"
+xlsx_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/Organogenesis.xlsx"
 sheet_name <- "S1D"
 marker_term2gene <- read_excel(xlsx_path, sheet = sheet_name) %>%
   # 1. Rename and select specific columns, then everything from column 4 onwards
@@ -169,7 +169,7 @@ library(dplyr)
 library(stringr)
 library(tibble)
 
-xlsx_path <- "/rds/general/ephemeral/project/spatialtranscriptomics/ephemeral/developmental/Normal development.xlsx"
+xlsx_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/Normal development.xlsx"
 
 # 1. Define the ground truth mapping and order
 # Counts: Stomach (16), Intestine (12), Pancreas (14), Lung (13), Liver (9) = 64 Total
@@ -280,11 +280,11 @@ ALL_TERM2NAME[[length(ALL_TERM2NAME) + 1]] <- marker_term2name_S3
 library(readxl)
 library(dplyr)
 library(purrr)
-xlsx_path <- "/rds/general/ephemeral/project/spatialtranscriptomics/ephemeral/developmental/Oesophagus.xlsx"
+xlsx_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/Oesophagus.xlsx"
 sheets <- excel_sheets(xlsx_path)
 
 library(Seurat)
-tmdata <- readRDS("/rds/general/ephemeral/project/spatialtranscriptomics/ephemeral/developmental/Stomach.rds")
+tmdata <- readRDS("/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/Stomach.rds")
 epi <- subset(tmdata, major_clusters == "epi")
 Idents(epi) <- tmdata@meta.data$subcluster.v2
 markers <- FindAllMarkers(
@@ -294,15 +294,43 @@ markers <- FindAllMarkers(
   logfc.threshold = 0.25 # minimum log fold-change
 )
 
+####################
+# Preserve existing oesophagus order (requested unchanged)
+####################
 oesophagus_order <- c("Quiescent basal cell", "Basal cell (cycling)", "Suprabasal", "Apical cell") %>% 
   gsub(" ", "_", .) %>% 
   paste0("_Oesophagus..Adult_Epithelium")
 
+####################
+# Enforce strict stomach naming and ordering for Adult_Epithelium
+####################
+stomach_rename_map <- c(
+  "GKN+F" = "GKN+F_PylG_Stomach..Adult_Epithelium",
+  "ADH1+GKN1-F" = "ADH1+GKN1-F_PylG_Stomach..Adult_Epithelium",
+  "PG/Neck1" = "PG/Neck1_PylG_Stomach..Adult_Epithelium",
+  "PG/Neck2" = "PG/Neck2_PylG_Stomach..Adult_Epithelium",
+  "NE1" = "NE1_PylG_Stomach..Adult_Epithelium",
+  "PC" = "PC_PylG_Stomach..Adult_Epithelium",
+  "Chief" = "Chief_FundG_Stomach..Adult_Epithelium",
+  "Pr_epi" = "Pr_epi_FundG_Stomach..Adult_Epithelium",
+  "NE2" = "NE2_PylG/IntestMeta_Stomach..Adult_Epithelium",
+  "Ent" = "Ent_IntestMeta_Stomach..Adult_Epithelium",
+  "Gob" = "Gob_IntestMeta_Stomach..Adult_Epithelium"
+)
+
 stomach_order <- c(
-  "GKN+F", "ADH1+GKN1-F", "PG/Neck1", "PG/Neck2", "Chief", 
-  "PC", "Ent", "Gob", "NE1", "NE2", "Pr_epi") %>%
-  gsub(" ", "_", .) %>% 
-    paste0("_Stomach..Adult_Epithelium")
+  "GKN+F_PylG_Stomach..Adult_Epithelium",
+  "ADH1+GKN1-F_PylG_Stomach..Adult_Epithelium",
+  "PG/Neck1_PylG_Stomach..Adult_Epithelium",
+  "PG/Neck2_PylG_Stomach..Adult_Epithelium",
+  "NE1_PylG_Stomach..Adult_Epithelium",
+  "PC_PylG_Stomach..Adult_Epithelium",
+  "Chief_FundG_Stomach..Adult_Epithelium",
+  "Pr_epi_FundG_Stomach..Adult_Epithelium",
+  "NE2_PylG/IntestMeta_Stomach..Adult_Epithelium",
+  "Ent_IntestMeta_Stomach..Adult_Epithelium",
+  "Gob_IntestMeta_Stomach..Adult_Epithelium"
+)
 
 # Combine for the final factor levels
 final_combined_order <- c(oesophagus_order, stomach_order)
@@ -329,8 +357,9 @@ marker_term2gene_stomach <- markers %>%
   dplyr::filter(!is.na(padj), padj < 0.05, term != "", gene != "") %>%
   dplyr::distinct(term, gene) %>%
   mutate(
-    term = paste0(gsub(" ", "_", term), "_Stomach..Adult_Epithelium")
-  )
+    term = dplyr::recode(term, !!!stomach_rename_map, .default = NA_character_)
+  ) %>%
+  dplyr::filter(!is.na(term))
 
 # 4. Combine and Apply Factor Levels for Ordering
 marker_term2gene <- bind_rows(term2gene_oesophagus, marker_term2gene_stomach) %>%
@@ -351,6 +380,115 @@ marker_term2name <- marker_term2gene %>%
 # 6. Append to Global Lists
 ALL_TERM2GENE[[length(ALL_TERM2GENE) + 1]] <- marker_term2gene 
 ALL_TERM2NAME[[length(ALL_TERM2NAME) + 1]] <- marker_term2name
+
+################################################################
+################## Barretts Oesophagus #########################
+
+barrett_base_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/Barretts/"
+
+barretts_groups <- list(
+  list(
+    group_name = "Normal_Esophagus",
+    file = "science.abd1449_Table_S4.xlsx",
+    sheets = c("Basal" = "Basal",
+               "Suprabasal" = "Suprabasal",
+               "Suprabasal_Dividing" = "Suprabasal_Dividing",
+               "Intermediate" = "Intermediate",
+               "Superficial" = "Superficial")
+  ),
+  list(
+    group_name = "Normal_Gastric",
+    file = "science.abd1449_Table_S5.xlsx",
+    sheets = c("Undifferentiated" = "Undifferentiated",
+               "Undifferentiated_Dividing" = "Undifferentiated_Dividing",
+               "Foveolar_Intermediate" = "Foveolar_Intermediate",
+               "Foveolar_differentiated" = "Foveolar_differentiated",
+               "Chief" = "Chief",
+               "Parietal" = "Parietal",
+               "Endocrine_GHRL" = "Endocrine_GHRL",
+               "Endocrine_CHGA" = "Endocrine_CHGA",
+               "Endocrine_NEUROD1" = "Endocrine_NEUROD1")
+  ),
+  list(
+    group_name = "Barretts_Esophagus",
+    file = "science.abd1449_Table_S7.xlsx",
+    sheets = c("Columnar_Undifferentiated" = "Columnar_Undifferentiated",
+               "Columnar_Dividing" = "Columnar_Undifferentiated_Divid",
+               "Endocrine_NEUROG3" = "Endocrine_NEUROG3",
+               "Columnar_Intermediate" = "Columnar_Intermediate",
+               "Columnar_differentiated" = "Columnar_differentiated",
+               "Goblet" = "Goblet")
+  ),
+  list(
+    group_name = "Submucosal_Glands",
+    file = "science.abd1449_Table_S2.xlsx",
+    sheets = c("Duct_Intercalating" = "Duct_Intercalating",
+               "Oncocytes" = "Oncocytes",
+               "Mucous" = "Mucous")
+  )
+)
+
+barrett_order <- c()
+marker_term2gene_barrett_list <- list()
+
+for (grp in barretts_groups) {
+  xlsx_path <- file.path(barrett_base_dir, grp$file)
+  available_sheets <- readxl::excel_sheets(xlsx_path)
+  
+  for (canonical in names(grp$sheets)) {
+    sheet_name <- grp$sheets[[canonical]]
+    
+    actual_sheet <- sheet_name
+    if (!actual_sheet %in% available_sheets) {
+      match_idx <- grep(sheet_name, available_sheets, ignore.case=TRUE)
+      if(length(match_idx) > 0){
+         actual_sheet <- available_sheets[match_idx[1]]
+      } else {
+         warning(paste("Sheet not found:", sheet_name, "in", grp$file))
+         next
+      }
+    }
+    
+    final_term_name <- paste0(canonical, "_", grp$group_name, "..Barretts_Oesophagus")
+    barrett_order <- c(barrett_order, final_term_name)
+    
+    df <- readxl::read_excel(xlsx_path, sheet = actual_sheet)
+    
+    gene_col <- c("gene", "Symbol", "Genename", "Gene")
+    gene_col <- gene_col[gene_col %in% names(df)][1]
+    
+    padj_col <- c("p_val_adj", "FDR", "qval", "adj.P.Val", "padj")
+    padj_col <- padj_col[padj_col %in% names(df)][1]
+    
+    if (is.na(gene_col) || is.na(padj_col)) {
+      warning(paste0("Missing gene/padj columns in sheet: ", actual_sheet, " of file ", grp$file))
+      next
+    }
+    
+    tmp_df <- df %>%
+      dplyr::transmute(
+        term = final_term_name,
+        gene = as.character(.data[[gene_col]]),
+        padj = suppressWarnings(as.numeric(.data[[padj_col]]))
+      ) %>%
+      dplyr::filter(!is.na(gene), gene != "", !is.na(padj), padj < 0.05) %>%
+      dplyr::distinct(term, gene)
+      
+    marker_term2gene_barrett_list[[length(marker_term2gene_barrett_list) + 1]] <- tmp_df
+  }
+}
+
+marker_term2gene_barrett <- dplyr::bind_rows(marker_term2gene_barrett_list) %>%
+  dplyr::mutate(term = factor(term, levels = barrett_order)) %>%
+  dplyr::arrange(term) %>%
+  dplyr::filter(!is.na(term))
+
+marker_term2name_barrett <- marker_term2gene_barrett %>%
+  dplyr::distinct(term) %>%
+  dplyr::transmute(term = term, name = as.character(term))
+
+ALL_TERM2GENE[[length(ALL_TERM2GENE) + 1]] <- marker_term2gene_barrett
+ALL_TERM2NAME[[length(ALL_TERM2NAME) + 1]] <- marker_term2name_barrett
 
 ################################################################
 ################## Combined ####################################

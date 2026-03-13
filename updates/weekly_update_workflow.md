@@ -71,7 +71,22 @@ Pick **informative and critical figures** for a concise slide deck but do not mi
 | Survival | `ref_outs/*survival*.pdf` or `ref_outs/*KM*.pdf` |
 | 3CA validation | `ref_outs/3CA_*.pdf` |
 | Presentation | `ref_outs/Presentation/*.pdf` |
+| **PDO NMF / annotation** | `/rds/general/project/tumourheterogeneity1/ephemeral/PDOs_Pipeline/PDOs_outs/` |
 
+**Also check the PDO pipeline directory for new outputs each cycle:**
+
+```
+/rds/general/project/tumourheterogeneity1/ephemeral/PDOs_Pipeline/
+  PDOs_outs/          — NMF results, enrichment PDFs, correlation heatmaps
+  analysis/           — PDO analysis R scripts
+```
+
+Key PDO figure types to include in updates:
+- `PDOs_outs/optimal_nMP_metrics.png` — nMP selection plot
+- `PDOs_outs/metaprograms_heatmap.png` — NMF factor heatmap
+- `PDOs_outs/PDOs_enrichment_annotation.pdf` — MP annotation (all databases)
+- `PDOs_outs/mp_jaccard_self_pdo.pdf` — Jaccard self-similarity
+- `PDOs_outs/mp_correlation_pdo_meta_complexheatmap.pdf` — per-sample Spearman correlation
 Copy selected figures into this cycle's subfolder:
 
 ```bash
@@ -104,6 +119,7 @@ Slides are **results-focused** — straight to figures, with an optional brief o
 - **Every slide = one figure**, full-width or side-by-side, with an optional 1-line footnote in `\footnotesize`. Footnotes must be **informative** — explain what the figure shows or a key finding, not just "as requested".
 - **Text slides** only when a brief methods note is essential (e.g., describing two approaches). Keep to bullet points, small font.
 - **Side-by-side figures**: use `\begin{columns}` with `0.5\textwidth` each when comparing two plots.
+- **reg/noreg comparison**: When presenting state-based results (Survival, Hybrid proportions, etc.), always provide a side-by-side `reg` vs `noreg` comparison frame to prove result stability.
 - **Tables**: use `booktabs` (`\toprule`, `\midrule`, `\bottomrule`) for clean metric tables.
 
 ### LaTeX Template
@@ -316,4 +332,4 @@ updates/
 
 ## Update after each update cycle, in case style or focus change
 
-*Last updated: 2 March 2026*
+*Last updated: 12 March 2026*

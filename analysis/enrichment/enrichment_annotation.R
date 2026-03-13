@@ -159,6 +159,13 @@ enrich_heatmap <- function(cluster_enrich, element,
   
   # 3) Define terms_use (unchanged logic)
   if (is_custom) {
+    ####################
+    # Guard: custom element may be absent until per-stage reference is generated
+    ####################
+    if (!element %in% names(custom_refs)) {
+      message("Custom reference not found for element: ", element)
+      return(invisible(NULL))
+    }
     terms_use <- as.character(custom_refs[[element]]$TERM2NAME$term)
   } else {
     # For GO/H/M, if df is empty after initialization, we still stop
@@ -217,6 +224,16 @@ enrich_heatmap <- function(cluster_enrich, element,
   # Align columns and rows
   mat <- mat[terms_use, ordered_mps[ordered_mps %in% colnames(mat)], drop = FALSE]
   text_mat <- text_mat[terms_use, colnames(mat), drop = FALSE]
+
+  ####################
+  # Guard/normalise: ensure numeric matrix for pheatmap scaling
+  ####################
+  if (nrow(mat) == 0 || ncol(mat) == 0) {
+    message("No matrix content for element: ", element)
+    return(invisible(NULL))
+  }
+
+  mat <- matrix(as.numeric(mat), nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
   
   mp_sizes <- sapply(colnames(mat), function(x) {
     # If the column name is "MP1", we look up mp_gene_lists[["MP1"]]
@@ -271,6 +288,7 @@ enrich_heatmap(cluster_enrich, "Normal_Development_short", top_per_program = 8, 
 enrich_heatmap(cluster_enrich, "Organogenesis_major", top_per_program = 8, top_n = 80, cols = cols_palette)
 enrich_heatmap(cluster_enrich, "Organogenesis_sub", top_per_program = 8, top_n = 80, cols = cols_palette)
 enrich_heatmap(cluster_enrich, "Adult_Epithelium", top_per_program = 8, top_n = 80, cols = cols_palette)
+enrich_heatmap(cluster_enrich, "Barretts_Oesophagus", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 cat("Saved combined PDF\n")
 
@@ -280,40 +298,47 @@ cat("Saved combined PDF\n")
 
 # --- Standard Sets ---
 
-png("enrich_Hallmark.png", width = 2000, height = 1750, res = 300)
+png("enrich_Hallmark.png", width = 3500, height = 1750, res = 300)
 enrich_heatmap(cluster_enrich, "Hallmark", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 
-png("enrich_GO.png", width = 2300, height = 2000, res = 300)
+png("enrich_GO.png", width = 4025, height = 2000, res = 300)
 enrich_heatmap(cluster_enrich, "GO", top_per_program = 6, top_n = 60, cols = cols_palette)
 dev.off()
 
-png("enrich_MPs_3CA.png", width = 2000, height = 1800, res = 300)
+png("enrich_MPs_3CA.png", width = 3500, height = 1800, res = 300)
 enrich_heatmap(cluster_enrich, "MPs_3CA", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 
 # --- Custom Developmental Sets ---
 
-png("enrich_Early_Embryogenesis.png", width = 2200, height = 1500, res = 300)
+png("enrich_Early_Embryogenesis.png", width = 3850, height = 1500, res = 300)
 enrich_heatmap(cluster_enrich, "Early_Embryogenesis", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 
-png("enrich_Normal_Development_long.png", width = 2900, height = 3000, res = 300)
+png("enrich_Normal_Development_long.png", width = 5075, height = 3000, res = 300)
 enrich_heatmap(cluster_enrich, "Normal_Development_long", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 
-png("enrich_Normal_Development_short.png", width = 2900, height = 3000, res = 300)
+png("enrich_Normal_Development_short.png", width = 5075, height = 3000, res = 300)
 enrich_heatmap(cluster_enrich, "Normal_Development_short", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 
-png("enrich_Organogenesis_major.png", width = 2200, height = 1800, res = 300)
+png("enrich_Organogenesis_major.png", width = 3850, height = 1800, res = 300)
 enrich_heatmap(cluster_enrich, "Organogenesis_major", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 
-png("enrich_Organogenesis_sub.png", width = 2500, height = 1800, res = 300)
+png("enrich_Organogenesis_sub.png", width = 4375, height = 1800, res = 300)
 enrich_heatmap(cluster_enrich, "Organogenesis_sub", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 
-png("enrich_Adult_Epithelium.png", width = 2250, height = 1900, res = 300)
+png("enrich_Adult_Epithelium.png", width = 3938, height = 1900, res = 300)
 enrich_heatmap(cluster_enrich, "Adult_Epithelium", top_per_program = 8, top_n = 80, cols = cols_palette)
+dev.off()
+
+####################
+# Added standalone Barretts_Oesophagus enrichment figure
+####################
+png("enrich_Barretts_Oesophagus.png", width = 3938, height = 1900, res = 300)
+enrich_heatmap(cluster_enrich, "Barretts_Oesophagus", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
