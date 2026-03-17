@@ -87,6 +87,9 @@ Key PDO figure types to include in updates:
 - `PDOs_outs/PDOs_enrichment_annotation.pdf` — MP annotation (all databases)
 - `PDOs_outs/mp_jaccard_self_pdo.pdf` — Jaccard self-similarity
 - `PDOs_outs/mp_correlation_pdo_meta_complexheatmap.pdf` — per-sample Spearman correlation
+- `PDOs_outs/unresolved_states/*` — PDO unresolved cell pan-cancer relabeling results
+- `PDOs_outs/Auto_PDO_mp_correlation_*.pdf` — PDO versus scRef MPs correlation and cross-validation plots
+- `PDOs_outs/Auto_PDO_matched_*.pdf` — PDO Matched treated/untreated pairs temporal state analysis
 Copy selected figures into this cycle's subfolder:
 
 ```bash

@@ -157,7 +157,7 @@ done
 ### Key R Packages
 
 **Core**: Seurat, dplyr, tidyr, purrr, ggplot2, readxl, Matrix, parallel
-**Specialised**: infercna, NMF, GeneNMF, UCell, ComplexHeatmap, fgsea, msigdbr, reticulate
+**Specialised**: infercna, NMF, GeneNMF, UCell, ComplexHeatmap, fgsea, msigdbr, reticulate, monocle3, SeuratWrappers
 **Plotting**: patchwork, gridExtra, ggrepel, RColorBrewer, circlize, scales, colorspace
 
 ### Naming Conventions for Cell Types
@@ -263,6 +263,14 @@ Note: all 3 CNV scripts share identical library set: `data.table, dplyr, Complex
 | `Auto_states_topmpB_reg_noreg.R` | Unified Approach B state assignment with `reg/noreg` parameter; runs both modes and writes paired heatmap/proportion/CC-score figures in shared PDFs | `EAC_Ref_epi.rds`, `geneNMF_metaprograms_nMP_19.rds`, `UCell_nMP19_filtered.rds`, `meta_full_epi.rds`, `Cell_Cycle_Genes.csv` | `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds`, reg+noreg comparison PDFs, combined summary CSV |
 | `Auto_states_hybrid_pairwise_nodeplot.R` | Pairwise hybrid network plot (real-state nodes + pairwise hybrid edges), excludes >2-class hybrids from edges | `Auto_topmp_v2_states_B.rds`, `Auto_topmp_v2_mp_adj.rds` | `Auto_topmp_v2_hybrid_pairwise_nodeplot.pdf`, pairwise summary CSV |
 | `Auto_states_unresolved_pan_cancer_reg_noreg.R` | Unified unresolved-cell pan-cancer subclassification with `reg/noreg` parameter; outputs per-mode subclass calls and paired heatmaps (with CNA + CC annotations) | `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `UCell_3CA_MPs.rds`, `meta_full_epi.rds` | `Auto_topmp_v2_reg_noreg_unresolved_pan_cancer_heatmap.pdf`, per-mode unresolved CSV/RDS, combined summary CSV |
+| `Auto_sample_abundance.R` | Per-sample abundance/proportion plots for MPs (excl. CC, incl. CC) and states; sorted by diversity and by study; 6 stacked-bar panels in one PDF | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds` | `ref_outs/sample_abundance/Auto_sample_abundance.pdf` |
+| `Auto_sample_abundance.sh` | PBS wrapper for `Auto_sample_abundance.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
+| `Auto_pseudotime_states.R` | Monocle3 pseudotime: Part A — top 12 samples by diversity with 5 state labels (root=Classic_Proliferative); Part B — 3 state subsets (Barretts/EMT/Intestinal) with MP labels, per-sample trajectory (root MPs: MP17/MP13/MP18) | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds` | `ref_outs/pseudotime/partA/`, `ref_outs/pseudotime/partB/`, summary CSV |
+| `Auto_pseudotime_states.sh` | PBS wrapper for `Auto_pseudotime_states.R` (ncpus=8, mem=128gb, walltime=8h, dmtcp env) | — | submits R job |
+| `Auto_unresolved_relabel.R` | Unresolved cell relabelling via pan-cancer topMP; selects top 3 abundant MPs by sample+study coverage, creates expanded 8-state labels, re-plots proportion/heatmap, TCGA survival volcano | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `UCell_3CA_MPs.rds`, `meta_full_epi.rds`, TCGA data | `ref_outs/unresolved_states/` (states RDS, heatmap/proportion/volcano PDFs, coverage CSV) |
+| `Auto_unresolved_relabel.sh` | PBS wrapper for `Auto_unresolved_relabel.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
+| `Auto_hybrid_pairwise_v2.R` | Pairwise hybrid classification using top-2 MP groups (no multi-class concept); network nodeplot with state nodes + pairwise hybrid edges | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds`, `Auto_topmp_v2_noreg_group_max.rds` | `ref_outs/hybrid_v2/Auto_hybrid_pairwise_v2_nodeplot.pdf`, `Auto_hybrid_pairwise_v2_subtypes.rds` |
+| `Auto_hybrid_pairwise_v2.sh` | PBS wrapper for `Auto_hybrid_pairwise_v2.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
 
 ### `analysis/plotting/` — Publication Figures
 | File | Purpose | Key Inputs | Key Outputs |
@@ -277,6 +285,8 @@ Note: all 3 CNV scripts share identical library set: `data.table, dplyr, Complex
 | File | Purpose | Key Inputs | Key Outputs |
 | :--- | :--- | :--- | :--- |
 | `Auto_survival_clinical_mps_v2_reg_noreg.R` | Unified TCGA state survival workflow with `reg/noreg` parameter; separate state volcano panels and KM panels per histology in shared PDFs | `geneNMF_metaprograms_nMP_19.rds`, TCGA meta+TPM inputs, `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds` | `Auto_survival_tcga_state_volcano_reg_noreg.pdf`, `Auto_survival_tcga_state_km_reg_noreg.pdf`, combined state Cox CSV, summary CSV |
+| `Auto_cibersortx_reference.R` | Generate CIBERSORTx S-mode reference from full scATLAS (`EAC_Ref_merged_strict.rds`) covering all cell types (proportional downsampling to ~3000 cells); outputs SC reference matrix, cell labels, and copies TCGA mixture file | `EAC_Ref_merged_strict.rds` (column `celltype_update`) | `ref_outs/cibersortx/CIBERSORTx_sc_reference.txt`, `CIBERSORTx_cell_labels.csv`, `TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt` |
+| `Auto_cibersortx_reference.sh` | PBS wrapper for `Auto_cibersortx_reference.R` (ncpus=4, mem=96gb, walltime=2h, dmtcp env) | — | submits R job |
 
 ### `analysis/summary/` — Cross-Sample Summary
 | File | Purpose | Key Inputs | Key Outputs |
@@ -340,6 +350,8 @@ Evaluate the impact of cell-cycle (CC) regression on state assignments and downs
 - **reg**: Z-score MP scores *after* regressing out CC MPs (CC_G1S, CC_G2M).
 - **noreg**: Z-score MP scores directly.
 Required for establishing the robustness of state-linked clinical findings.
+
+**Final decision: noreg + Approach B.** All new scripts (Auto_sample_abundance, Auto_pseudotime_states, Auto_unresolved_relabel, Auto_hybrid_pairwise_v2, Auto_cibersortx_reference) use **noreg Approach B only** — no reg/noreg parameterisation.
 
 ## NotebookLM Skill (HPC Prerequisites)
 
