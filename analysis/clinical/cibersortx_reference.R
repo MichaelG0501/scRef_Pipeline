@@ -24,6 +24,10 @@
 library(Seurat)
 library(data.table)
 library(dplyr)
+####################
+# org.Hs.eg.db for Ensembl → gene symbol conversion
+####################
+library(org.Hs.eg.db)
 
 setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
 
@@ -136,8 +140,53 @@ mat <- as.matrix(mat)
 # Remove genes with zero expression across all sampled cells
 gene_sums <- rowSums(mat)
 mat <- mat[gene_sums > 0, , drop = FALSE]
-message(sprintf("Genes retained: %d (removed %d zero-sum genes)",
+message(sprintf("Genes retained (before symbol conversion): %d (removed %d zero-sum genes)",
                 nrow(mat), sum(gene_sums == 0)))
+
+####################
+# Convert Ensembl gene IDs to gene symbols
+# The Seurat object has a mix of symbols and ENSG IDs as feature names.
+# The mixture file uses gene symbols only (from tcga_data_prep.R via org.Hs.eg.db).
+# Mismatched IDs cause S-mode batch correction to stall (near-zero gene overlap).
+####################
+gene_names <- rownames(mat)
+is_ensg <- grepl("^ENSG[0-9]", gene_names)
+message(sprintf("Gene IDs: %d Ensembl, %d symbols", sum(is_ensg), sum(!is_ensg)))
+
+if (sum(is_ensg) > 0) {
+  ensg_ids <- gene_names[is_ensg]
+  mapped_symbols <- mapIds(org.Hs.eg.db,
+                           keys = ensg_ids,
+                           column = "SYMBOL",
+                           keytype = "ENSEMBL",
+                           multiVals = "first")
+  # Replace ENSG names with mapped symbols; drop unmapped (NA)
+  new_names <- gene_names
+  new_names[is_ensg] <- mapped_symbols[ensg_ids]
+  
+  # Remove genes that failed to map
+  unmapped <- is.na(new_names)
+  message(sprintf("Mapped %d Ensembl IDs to symbols; %d unmapped (dropped)",
+                  sum(is_ensg & !unmapped), sum(unmapped)))
+  mat <- mat[!unmapped, , drop = FALSE]
+  new_names <- new_names[!unmapped]
+  
+  # Handle duplicates: keep the gene with highest mean expression
+  if (any(duplicated(new_names))) {
+    dup_count <- sum(duplicated(new_names))
+    message(sprintf("Resolving %d duplicate gene symbols by max mean expression", dup_count))
+    mean_expr <- rowMeans(mat)
+    keep_idx <- tapply(seq_along(new_names), new_names, function(idx) {
+      idx[which.max(mean_expr[idx])]
+    })
+    keep_idx <- unlist(keep_idx)
+    mat <- mat[keep_idx, , drop = FALSE]
+    new_names <- new_names[keep_idx]
+  }
+  
+  rownames(mat) <- new_names
+}
+message(sprintf("Final gene count after symbol conversion: %d", nrow(mat)))
 
 ####################
 # Write CIBERSORTx sc_reference.txt
@@ -182,6 +231,49 @@ if (file.exists(mixture_path)) {
 }
 
 ####################
+# Generate Merged Class File
+# Groups 11 cell types into 5 broader classes to improve
+# the samples:cell-types ratio for High-Resolution mode.
+# Format: single tab-delimited line, same order as signature matrix phenotypes.
+# The signature matrix is built from sc_reference, so phenotype order matches
+# the unique cell type labels in order of first appearance in the header.
+####################
+message("Generating merged class file ...")
+
+# Define mapping from fine cell types to merged classes
+merge_map <- c(
+  b_cell                  = "Lymphocyte",
+  t_cell                  = "Lymphocyte",
+  nk_cell                 = "Lymphocyte",
+  plasma                  = "Lymphocyte",
+  macrophage              = "Myeloid",
+  dendritic               = "Myeloid",
+  mast                    = "Myeloid",
+  fibroblast              = "Stromal",
+  endothelial             = "Stromal",
+  Malignant               = "Malignant",
+  Non_malignant_epithelial = "Epithelial"
+)
+
+# Get cell type order from the reference header (order of first appearance)
+ref_type_order <- unique(as.character(labels_sub))
+message("Signature matrix phenotype order: ", paste(ref_type_order, collapse = ", "))
+
+# Map to merged classes
+merged_classes <- merge_map[ref_type_order]
+if (any(is.na(merged_classes))) {
+  warning("Unmapped cell types: ", paste(ref_type_order[is.na(merged_classes)], collapse = ", "))
+}
+
+# Write single-line tab-delimited merged class file
+merged_line <- paste(merged_classes, collapse = "\t")
+merged_outfile <- "cibersortx/CIBERSORTx_merged_classes.txt"
+cat(merged_line, file = merged_outfile, sep = "\n")
+message(sprintf("Merged class file written: %s (%d types -> %d classes)",
+                merged_outfile, length(ref_type_order), length(unique(merged_classes))))
+message("  Mapping: ", paste(ref_type_order, "->", merged_classes, collapse = ", "))
+
+####################
 # Summary CSV
 ####################
 summary_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/updates/new_updates/summaries/"
@@ -203,9 +295,11 @@ write.csv(summary_df, file.path(summary_dir, "Auto_cibersortx_reference_summary.
 
 message("CIBERSORTx reference generation complete.")
 message("Upload the following files to CIBERSORTx web portal:")
-message("  1. Single-cell reference: ref_outs/cibersortx/CIBERSORTx_sc_reference.txt")
+message("  1. Single-cell reference (S-mode): ref_outs/cibersortx/CIBERSORTx_sc_reference.txt")
 message("  2. Mixture file: ref_outs/cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
-message("  3. Use S-mode (batch correction) for high-resolution deconvolution")
+message("  3. Merged class file: ref_outs/cibersortx/CIBERSORTx_merged_classes.txt")
+message("  4. Gene subset file: ref_outs/cibersortx/CIBERSORTx_gene_subset.txt")
+message("  5. Use S-mode batch correction, disable QN (RNA-seq data)")
 
 
 ##################
@@ -218,3 +312,23 @@ if (length(bad_mps) > 0) {
 }
 genes <- unique(as.vector(unlist(mp.genes)))
 writeLines(genes, "cibersortx/CIBERSORTx_gene_subset.txt")
+
+####################
+# OPTIONAL: Filter Reference & Mixture for High-Resolution Speed (Tutorial 5)
+# Highly recommended for web-portal runs to avoid timeouts.
+####################
+message("Generating Filtered versions of inputs for High-Resolution fast run...")
+# 1. Load the mixture (produced by tcga_data_prep.R)
+mix_full <- fread("cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
+mix_f <- mix_full[GeneSymbol %in% genes]
+fwrite(mix_f, "cibersortx/CIBERSORTx_Mixture_Filtered.txt", sep = "\t")
+
+# 2. Filter the sc_reference
+# Header matches 'labels_sub', so we reconstruct the filtered table
+ref_f <- dt[GeneSymbol %in% genes]
+out_ref_f <- "cibersortx/CIBERSORTx_sc_reference_Filtered.txt"
+cat(header_line, file = out_ref_f, sep = "\n")
+fwrite(ref_f, out_ref_f, sep = "\t", append = TRUE, col.names = FALSE)
+
+message("  Fast/Filtered files written to ref_outs/cibersortx/ directory.")
+####################

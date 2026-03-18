@@ -240,11 +240,10 @@ dge_gsva_list <- all_markers %>%
 gsva_scores <- gsva(tpm_mat, dge_gsva_list, method = "gsva", kcdf = "Gaussian")
 
 gsva_sets <- list(
-  # MERGED: Intest Diff Columnar = MP3 + MP6
-  "Intest_Diff_Columnar" = unique(c(mp.genes$MP3, mp.genes$MP6)),
-  "Squamous_Transition" = mp.genes$MP9,
-  "Classic_Prolif"      = mp.genes$MP5,
-  "Plastic_Tolerant"    = mp.genes$MP8
+  "Intestinal Metaplasia" = unique(c(mp.genes$MP3, mp.genes$MP6)),
+  "Basal to Intest. Meta" = mp.genes$MP9,
+  "Classic Proliferative" = mp.genes$MP5,
+  "Stress-adaptive"       = mp.genes$MP8
 )
 
 gsva_scores <- gsva(tpm_mat, gsva_sets, method = "gsva", kcdf = "Gaussian")
@@ -281,7 +280,7 @@ library(survival)
 library(survminer)
 library(dplyr)
 
-cell_states <- c("Plastic_Tolerant", "Intest_Diff_Columnar", "Squamous_Transition", "Classic_Prolif")
+cell_states <- c("Stress-adaptive", "Intestinal Metaplasia", "Basal to Intest. Meta", "Classic Proliferative")
 
 pdf("CIBERSORT.pdf", width = 8, height = 10)
 
@@ -527,8 +526,8 @@ library(ggplot2)
 # ----------------------------
 # USER INPUTS
 # ----------------------------
-cell_states <- c("Plastic_Tolerant", "Intest_Diff_Columnar", "Squamous_Transition", "Classic_Prolif")
-state_of_interest <- "Classic_Prolif"   # <- change to any column in surv_data
+cell_states <- c("Stress-adaptive", "Intestinal Metaplasia", "Basal to Intest. Meta", "Classic Proliferative")
+state_of_interest <- "Classic Proliferative"   # <- change to any column in surv_data
 
 time_col  <- "OS_time"
 event_col <- "OS_event"

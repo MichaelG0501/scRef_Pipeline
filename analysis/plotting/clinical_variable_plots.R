@@ -92,21 +92,21 @@ cell_df <- cell_df %>%
 # 7) State order + colours (Approach B)
 ####################
 state_levels <- c(
-  "Classic_Proliferative",
-  "Intestinal_Metaplasia",
-  "EMT_related",
-  "Secretory_related",
-  "Immune_Infiltrated",
+  "Classic Proliferative",
+  "Basal to Intestinal Metaplasia",
+  "Stress-adaptive",
+  "SMG-like Metaplasia",
+  "f, Immune Infiltrating",
   "Unresolved",
   "Hybrid"
 )
 
 state_colors <- c(
-  Classic_Proliferative = "#E41A1C",
-  Intestinal_Metaplasia = "#4DAF4A",
-  EMT_related = "#984EA3",
-  Secretory_related = "#FF7F00",
-  Immune_Infiltrated = "#377EB8",
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intestinal Metaplasia" = "#4DAF4A",
+  "Stress-adaptive" = "#984EA3",
+  "SMG-like Metaplasia" = "#FF7F00",
+  "Immune Infiltrating" = "#377EB8",
   Unresolved = "grey80",
   Hybrid = "black"
 )

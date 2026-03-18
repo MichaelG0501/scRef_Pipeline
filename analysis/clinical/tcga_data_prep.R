@@ -193,7 +193,7 @@ library(data.table)
 # CIBERSORTx has a ~2GB upload limit and works best with ~5,000 cells max total.
 Idents(tmdata_all) <- "manual_state"
 # Define your states of interest
-my_states <- c("Classic_Prolif", "Squamous_Transition", "Intest_Diff_Columnar", "Plastic_Tolerant")
+my_states <- c("Classic Proliferative", "Basal to Intest. Meta", "Intestinal Metaplasia", "Stress-adaptive")
 clean_seurat <- subset(tmdata_all, idents = my_states)
 clean_seurat <- subset(clean_seurat, downsample = 500)
 

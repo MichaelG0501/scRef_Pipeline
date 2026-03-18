@@ -34,12 +34,10 @@ library(circlize)
 library(grid)
 # Define your 4 known states (NA = either 0 or 1)
 template_list <- rbind(
-  "Intest_Diff_Columnar" = c(0, NA, 1, 1, 0),
-  "Plastic_Tolerant"     = c(0, 0, 0, 0, 1),
-  "Classic_Prolif"       = c(1, 0, 0, 0, 0),
-  "Squamous_Transition"  = c(0, 1, NA, 0, 0)#, 
-  #  "IFN_columnar"           = c(0,0,1,0,0),
-  #  "Intest_Diff"          = c(0,0,0,1,0)
+  "Intestinal Metaplasia" = c(0, NA, 1, 1, 0),
+  "Stress-adaptive"       = c(0, 0, 0, 0, 1),
+  "Classic Proliferative" = c(1, 0, 0, 0, 0),
+  "Basal to Intest. Meta" = c(0, 1, NA, 0, 0)
 )
 
 colnames(template_list) <- rownames(mod_mat)
@@ -137,8 +135,7 @@ for (i in 1:nrow(all_combos)) {
 all_templates <- t(sapply(full_template_list, function(x) x$pattern))
 template_states <- sapply(full_template_list, function(x) x$state)
 
-template_states["0,0,1,0,0"] <- template_states["0,0,0,1,0"] <- "Intest_Diff_Columnar" 
-
+template_states["0,0,1,0,0"] <- template_states["0,0,0,1,0"] <- "Intestinal Metaplasia"
 # Prepare cell matrix
 cell_mat <- t(mod_mat)
 
@@ -170,21 +167,18 @@ max_score <- apply(cell_mat, 1, max)
 tmdata_all$manual_state[max_score < 0.1] <- "Unresolved"
 
 
-state_order <- c("Classic_Prolif", "Squamous_Transition", "Intest_Diff_Columnar", "Plastic_Tolerant", "Unresolved", "Unassigned")
-state_order <- c("Classic_Prolif", "Squamous_Transition", "Intest_Diff_Columnar", "Plastic_Tolerant", "Intest_Diff", "IFN_columnar", "Unresolved", "Unassigned")
+state_order <- c("Classic Proliferative", "Basal to Intest. Meta", "Intestinal Metaplasia", "Stress-adaptive", "Unresolved", "Unassigned")
 
 tmdata_all$manual_state <- factor(tmdata_all$manual_state, levels = state_order)
 
 manual_names <- levels(tmdata_all$manual_state)
 manual_cols <- c(
-  "Classic_Prolif"        = "#E41A1C",  # Red
-  "Squamous_Transition"   = "#4DAF4A",  # Green
-  "Intest_Diff_Columnar"  = "#984EA3",  # Purple
-  "Plastic_Tolerant"      = "#FF7F00",  # Orange
-  #  "Intest_Diff"           = "#377EB8",  # Blue (Added)
-  #  "IFN_columnar"          = "#A65628",  # Brown (Added)
-  "Unresolved" = "grey80",   # Light Grey
-  "Unassigned"            = "grey50"    # Darker Grey (Distinguishes noise from quienscent)
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Intestinal Metaplasia" = "#984EA3",
+  "Stress-adaptive"       = "#FF7F00",
+  "Unresolved"            = "grey80",
+  "Unassigned"            = "grey50"
 )
 
 sample_col <- "orig.ident"
@@ -454,18 +448,18 @@ library(ComplexHeatmap)
 library(circlize)
 library(Seurat)
 # Define the states you want to compare and their order
-state_order <- c("Prolif_Columnar", "Classic_Prolif", "Stress_Columnar", "Columnar", "Stress_Plastic","Intest_Diff", "Unassigned/Quienscent", "Unassigned")
+state_order <- c("Prolif. Columnar", "Classic Proliferative", "Stress Columnar", "Columnar", "Stress Plastic","Intestinal Diff.", "Unassigned/Quienscent", "Unassigned")
 
 manual_names <- levels(tmdata_pdos$manual_state)
 manual_cols <- c(
-  "Prolif_Columnar"       = "#FB8072",  # Light Red/Coral (Related to Prolif)
-  "Classic_Prolif"        = "#E41A1C",  # Deep Red
-  "Stress_Columnar"       = "#BEBADA",  # Light Purple (Stress + Columnar mix)
-  "Columnar"              = "#984EA3",  # Dark Purple
-  "Stress_Plastic"        = "#FF7F00",  # Orange (Classic Plastic/Stress color)
-  "Intest_Diff"           = "#377EB8",  # Blue
-  "Unassigned/Quienscent" = "grey80",   # Light Grey
-  "Unassigned"            = "grey50"    # Medium Grey
+  "Prolif. Columnar"    = "#FB8072",
+  "Classic Proliferative" = "#E41A1C",
+  "Stress Columnar"     = "#BEBADA",
+  "Columnar"            = "#984EA3",
+  "Stress Plastic"      = "#FF7F00",
+  "Intestinal Diff."    = "#377EB8",
+  "Unassigned/Quienscent" = "grey80",
+  "Unassigned"          = "grey50"
 )
 
 
@@ -575,12 +569,12 @@ library(grid)
 
 # Define your 4 known states (NA = either 0 or 1)
 template_list <- rbind(
-  "Stress_Plastic" = c(0, 0, 1, 0),
-  "Stress_Columnar"     = c(0, 1, 1, 0),
-  "Stress_Prolif"       = c(1, 0, 1, 0),
-  "Classic_Prolif"       = c(1, 0, 0, 0),
-  "Columnar"  = c(0, 1, 0, 0),
-  "Intest_Diff"  = c(0, 0, 0, 1)
+  "Stress Plastic"      = c(0, 0, 1, 0),
+  "Stress Columnar"     = c(0, 1, 1, 0),
+  "Stress Proliferative"= c(1, 0, 1, 0),
+  "Classic Proliferative"= c(1, 0, 0, 0),
+  "Columnar"            = c(0, 1, 0, 0),
+  "Intestinal Diff."    = c(0, 0, 0, 1)
 )
 
 colnames(template_list) <- rownames(mod_mat)
@@ -709,20 +703,20 @@ max_score <- apply(cell_mat, 1, max)
 tmdata_pdos$manual_state[max_score < 0.1] <- "Unresolved"
 
 
-state_order <- c("Stress_Columnar", "Classic_Prolif", "Stress_Prolif", "Columnar", "Stress_Plastic","Intest_Diff", "Unresolved", "Unassigned")
+state_order <- c("Stress Columnar", "Classic Proliferative", "Stress Proliferative", "Columnar", "Stress Plastic","Intestinal Diff.", "Unresolved", "Unassigned")
 
 tmdata_pdos$manual_state <- factor(tmdata_pdos$manual_state, levels = state_order)
 
 manual_names <- levels(tmdata_pdos$manual_state)
 manual_cols <- c(
-  "Stress_Columnar" = "green",  # Pink (hybrid state, distinct)
-  "Classic_Prolif"         = "#E41A1C",  # Deep Red
-  "Stress_Prolif"          = "#FF4D4D",  # Red-Orange (stress variant)
-  "Columnar"               = "#984EA3",  # Purple
-  "Stress_Plastic"         = "#FF7F00",  # Orange
-  "Intest_Diff"            = "#377EB8",  # Blue
-  "Unresolved"             = "grey80",   # Light Grey
-  "Unassigned"             = "grey50"    # Medium Grey
+  "Stress Columnar"     = "green",
+  "Classic Proliferative" = "#E41A1C",
+  "Stress Proliferative" = "#FF4D4D",
+  "Columnar"            = "#984EA3",
+  "Stress Plastic"      = "#FF7F00",
+  "Intestinal Diff."    = "#377EB8",
+  "Unresolved"          = "grey80",
+  "Unassigned"          = "grey50"
 )
 
 sample_col <- "orig.ident"

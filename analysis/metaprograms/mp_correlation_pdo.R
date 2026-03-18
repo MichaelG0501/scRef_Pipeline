@@ -113,13 +113,13 @@ tmdata_pdos <- tmdata_pdos[, cell_ord]
 mod_mat <- t(as.matrix(tmdata_pdos@meta.data[, mp_tree_order, drop = FALSE]))
 # Create a mapping vector based on your table
 mp_descriptions <- c(
-  "MP3"  = "MP3_G2M_mitotic",
-  "MP6"  = "MP6_MYC Biosynth",
-  "MP1"  = "MP1_G2M_checkpoint",
-  "MP4"  = "MP4_G1S Cycle",
-  "MP7"  = "MP7_Columnar progenitor",
-  "MP8"  = "MP8_Stress-induced plasticity",
-  "MP5"  = "MP5_Intest diff"
+  "MP3"  = "G2M Cell Cycle",
+  "MP6"  = "MYC Proliferation",
+  "MP1"  = "G2M Checkpoint",
+  "MP4"  = "G1S Cell Cycle",
+  "MP7"  = "Columnar Progen.",
+  "MP8"  = "Hypoxic Inflam.",
+  "MP5"  = "Intestinal Diff."
 )
 rownames(mod_mat) <- mp_descriptions[rownames(mod_mat)]
 
@@ -364,13 +364,13 @@ library(grid)
 
 # Define your 4 known states (NA = either 0 or 1)
 template_list <- rbind(
-  "Stress_Plastic" = c(0, 0, 1, 0),
-  "Stress_Prolif_Columnar"     = c(1, 1, 1, 0),
-  "Prolif_Columnar"     = c(1, 1, 0, 0),
-  "Stress_Prolif"       = c(1, 0, 1, 0),
-  "Classic_Prolif"       = c(1, 0, 0, 0),
-  "Columnar"  = c(0, 1, 0, 0),
-  "Intest_Diff"  = c(0, 0, 0, 1)
+  "Stress Plastic"      = c(0, 0, 1, 0),
+  "Stress Prolif. Col." = c(1, 1, 1, 0),
+  "Prolif. Columnar"    = c(1, 1, 0, 0),
+  "Stress Proliferative"= c(1, 0, 1, 0),
+  "Classic Proliferative"= c(1, 0, 0, 0),
+  "Columnar"            = c(0, 1, 0, 0),
+  "Intestinal Diff."    = c(0, 0, 0, 1)
 )
 
 colnames(template_list) <- rownames(mod_mat)
@@ -499,21 +499,21 @@ max_score <- apply(cell_mat, 1, max)
 tmdata_pdos$manual_state[max_score < 0.1] <- "Unresolved"
 
 
-state_order <- c("Stress_Prolif_Columnar", "Prolif_Columnar", "Classic_Prolif", "Stress_Prolif", "Columnar", "Stress_Plastic","Intest_Diff", "Unresolved", "Unassigned")
+state_order <- c("Stress Prolif. Col.", "Prolif. Columnar", "Classic Proliferative", "Stress Proliferative", "Columnar", "Stress Plastic","Intestinal Diff.", "Unresolved", "Unassigned")
 
 tmdata_pdos$manual_state <- factor(tmdata_pdos$manual_state, levels = state_order)
 
 manual_names <- levels(tmdata_pdos$manual_state)
 manual_cols <- c(
-  "Stress_Prolif_Columnar" = "#F781BF",  # Pink (hybrid state, distinct)
-  "Prolif_Columnar"        = "#FB8072",  # Light Coral
-  "Classic_Prolif"         = "#E41A1C",  # Deep Red
-  "Stress_Prolif"          = "#FF4D4D",  # Red-Orange (stress variant)
-  "Columnar"               = "#984EA3",  # Purple
-  "Stress_Plastic"         = "#FF7F00",  # Orange
-  "Intest_Diff"            = "#377EB8",  # Blue
-  "Unresolved"             = "grey80",   # Light Grey
-  "Unassigned"             = "grey50"    # Medium Grey
+  "Stress Prolif. Col." = "#F781BF",
+  "Prolif. Columnar"    = "#FB8072",
+  "Classic Proliferative" = "#E41A1C",
+  "Stress Proliferative" = "#FF4D4D",
+  "Columnar"            = "#984EA3",
+  "Stress Plastic"      = "#FF7F00",
+  "Intestinal Diff."    = "#377EB8",
+  "Unresolved"          = "grey80",
+  "Unassigned"          = "grey50"
 )
 
 sample_col <- "orig.ident"

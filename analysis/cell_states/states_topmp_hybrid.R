@@ -73,31 +73,31 @@ cat("Canonical MP tree order:", mp_tree_order_names, "\n")
 # 3. MP annotations, CC identification, group definitions
 # ============================================================================
 mp_descriptions <- c(
-  "MP1"  = "G2M_cycle",
-  "MP2"  = "MYC_prolif",
-  "MP5"  = "IFN_response",
-  "MP7"  = "S_cycle",
-  "MP8"  = "Intestinal_diff",
-  "MP9"  = "G1S_cycle",
-  "MP10" = "Columnar_diff",
-  "MP12" = "Neuro_epithelial",
-  "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial",
-  "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff",
-  "MP17" = "Squamous_transition",
-  "MP18" = "Adaptive_secretory"
+  "MP1"  = "G2M Cell Cycle",
+  "MP9"  = "G1S Cell Cycle",
+  "MP2"  = "MYC Proliferation",
+  "MP17" = "Basal-like Trans.",
+  "MP14" = "Hypoxia Adapted",
+  "MP5"  = "Epithelial IFN",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Intest.",
+  "MP16" = "Secretory Gastric",
+  "MP15" = "Immune Infilt.",
+  "MP12" = "Neuro-responsive"
 )
 
 cc_mps <- c("MP1", "MP7", "MP9")
 non_cc_mps <- setdiff(retained_mps, cc_mps)
 
 state_groups <- list(
-  Classic_Proliferative = c("MP2"),
-  Intestinal_Metaplasia = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  EMT_related = c("MP13", "MP12"),
-  Secretory_related = c("MP18", "MP16"),
-  Immune_Infiltrated = c("MP15")
+  "Classic Proliferative" = c("MP2"),
+  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress-adaptive" = c("MP13", "MP12"),
+  "SMG-like Metaplasia" = c("MP18", "MP16"),
+  "Immune Infiltrating" = c("MP15")
 )
 
 stopifnot(all(unlist(state_groups) %in% non_cc_mps))
@@ -643,11 +643,11 @@ mp_tree_order_names <- paste0("MP", mp_tree_order)
 cc_mps <- c("MP1", "MP7", "MP9")
 
 state_groups <- list(
-  Classic_Proliferative = c("MP2"),
-  Intestinal_Metaplasia = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  EMT_related = c("MP13", "MP12"),
-  Secretory_related = c("MP18", "MP16"),
-  Immune_Infiltrated = c("MP15")
+  "Classic Proliferative" = c("MP2"),
+  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress-adaptive" = c("MP13", "MP12"),
+  "SMG-like Metaplasia" = c("MP18", "MP16"),
+  "Immune Infiltrating" = c("MP15")
 )
 
 group_order_pos <- sapply(state_groups, function(mps) {
@@ -661,20 +661,20 @@ pair_levels <- combn(ordered_group_names, 2, simplify = FALSE)
 pair_labels <- vapply(pair_levels, function(x) paste(x, collapse = "__"), character(1))
 
 mp_descriptions <- c(
-  "MP1" = "G2M_cycle",
-  "MP2" = "MYC_prolif",
-  "MP5" = "IFN_response",
-  "MP7" = "S_cycle",
-  "MP8" = "Intestinal_diff",
-  "MP9" = "G1S_cycle",
-  "MP10" = "Columnar_diff",
-  "MP12" = "Neuro_epithelial",
-  "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial",
-  "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff",
-  "MP17" = "Squamous_transition",
-  "MP18" = "Adaptive_secretory"
+  "MP1"  = "G2M Cell Cycle",
+  "MP9"  = "G1S Cell Cycle",
+  "MP2"  = "MYC Proliferation",
+  "MP17" = "Basal-like Trans.",
+  "MP14" = "Hypoxia Adapted",
+  "MP5"  = "Epithelial IFN",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Intest.",
+  "MP16" = "Secretory Gastric",
+  "MP15" = "Immune Infilt.",
+  "MP12" = "Neuro-responsive"
 )
 
 ####################

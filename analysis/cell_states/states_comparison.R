@@ -70,20 +70,20 @@ tmdata_all$topmp_state   <- topmp_states
 # 2. Load MP annotations (for context)
 # ============================================================================
 mp_descriptions <- c(
-  "MP1"  = "G2M_cycle",
-  "MP2"  = "MYC_prolif",
-  "MP5"  = "IFN_response",
-  "MP7"  = "S_cycle",
-  "MP8"  = "Intestinal_diff",
-  "MP9"  = "G1S_cycle",
-  "MP10" = "Columnar_diff",
-  "MP12" = "Neuro_epithelial",
-  "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial",
-  "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff",
-  "MP17" = "Squamous_transition",
-  "MP18" = "Adaptive_secretory"
+  "MP1"  = "G2M Cell Cycle",
+  "MP9"  = "G1S Cell Cycle",
+  "MP2"  = "MYC Proliferation",
+  "MP17" = "Basal-like Trans.",
+  "MP14" = "Hypoxia Adapted",
+  "MP5"  = "Epithelial IFN",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Intest.",
+  "MP16" = "Secretory Gastric",
+  "MP15" = "Immune Infilt.",
+  "MP12" = "Neuro-responsive"
 )
 
 cc_mps     <- c("MP1", "MP7", "MP9")

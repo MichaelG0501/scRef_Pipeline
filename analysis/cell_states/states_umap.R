@@ -25,9 +25,7 @@ sample_totals <- props_long %>%
   group_by(orig.ident) %>%
   summarise(total_sample_n = sum(n), .groups = "drop")
 
-target_states <- c("Classic_Prolif", "Squamous_Transition", "Intest_Diff_Columnar", "Plastic_Tolerant" )
-target_states <- c("Classic_Prolif", "Squamous_Transition", "Intest_Diff_Columnar", "Plastic_Tolerant", "Intest_Diff", "IFN_columnar")
-target_states <- c("Intest_Diff_Columnar", "Intest_Diff", "IFN_columnar")
+target_states <- c("Classic Proliferative", "Basal to Intest. Meta", "Intestinal Metaplasia", "Stress-adaptive")
 
 rank_df <- props_long %>%
   filter(manual_state %in% target_states) %>%

@@ -45,42 +45,55 @@ ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
 # constants
 ####################
 mp_descriptions <- c(
-  "MP1" = "G2M_cycle", "MP2" = "MYC_prolif", "MP5" = "IFN_response",
-  "MP7" = "S_cycle", "MP8" = "Intestinal_diff", "MP9" = "G1S_cycle",
-  "MP10" = "Columnar_diff", "MP12" = "Neuro_epithelial", "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial", "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff", "MP17" = "Squamous_transition", "MP18" = "Adaptive_secretory"
+  "MP1"  = "G2M Cell Cycle",
+  "MP9"  = "G1S Cell Cycle",
+  "MP2"  = "MYC-related Proliferation",
+  "MP17" = "Basal-like Transition",
+  "MP14" = "Hypoxia Adapted Epi.",
+  "MP5"  = "Epithelial IFN Resp.",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam. Epi.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Diff. (Intest.)",
+  "MP16" = "Secretory Diff. (Gastric)",
+  "MP15" = "Immune Attracting",
+  "MP12" = "Stressed-basal"
 )
 
 state_groups <- list(
-  Classic_Proliferative = c("MP2"),
-  Barretts_Metaplasia = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  EMT_related = c("MP13", "MP12"),
-  Intestinal_Metaplasia = c("MP18", "MP16"),
-  Immune_Infiltrated = c("MP15")
+  "Classic Proliferative" = c("MP2"),
+  "Basal to Intest. Meta" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress-adaptive"       = c("MP13", "MP12"),
+  "SMG-like Metaplasia"   = c("MP18", "MP16"),
+  "Immune Infiltrated"    = c("MP15")
 )
 
 group_cols <- c(
-  Classic_Proliferative = "#E41A1C", Barretts_Metaplasia = "#4DAF4A",
-  EMT_related = "#984EA3", Intestinal_Metaplasia = "#FF7F00",
-  Immune_Infiltrated = "#377EB8", Unresolved = "grey80", Hybrid = "black"
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Stress-adaptive"       = "#984EA3",
+  "SMG-like Metaplasia"   = "#FF7F00",
+  "Immune Infiltrated"    = "#377EB8",
+  Unresolved = "grey80",
+  Hybrid = "black"
 )
 
 mp_cols <- c(
-  "MP1_G2M_cycle" = "#B0B0B0",
-  "MP2_MYC_prolif" = "#E41A1C",
-  "MP5_IFN_response" = "#66C2A5",
-  "MP7_S_cycle" = "#999999",
-  "MP8_Intestinal_diff" = "#FC8D62",
-  "MP9_G1S_cycle" = "#C0C0C0",
-  "MP10_Columnar_diff" = "#A6D854",
-  "MP12_Neuro_epithelial" = "#E78AC3",
-  "MP13_Partial_EMT" = "#984EA3",
-  "MP14_Hypoxia_epithelial" = "#8DA0CB",
-  "MP15_T_NK_infiltration" = "#377EB8",
-  "MP16_Secretory_diff" = "#FFD92F",
-  "MP17_Squamous_transition" = "#4DAF4A",
-  "MP18_Adaptive_secretory" = "#FF7F00"
+  "MP1_G2M Cell Cycle" = "#B0B0B0",
+  "MP2_MYC-related Proliferation" = "#E41A1C",
+  "MP5_Epithelial IFN Resp." = "#66C2A5",
+  "MP7_DNA Damage Repair" = "#999999",
+  "MP8_Intestinal Diff." = "#FC8D62",
+  "MP9_G1S Cell Cycle" = "#C0C0C0",
+  "MP10_Columnar Diff." = "#A6D854",
+  "MP12_Stressed-basal" = "#E78AC3",
+  "MP13_Hypoxic Inflam. Epi." = "#984EA3",
+  "MP14_Hypoxia Adapted Epi." = "#8DA0CB",
+  "MP15_Immune Attracting" = "#377EB8",
+  "MP16_Secretory Diff. (Gastric)" = "#FFD92F",
+  "MP17_Basal-like Transition" = "#4DAF4A",
+  "MP18_Secretory Diff. (Intest.)" = "#FF7F00"
 )
 
 ####################
@@ -247,7 +260,7 @@ totals_df <- data.frame(
 ) %>%
   count(orig.ident, name = "total_n")
 
-target_states <- c("Classic_Proliferative", "Barretts_Metaplasia", "EMT_related", "Intestinal_Metaplasia", "Immune_Infiltrated")
+target_states <- c("Classic Proliferative", "Basal to Intest. Meta", "Stress-adaptive", "SMG-like Metaplasia", "Immune Infiltrated")
 
 state_df <- data.frame(
   cell = names(state_B),

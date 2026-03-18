@@ -72,31 +72,31 @@ mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_
 mp_tree_order_names <- paste0("MP", mp_tree_order)
 
 mp_descriptions <- c(
-  "MP1" = "G2M_cycle",
-  "MP2" = "MYC_prolif",
-  "MP5" = "IFN_response",
-  "MP7" = "S_cycle",
-  "MP8" = "Intestinal_diff",
-  "MP9" = "G1S_cycle",
-  "MP10" = "Columnar_diff",
-  "MP12" = "Neuro_epithelial",
-  "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial",
-  "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff",
-  "MP17" = "Squamous_transition",
-  "MP18" = "Adaptive_secretory"
+  "MP1"  = "G2M Cell Cycle",
+  "MP9"  = "G1S Cell Cycle",
+  "MP2"  = "MYC-related Proliferation",
+  "MP17" = "Basal-like Transition",
+  "MP14" = "Hypoxia Adapted Epi.",
+  "MP5"  = "Epithelial IFN Resp.",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam. Epi.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Diff. (Intest.)",
+  "MP16" = "Secretory Diff. (Gastric)",
+  "MP15" = "Immune Attracting",
+  "MP12" = "Stressed-basal"
 )
 
 cc_mps <- c("MP1", "MP7", "MP9")
 non_cc_mps <- setdiff(retained_mps, cc_mps)
 
 state_groups <- list(
-  Classic_Proliferative = c("MP2"),
-  Barretts_Metaplasia = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  EMT_related = c("MP13", "MP12"),
-  Intestinal_Metaplasia = c("MP18", "MP16"),
-  Immune_Infiltrated = c("MP15")
+  "Classic Proliferative" = c("MP2"),
+  "Basal to Intest. Meta" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress-adaptive"       = c("MP13", "MP12"),
+  "SMG-like Metaplasia"   = c("MP18", "MP16"),
+  "Immune Infiltrated"    = c("MP15")
 )
 
 group_order_pos <- sapply(state_groups, function(mps) {
@@ -108,13 +108,13 @@ ordered_group_names <- names(sort(group_order_pos))
 state_level_order <- c(ordered_group_names, "Unresolved", "Hybrid")
 
 group_cols <- c(
-  Classic_Proliferative = "#E41A1C",
-  Barretts_Metaplasia = "#4DAF4A",
-  EMT_related = "#984EA3",
-  Intestinal_Metaplasia = "#FF7F00",
-  Immune_Infiltrated = "#377EB8",
-  Unresolved = "grey80",
-  Hybrid = "black"
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Stress-adaptive"       = "#984EA3",
+  "SMG-like Metaplasia"   = "#FF7F00",
+  "Immune Infiltrated"    = "#377EB8",
+  "Unresolved"            = "grey80",
+  "Hybrid"                = "black"
 )
 
 common_cells <- intersect(rownames(ucell_scores), Cells(tmdata_all))

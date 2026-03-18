@@ -66,17 +66,17 @@ cell_df <- bind_rows(
 )
 
 state_levels <- c(
-  "Classic_Proliferative", "Barretts_Metaplasia", "EMT_related",
-  "Intestinal_Metaplasia", "Immune_Infiltrated", "Unresolved", "Hybrid"
+  "Classic Proliferative", "Basal to Intest. Meta", "Stress-adaptive",
+  "SMG-like Metaplasia", "Immune Infiltrated", "Unresolved", "Hybrid"
 )
 state_colors <- c(
-  Classic_Proliferative = "#E41A1C",
-  Barretts_Metaplasia = "#4DAF4A",
-  EMT_related = "#984EA3",
-  Intestinal_Metaplasia = "#FF7F00",
-  Immune_Infiltrated = "#377EB8",
-  Unresolved = "grey80",
-  Hybrid = "black"
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Stress-adaptive"       = "#984EA3",
+  "SMG-like Metaplasia"   = "#FF7F00",
+  "Immune Infiltrated"    = "#377EB8",
+  "Unresolved"            = "grey80",
+  "Hybrid"                = "black"
 )
 
 compute_plot_data <- function(data, group_var, filter_expr = NULL, studyname = NULL) {

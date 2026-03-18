@@ -56,25 +56,38 @@ dir.create("unresolved_states/", recursive = TRUE, showWarnings = FALSE)
 # constants
 ####################
 state_groups <- list(
-  Classic_Proliferative = c("MP2"),
-  Barretts_Metaplasia = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  EMT_related = c("MP13", "MP12"),
-  Intestinal_Metaplasia = c("MP18", "MP16"),
-  Immune_Infiltrated = c("MP15")
+  "Classic Proliferative" = c("MP2"),
+  "Basal to Intest. Meta" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress-adaptive"       = c("MP13", "MP12"),
+  "SMG-like Metaplasia"   = c("MP18", "MP16"),
+  "Immune Infiltrated"    = c("MP15")
 )
 
 group_cols <- c(
-  Classic_Proliferative = "#E41A1C", Barretts_Metaplasia = "#4DAF4A",
-  EMT_related = "#984EA3", Intestinal_Metaplasia = "#FF7F00",
-  Immune_Infiltrated = "#377EB8", Unresolved = "grey80", Hybrid = "black"
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Stress-adaptive"       = "#984EA3",
+  "SMG-like Metaplasia"   = "#FF7F00",
+  "Immune Infiltrated"    = "#377EB8",
+  "Unresolved"            = "grey80",
+  "Hybrid"                = "black"
 )
 
 mp_descriptions <- c(
-  "MP1" = "G2M_cycle", "MP2" = "MYC_prolif", "MP5" = "IFN_response",
-  "MP7" = "S_cycle", "MP8" = "Intestinal_diff", "MP9" = "G1S_cycle",
-  "MP10" = "Columnar_diff", "MP12" = "Neuro_epithelial", "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial", "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff", "MP17" = "Squamous_transition", "MP18" = "Adaptive_secretory"
+  "MP1"  = "G2M Cell Cycle",
+  "MP9"  = "G1S Cell Cycle",
+  "MP2"  = "MYC-related Proliferation",
+  "MP17" = "Basal-like Transition",
+  "MP14" = "Hypoxia Adapted Epi.",
+  "MP5"  = "Epithelial IFN Resp.",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam. Epi.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Diff. (Intest.)",
+  "MP16" = "Secretory Diff. (Gastric)",
+  "MP15" = "Immune Attracting",
+  "MP12" = "Stressed-basal"
 )
 cc_mps <- c("MP1", "MP7", "MP9")
 non_cc_mps <- c("MP2", "MP5", "MP8", "MP10", "MP12", "MP13", "MP14", "MP15", "MP16", "MP17", "MP18")
@@ -262,8 +275,8 @@ for (cell in unresolved_cells) {
 
 new_state_names <- unique(clean_3ca_name(retained_3ca))
 state_level_order_updated <- c(
-  "Classic_Proliferative", "Barretts_Metaplasia", "EMT_related",
-  "Intestinal_Metaplasia", "Immune_Infiltrated",
+  "Classic Proliferative", "Basal to Intest. Meta", "Stress-adaptive",
+  "SMG-like Metaplasia", "Immune Infiltrated",
   sort(new_state_names),
   "Unresolved", "Hybrid"
 )

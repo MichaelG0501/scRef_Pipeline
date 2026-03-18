@@ -112,13 +112,20 @@ tmdata_all <- tmdata_all[, cell_ord]
 mod_mat <- t(as.matrix(tmdata_all@meta.data[, mp_tree_order, drop = FALSE]))
 # Create a mapping vector based on your table
 mp_descriptions <- c(
-  "MP1" = "MP1_G2M Cycle",
-  "MP7" = "MP7_G1S Cycle",
-  "MP5" = "MP5_MYC Biosynth",
-  "MP9" = "MP9_Squamous transition",
-  "MP3" = "MP3_IFN_act columnar",
-  "MP6" = "MP6_Intest diff",
-  "MP8" = "MP8_Stress-induced plasticity"
+  "MP1"  = "G2M Cell Cycle",
+  "MP9"  = "G1S Cell Cycle",
+  "MP2"  = "MYC Proliferation",
+  "MP17" = "Basal-like Trans.",
+  "MP14" = "Hypoxia Adapted",
+  "MP5"  = "Epithelial IFN",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Intest.",
+  "MP16" = "Secretory Gastric",
+  "MP15" = "Immune Infilt.",
+  "MP12" = "Neuro-responsive"
 )
 rownames(mod_mat) <- mp_descriptions[rownames(mod_mat)]
 
@@ -348,12 +355,10 @@ library(circlize)
 library(grid)
 # Define your 4 known states (NA = either 0 or 1)
 template_list <- rbind(
-  "Intest_Metaplasia" = c(0, NA, 1, 1, 0),
-  "Plastic_Tolerant"     = c(0, 0, 0, 0, 1),
-  "Classic_Prolif"       = c(1, 0, 0, 0, 0),
-  "Squamous_Transition"  = c(0, 1, NA, 0, 0)#, 
-#  "IFN_columnar"           = c(0,0,1,0,0),
-#  "Intest_Diff"          = c(0,0,0,1,0)
+  "Intestinal Metaplasia" = c(0, NA, 1, 1, 0),
+  "Stress-adaptive"       = c(0, 0, 0, 0, 1),
+  "Classic Proliferative" = c(1, 0, 0, 0, 0),
+  "Basal to Intest. Meta" = c(0, 1, NA, 0, 0)
 )
 
 colnames(template_list) <- rownames(mod_mat)
@@ -484,21 +489,18 @@ max_score <- apply(cell_mat, 1, max)
 tmdata_all$manual_state[max_score < 0.1] <- "Unresolved"
 
 
-state_order <- c("Classic_Prolif", "Squamous_Transition", "Intest_Metaplasia", "Plastic_Tolerant", "Unresolved", "Unassigned")
-state_order <- c("Classic_Prolif", "Squamous_Transition", "Intest_Metaplasia", "Plastic_Tolerant", "Intest_Diff", "IFN_columnar", "Unresolved", "Unassigned")
+state_order <- c("Classic Proliferative", "Basal to Intest. Meta", "Intestinal Metaplasia", "Stress-adaptive", "Unresolved", "Unassigned")
 
 tmdata_all$manual_state <- factor(tmdata_all$manual_state, levels = state_order)
 
 manual_names <- levels(tmdata_all$manual_state)
 manual_cols <- c(
-  "Classic_Prolif"        = "#E41A1C",  # Red
-  "Squamous_Transition"   = "#4DAF4A",  # Green
-  "Intest_Metaplasia"  = "#984EA3",  # Purple
-  "Plastic_Tolerant"      = "#FF7F00",  # Orange
-#  "Intest_Diff"           = "#377EB8",  # Blue (Added)
-#  "IFN_columnar"          = "#A65628",  # Brown (Added)
-  "Unresolved" = "grey80",   # Light Grey
-  "Unassigned"            = "grey50"    # Darker Grey (Distinguishes noise from quienscent)
+  "Classic Proliferative" = "#E41A1C",  # Red
+  "Basal to Intest. Meta" = "#4DAF4A",  # Green
+  "Intestinal Metaplasia" = "#984EA3",  # Purple
+  "Stress-adaptive"       = "#FF7F00",  # Orange
+  "Unresolved"            = "grey80",   # Light Grey
+  "Unassigned"            = "grey50"    # Darker Grey
 )
 
 sample_col <- "orig.ident"

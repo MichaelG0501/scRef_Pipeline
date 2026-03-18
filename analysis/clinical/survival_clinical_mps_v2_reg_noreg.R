@@ -56,11 +56,11 @@ infer_histology <- function(type_vec) {
 surv_data$HistologyGroup <- infer_histology(surv_data$type)
 
 state_groups <- list(
-  Classic_Proliferative = c("MP2"),
-  Barretts_Metaplasia = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  EMT_related = c("MP13", "MP12"),
-  Intestinal_Metaplasia = c("MP18", "MP16"),
-  Immune_Infiltrated = c("MP15")
+  "Classic Proliferative" = c("MP2"),
+  "Basal to Intest. Meta" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress-adaptive"       = c("MP13", "MP12"),
+  "SMG-like Metaplasia"   = c("MP18", "MP16"),
+  "Immune Infiltrated"    = c("MP15")
 )
 for (nm in names(state_groups)) {
   mps <- intersect(state_groups[[nm]], colnames(surv_data))

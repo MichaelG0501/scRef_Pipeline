@@ -16,27 +16,27 @@ requested_modes <- intersect(c("reg", "noreg"), requested_modes)
 if (length(requested_modes) == 0) stop("No valid modes requested. Use: reg,noreg or reg or noreg")
 
 real_states <- c(
-  "Classic_Proliferative",
-  "Barretts_Metaplasia",
-  "EMT_related",
-  "Intestinal_Metaplasia",
-  "Immune_Infiltrated"
+  "Classic Proliferative",
+  "Basal to Intest. Meta",
+  "Stress-adaptive",
+  "SMG-like Metaplasia",
+  "Immune Infiltrated"
 )
 
 state_groups <- list(
-  Classic_Proliferative = c("MP2"),
-  Barretts_Metaplasia = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  EMT_related = c("MP13", "MP12"),
-  Intestinal_Metaplasia = c("MP18", "MP16"),
-  Immune_Infiltrated = c("MP15")
+  "Classic Proliferative" = c("MP2"),
+  "Basal to Intest. Meta" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress-adaptive"       = c("MP13", "MP12"),
+  "SMG-like Metaplasia"   = c("MP18", "MP16"),
+  "Immune Infiltrated"    = c("MP15")
 )
 
 group_cols <- c(
-  Classic_Proliferative = "#E41A1C",
-  Barretts_Metaplasia = "#4DAF4A",
-  EMT_related = "#984EA3",
-  Intestinal_Metaplasia = "#FF7F00",
-  Immune_Infiltrated = "#377EB8",
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Stress-adaptive"       = "#984EA3",
+  "SMG-like Metaplasia"   = "#FF7F00",
+  "Immune Infiltrated"    = "#377EB8",
   Unresolved = "grey80",
   Hybrid = "black"
 )

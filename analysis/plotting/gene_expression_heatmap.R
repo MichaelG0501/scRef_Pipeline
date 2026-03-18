@@ -24,18 +24,16 @@ library(ComplexHeatmap)
 library(circlize)
 library(Seurat)
 # Define the states you want to compare and their order
-state_order <- c("Classic_Prolif", "Squamous_Transition", "Intest_Diff_Columnar", "Plastic_Tolerant", "Intest_Diff", "IFN_columnar", "Unassigned/Quienscent", "Unassigned")
+state_order <- c("Classic Proliferative", "Basal to Intest. Meta", "Intestinal Metaplasia", "Stress-adaptive", "Unassigned/Quienscent", "Unassigned")
 
 manual_names <- levels(tmdata_all$manual_state)
 manual_cols <- c(
-  "Classic_Prolif"        = "#E41A1C",  # Red
-  "Squamous_Transition"   = "#4DAF4A",  # Green
-  "Intest_Diff_Columnar"  = "#984EA3",  # Purple
-  "Plastic_Tolerant"      = "#FF7F00",  # Orange
-  "Intest_Diff"           = "#377EB8",  # Blue (Added)
-  "IFN_columnar"          = "#A65628",  # Brown (Added)
-  "Unassigned/Quienscent" = "grey80",   # Light Grey
-  "Unassigned"            = "grey50"    # Darker Grey (Distinguishes noise from quienscent)
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Intestinal Metaplasia" = "#984EA3",
+  "Stress-adaptive"       = "#FF7F00",
+  "Unassigned/Quienscent" = "grey80",
+  "Unassigned"            = "grey50"
 )
 
 
@@ -161,7 +159,7 @@ all_sample_colors <- c(
 
 # 2. Subset & DYNAMIC CLEANUP
 #tmdata_all4 <- subset(tmdata_all, subset = orig.ident %in% names(all_sample_colors))
-tmdata_all4 <- subset(tmdata_all, subset = orig.ident %in% names(all_sample_colors) & manual_state == "Squamous_Trans")
+tmdata_all4 <- subset(tmdata_all, subset = orig.ident %in% names(all_sample_colors) & manual_state == "Basal to Intest. Meta")
 
 # --- DROP-IN FIX: Only keep samples that exist in the data ---
 existing_samples <- intersect(names(all_sample_colors), unique(tmdata_all4$orig.ident))
@@ -191,9 +189,13 @@ sample_levels <- levels(tmdata_all4$orig.ident)
 # 1. Map your existing manual_cols to the annotation
 # We use the specific color vector you provided
 manual_names <- levels(tmdata_all$manual_state)
-manual_cols <- setNames(
-  c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "grey80"),
-  manual_names
+manual_cols <- c(
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Intestinal Metaplasia" = "#984EA3",
+  "Stress-adaptive"       = "#FF7F00",
+  "Unassigned/Quienscent" = "grey80",
+  "Unassigned"            = "grey50"
 )
 
 # 2. Update Top Annotation with matching colors

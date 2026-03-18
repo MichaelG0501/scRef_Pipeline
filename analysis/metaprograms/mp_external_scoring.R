@@ -367,14 +367,13 @@ anno_vals <- anno_vals[cell_order]
 anno_vals <- factor(anno_vals, levels = sort(unique(anno_vals)))
 
 anno_cols <- c(
-  "Classic_Prolif"        = "#E41A1C",  # Red
-  "Squamous_Transition"   = "#4DAF4A",  # Green
-  "Intest_Metaplasia"  = "#984EA3",  # Purple
-  "Plastic_Tolerant"      = "#FF7F00",  # Orange
-  #  "Intest_Diff"           = "#377EB8",  # Blue (Added)
-  #  "IFN_columnar"          = "#A65628",  # Brown (Added)
-  "Unresolved" = "grey80",   # Light Grey
-  "Unassigned"            = "grey50"    # Darker Grey (Distinguishes noise from quienscent)
+anno_cols <- c(
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Intestinal Metaplasia" = "#984EA3",
+  "Stress-adaptive"       = "#FF7F00",
+  "Unresolved"            = "grey80",
+  "Unassigned"            = "grey50"
 )
 
 col_ann <- HeatmapAnnotation(

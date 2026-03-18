@@ -216,10 +216,10 @@ meta_combined$original_state <- states[rownames(meta_combined)]
 
 # palette (edit as needed)
 state_pal <- c(
-  "Classic_Prolif"        = "#E41A1C",
-  "Squamous_Transition"   = "#4DAF4A",
-  "Intest_Diff_Columnar"  = "#984EA3",
-  "Plastic_Tolerant"      = "#FF7F00",
+  "Classic Proliferative" = "#E41A1C",
+  "Basal to Intest. Meta" = "#4DAF4A",
+  "Intestinal Metaplasia" = "#984EA3",
+  "Stress-adaptive"       = "#FF7F00",
   "Unresolved"            = "grey80",
   "Unassigned"            = "grey50"
 )

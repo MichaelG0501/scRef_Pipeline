@@ -53,20 +53,20 @@ cat(sprintf("Seurat object: %d cells | UCell scores: %d cells x %d MPs\n",
 # 2. Updated MP annotations
 # ============================================================================
 mp_descriptions <- c(
-  "MP1"  = "G2M_cycle",
-  "MP2"  = "MYC_prolif",
-  "MP5"  = "IFN_response",
-  "MP7"  = "S_cycle",
-  "MP8"  = "Intestinal_diff",
-  "MP9"  = "G1S_cycle",
-  "MP10" = "Columnar_diff",
-  "MP12" = "Neuro_epithelial",
-  "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial",
-  "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff",
-  "MP17" = "Squamous_transition",
-  "MP18" = "Adaptive_secretory"
+  "MP1"  = "G2M Cell Cycle",
+  "MP9"  = "G1S Cell Cycle",
+  "MP2"  = "MYC-related Proliferation",
+  "MP17" = "Basal-like Transition",
+  "MP14" = "Hypoxia Adapted Epi.",
+  "MP5"  = "Epithelial IFN Resp.",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam. Epi.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Diff. (Intest.)",
+  "MP16" = "Secretory Diff. (Gastric)",
+  "MP15" = "Immune Attracting",
+  "MP12" = "Stressed-basal"
 )
 
 # ============================================================================
