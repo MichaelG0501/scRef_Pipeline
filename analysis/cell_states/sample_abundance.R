@@ -27,7 +27,9 @@ library(patchwork)
 # paths and setup
 ####################
 setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
-dir.create("sample_abundance/", recursive = TRUE, showWarnings = FALSE)
+task_prefix <- "task3"
+out_dir <- paste0(task_prefix, "_sample_abundance")
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 summary_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/updates/new_updates/summaries"
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
@@ -57,24 +59,24 @@ mp_descriptions <- c(
   "MP7"  = "DNA Damage Repair",
   "MP18" = "Secretory Diff. (Intest.)",
   "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Attracting",
-  "MP12" = "Stressed-basal"
+  "MP15" = "Immune Infiltration",
+  "MP12" = "Neuro-responsive Epi"
 )
 
 state_groups <- list(
   "Classic Proliferative" = c("MP2"),
-  "Basal to Intest. Meta" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
   "Stress-adaptive"       = c("MP13", "MP12"),
   "SMG-like Metaplasia"   = c("MP18", "MP16"),
-  "Immune Infiltrated"    = c("MP15")
+  "Immune Infiltrating"   = c("MP15")
 )
 
 group_cols <- c(
   "Classic Proliferative" = "#E41A1C",
-  "Basal to Intest. Meta" = "#4DAF4A",
+  "Basal to Intestinal Metaplasia" = "#4DAF4A",
   "Stress-adaptive"       = "#984EA3",
   "SMG-like Metaplasia"   = "#FF7F00",
-  "Immune Infiltrated"    = "#377EB8",
+  "Immune Infiltrating"   = "#377EB8",
   Unresolved = "grey80",
   Hybrid = "black"
 )
@@ -87,10 +89,10 @@ mp_cols <- c(
   "MP8_Intestinal Diff." = "#FC8D62",
   "MP9_G1S Cell Cycle" = "#C0C0C0",
   "MP10_Columnar Diff." = "#A6D854",
-  "MP12_Stressed-basal" = "#E78AC3",
+  "MP12_Neuro-responsive Epi" = "#E78AC3",
   "MP13_Hypoxic Inflam. Epi." = "#984EA3",
   "MP14_Hypoxia Adapted Epi." = "#8DA0CB",
-  "MP15_Immune Attracting" = "#377EB8",
+  "MP15_Immune Infiltration" = "#377EB8",
   "MP16_Secretory Diff. (Gastric)" = "#FFD92F",
   "MP17_Basal-like Transition" = "#4DAF4A",
   "MP18_Secretory Diff. (Intest.)" = "#FF7F00"
@@ -103,6 +105,13 @@ mp.genes <- geneNMF.metaprograms$metaprograms.genes
 bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
 if (length(bad_mps) > 0) mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
 retained_mps <- names(mp.genes)
+
+tree_order <- geneNMF.metaprograms$programs.tree$order
+ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
+valid_cluster_ids <- as.numeric(gsub("\\D", "", retained_mps))
+mp_tree_order <- unique(ordered_clusters)
+mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
+mp_tree_order_names <- paste0("MP", mp_tree_order)
 
 cc_mps <- c("MP1", "MP7", "MP9")
 non_cc_mps <- setdiff(retained_mps, cc_mps)
@@ -148,15 +157,24 @@ make_prop_data <- function(label_vec, sample_vec, all_labels) {
     label = as.character(label_vec),
     stringsAsFactors = FALSE
   )
-  df$label <- factor(df$label, levels = all_labels)
+  df <- df[!is.na(df$label), , drop = FALSE]
+  df <- df[df$label %in% all_labels, , drop = FALSE]
+  all_samples <- sort(unique(as.character(sample_vec)))
+  counts <- df %>%
+    count(orig.ident, label, name = "n")
 
-  out <- df %>%
-    count(orig.ident, label, .drop = FALSE) %>%
-    complete(orig.ident, label = factor(all_labels, levels = all_labels), fill = list(n = 0)) %>%
+  out <- tidyr::expand_grid(
+    orig.ident = all_samples,
+    label = as.character(all_labels)
+  ) %>%
+    left_join(counts, by = c("orig.ident", "label")) %>%
+    mutate(n = ifelse(is.na(n), 0L, as.integer(n))) %>%
     group_by(orig.ident) %>%
-    mutate(pct = 100 * n / sum(n)) %>%
-    ungroup() %>%
-    mutate(label = as.character(label))
+    mutate(pct = {
+      total_n <- sum(n, na.rm = TRUE)
+      if (total_n > 0) 100 * n / total_n else rep(0, dplyr::n())
+    }) %>%
+    ungroup()
 
   out
 }
@@ -164,6 +182,7 @@ make_prop_data <- function(label_vec, sample_vec, all_labels) {
 plot_abundance <- function(prop_data, sample_order, col_map, title_text, totals_df) {
   plot_df <- prop_data %>%
     filter(orig.ident %in% sample_order) %>%
+    filter(!is.na(label), !is.na(pct), is.finite(pct), pct >= 0) %>%
     mutate(orig.ident = factor(orig.ident, levels = sample_order))
 
   totals_plot <- totals_df %>%
@@ -172,6 +191,10 @@ plot_abundance <- function(prop_data, sample_order, col_map, title_text, totals_
 
   scale_factor <- max(totals_plot$total_n, na.rm = TRUE) / 100
   if (!is.finite(scale_factor) || scale_factor <= 0) scale_factor <- 1
+
+  # enforce top-to-bottom bar order to follow provided label order
+  stack_levels <- rev(names(col_map))
+  plot_df$label <- factor(plot_df$label, levels = stack_levels)
 
   ggplot(plot_df, aes(x = orig.ident, y = pct, fill = label)) +
     geom_col(width = 0.75) +
@@ -191,14 +214,14 @@ plot_abundance <- function(prop_data, sample_order, col_map, title_text, totals_
       linetype = "dashed",
       inherit.aes = FALSE
     ) +
-    scale_fill_manual(values = col_map, drop = FALSE) +
+    scale_fill_manual(values = col_map, breaks = names(col_map), drop = FALSE) +
     scale_y_continuous(
       name = "Proportion (%)",
-      limits = c(0, 100),
       expand = c(0, 0),
       sec.axis = sec_axis(~ . * scale_factor, name = "Total Cell Count (N)", labels = comma)
     ) +
-    labs(title = title_text, x = NULL, fill = "Label") +
+    coord_cartesian(ylim = c(0, 100), expand = FALSE) +
+    labs(title = title_text, x = NULL, fill = NULL) +
     theme_minimal(base_size = 11) +
     theme(
       axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 5),
@@ -206,7 +229,7 @@ plot_abundance <- function(prop_data, sample_order, col_map, title_text, totals_
       panel.grid.major.x = element_blank(),
       legend.text = element_text(size = 7)
     ) +
-    guides(fill = guide_legend(ncol = 4))
+    guides(fill = guide_legend(ncol = 4, reverse = FALSE))
 }
 
 ####################
@@ -260,7 +283,13 @@ totals_df <- data.frame(
 ) %>%
   count(orig.ident, name = "total_n")
 
-target_states <- c("Classic Proliferative", "Basal to Intest. Meta", "Stress-adaptive", "SMG-like Metaplasia", "Immune Infiltrated")
+group_order_pos <- sapply(state_groups, function(mps) {
+  positions <- match(mps, mp_tree_order_names)
+  if (all(is.na(positions))) return(Inf)
+  min(positions, na.rm = TRUE)
+})
+ordered_group_names <- names(sort(group_order_pos))
+target_states <- ordered_group_names
 
 state_df <- data.frame(
   cell = names(state_B),
@@ -299,17 +328,48 @@ study_order <- study_map %>%
 ####################
 # proportions for each type
 ####################
-noncc_levels <- label_mp(noncc_avail)
-all_levels <- label_mp(all_mps_avail)
-state_levels <- c(names(state_groups), "Unresolved", "Hybrid")
+# Define preferred MP order: defined state MPs first, then CC MPs, then any others
+state_ordered_mps <- unname(unlist(state_groups))
+cc_mps_order <- c("MP1", "MP7", "MP9")
+preferred_mp_order <- c(state_ordered_mps, cc_mps_order)
+# Ensure we include any retained MPs that might not be in the explicit lists
+preferred_mp_order <- c(preferred_mp_order, setdiff(retained_mps, preferred_mp_order))
+
+noncc_tree_order <- preferred_mp_order[preferred_mp_order %in% non_cc_mps & preferred_mp_order %in% noncc_avail]
+noncc_levels <- label_mp(noncc_tree_order)
+all_levels <- label_mp(preferred_mp_order[preferred_mp_order %in% all_mps_avail])
+state_levels <- c(ordered_group_names, "Unresolved", "Hybrid")
+
+# ensure bars are exactly 100% over labels-of-interest only
+force_100 <- function(df) {
+  df %>%
+    group_by(orig.ident) %>%
+    mutate(pct = {
+      total_n <- sum(n, na.rm = TRUE)
+      if (total_n > 0) 100 * n / total_n else rep(0, dplyr::n())
+    }) %>%
+    ungroup()
+}
 
 prop_type1 <- make_prop_data(topmp_noncc_label, sample_by_cell[names(topmp_noncc_label)], noncc_levels)
 prop_type2 <- make_prop_data(topmp_all_label, sample_by_cell[names(topmp_all_label)], all_levels)
 prop_type3 <- make_prop_data(state_label, sample_by_cell[names(state_label)], state_levels)
+prop_type1 <- force_100(prop_type1)
+prop_type2 <- force_100(prop_type2)
+prop_type3 <- force_100(prop_type3)
 
 col_type1 <- mp_cols[noncc_levels]
 col_type2 <- mp_cols[all_levels]
 col_type3 <- group_cols[state_levels]
+
+if (any(is.na(col_type1))) {
+  miss1 <- names(col_type1)[is.na(col_type1)]
+  col_type1[miss1] <- setNames(scales::hue_pal()(length(miss1)), miss1)
+}
+if (any(is.na(col_type2))) {
+  miss2 <- names(col_type2)[is.na(col_type2)]
+  col_type2[miss2] <- setNames(scales::hue_pal()(length(miss2)), miss2)
+}
 
 ####################
 # generate 6 plots and save one multi-page pdf
@@ -322,7 +382,7 @@ p1 <- plot_abundance(
   prop_data = prop_type1,
   sample_order = diversity_order,
   col_map = col_type1,
-  title_text = "Type 1: Top MP (non-CC MPs) | Sort: Diversity (Geometric Mean)",
+  title_text = "Type 1: Top MP (non-CC MPs) | Sort: Diversity",
   totals_df = totals_df
 )
 
@@ -330,7 +390,7 @@ p2 <- plot_abundance(
   prop_data = prop_type1,
   sample_order = study_order,
   col_map = col_type1,
-  title_text = "Type 1: Top MP (non-CC MPs) | Sort: Study + Alphabetical",
+  title_text = "Type 1: Top MP (non-CC MPs) | Sort: Study",
   totals_df = totals_df
 )
 
@@ -338,7 +398,7 @@ p3 <- plot_abundance(
   prop_data = prop_type2,
   sample_order = diversity_order,
   col_map = col_type2,
-  title_text = "Type 2: Top MP (all MPs including CC) | Sort: Diversity (Geometric Mean)",
+  title_text = "Type 2: Top MP (all MPs including CC) | Sort: Diversity",
   totals_df = totals_df
 )
 
@@ -346,7 +406,7 @@ p4 <- plot_abundance(
   prop_data = prop_type2,
   sample_order = study_order,
   col_map = col_type2,
-  title_text = "Type 2: Top MP (all MPs including CC) | Sort: Study + Alphabetical",
+  title_text = "Type 2: Top MP (all MPs including CC) | Sort: Study",
   totals_df = totals_df
 )
 
@@ -354,7 +414,7 @@ p5 <- plot_abundance(
   prop_data = prop_type3,
   sample_order = diversity_order,
   col_map = col_type3,
-  title_text = "Type 3: Approach B States (noreg) | Sort: Diversity (Geometric Mean)",
+  title_text = "Type 3: Approach B States (noreg) | Sort: Diversity",
   totals_df = totals_df
 )
 
@@ -362,11 +422,11 @@ p6 <- plot_abundance(
   prop_data = prop_type3,
   sample_order = study_order,
   col_map = col_type3,
-  title_text = "Type 3: Approach B States (noreg) | Sort: Study + Alphabetical",
+  title_text = "Type 3: Approach B States (noreg) | Sort: Study",
   totals_df = totals_df
 )
 
-pdf("sample_abundance/Auto_sample_abundance.pdf", width = pdf_w, height = pdf_h, onefile = TRUE)
+pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_sample_abundance.pdf")), width = pdf_w, height = pdf_h, onefile = TRUE)
 print(p1)
 print(p2)
 print(p3)
@@ -406,5 +466,5 @@ write.csv(
   row.names = FALSE
 )
 
-message("Saved: sample_abundance/Auto_sample_abundance.pdf")
+message(sprintf("Saved: %s", file.path(out_dir, paste0("Auto_", task_prefix, "_sample_abundance.pdf"))))
 message("Saved: updates/new_updates/summaries/Auto_sample_abundance_summary.csv")

@@ -271,6 +271,8 @@ Note: all 3 CNV scripts share identical library set: `data.table, dplyr, Complex
 | `Auto_unresolved_relabel.sh` | PBS wrapper for `Auto_unresolved_relabel.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
 | `Auto_hybrid_pairwise_v2.R` | Pairwise hybrid classification using top-2 MP groups (no multi-class concept); network nodeplot with state nodes + pairwise hybrid edges | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds`, `Auto_topmp_v2_noreg_group_max.rds` | `ref_outs/hybrid_v2/Auto_hybrid_pairwise_v2_nodeplot.pdf`, `Auto_hybrid_pairwise_v2_subtypes.rds` |
 | `Auto_hybrid_pairwise_v2.sh` | PBS wrapper for `Auto_hybrid_pairwise_v2.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
+| `Auto_task6_hybrid_pairwise_percell_heatmap.R` | Pairwise-only hybrid heatmap and subdivision (Approach B style rewrite); output includes per-cell heatmap, pairwise matrix, and UMAPs | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `UCell_nMP19_filtered.rds` | `Auto_task6_hybrid_heatmap.pdf`, `Auto_task6_hybrid_pairwise_heatmap.pdf`, `Auto_task6_hybrid_umap_top12.pdf` |
+| `Auto_task6_hybrid_pairwise_percell_heatmap.sh` | PBS wrapper for `Auto_task6_hybrid_pairwise_percell_heatmap.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
 
 ### `analysis/plotting/` — Publication Figures
 | File | Purpose | Key Inputs | Key Outputs |
@@ -377,6 +379,17 @@ Future agents must update this file when they:
 - Create a new `Auto_` script.
 
 Append new findings to the appropriate section. Don't rewrite existing documentation unless fixing an error.
+
+## 18 Mar 2026 Naming + RDS Compatibility Update
+
+- **State naming update applied**: use `Basal to Intestinal Metaplasia` (previously `Basal to Intest. Meta` / `Barretts Metaplasia`) and `Immune Infiltrating` (previously `Immune Infiltrated`) across new analysis outputs.
+- **MP/state definitions unchanged**: MP memberships and state compositions remain identical; only labels changed.
+- **Compatibility risk**: existing `.rds` outputs generated before this rename may still carry old labels; mixed usage can break joins, plotting order, pseudotime roots, and survival feature mapping.
+- **Regeneration guidance after rename**:
+  1. Regenerate `Auto_topmp_v2_{reg,noreg}_states_B.rds` and dependent outputs.
+  2. Regenerate unresolved relabel outputs (`unresolved_states/*`) so newly relabeled states are consistent.
+  3. Regenerate pseudotime outputs (`ref_outs/pseudotime/*`) with updated root definitions.
+  4. Regenerate abundance and hybrid outputs so state/MP ordering and labels stay synchronized.
 
 ## Subagent Model Tier Policy (MANDATORY)
 

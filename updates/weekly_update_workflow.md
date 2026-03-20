@@ -243,6 +243,7 @@ The `~/bin/lualatex` wrapper compiles via `/tmp` for speed (~7s vs 82s on NFS).
 Convert the compiled PDF to high-resolution PNG slides, then assemble into PPTX:
 
 ```bash
+module load tools/prod
 module load texlive/20230313-GCC-13.2.0
 cd updates/DDmon
 mkdir -p pptx_slides_png

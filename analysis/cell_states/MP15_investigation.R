@@ -65,8 +65,8 @@ mp_descriptions <- c(
   "MP7"  = "DNA Damage Repair",
   "MP18" = "Secretory Diff. (Intest.)",
   "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Attracting",
-  "MP12" = "Stressed-basal"
+  "MP15" = "Immune Infiltration",
+  "MP12" = "Neuro-responsive Epi"
 )
 
 # ============================================================================

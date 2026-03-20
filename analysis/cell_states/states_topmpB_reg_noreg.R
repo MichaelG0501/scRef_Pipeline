@@ -84,8 +84,8 @@ mp_descriptions <- c(
   "MP7"  = "DNA Damage Repair",
   "MP18" = "Secretory Diff. (Intest.)",
   "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Attracting",
-  "MP12" = "Stressed-basal"
+  "MP15" = "Immune Infiltration",
+  "MP12" = "Neuro-responsive Epi"
 )
 
 cc_mps <- c("MP1", "MP7", "MP9")
@@ -93,10 +93,10 @@ non_cc_mps <- setdiff(retained_mps, cc_mps)
 
 state_groups <- list(
   "Classic Proliferative" = c("MP2"),
-  "Basal to Intest. Meta" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
   "Stress-adaptive"       = c("MP13", "MP12"),
   "SMG-like Metaplasia"   = c("MP18", "MP16"),
-  "Immune Infiltrated"    = c("MP15")
+  "Immune Infiltrating"   = c("MP15")
 )
 
 group_order_pos <- sapply(state_groups, function(mps) {
@@ -109,10 +109,10 @@ state_level_order <- c(ordered_group_names, "Unresolved", "Hybrid")
 
 group_cols <- c(
   "Classic Proliferative" = "#E41A1C",
-  "Basal to Intest. Meta" = "#4DAF4A",
+  "Basal to Intestinal Metaplasia" = "#4DAF4A",
   "Stress-adaptive"       = "#984EA3",
   "SMG-like Metaplasia"   = "#FF7F00",
-  "Immune Infiltrated"    = "#377EB8",
+  "Immune Infiltrating"   = "#377EB8",
   "Unresolved"            = "grey80",
   "Hybrid"                = "black"
 )

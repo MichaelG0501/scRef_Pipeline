@@ -306,29 +306,60 @@ message("  5. Use S-mode batch correction, disable QN (RNA-seq data)")
 
 geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
 mp.genes <- geneNMF.metaprograms$metaprograms.genes
+
 bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
 if (length(bad_mps) > 0) {
   mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
 }
-genes <- unique(as.vector(unlist(mp.genes)))
+
+unresolved_relabeled_path <- "unresolved_states/Auto_unresolved_relabel_states.rds"
+new_state_gene_sets <- list()
+
+if (file.exists(unresolved_relabeled_path)) {
+  state_rel <- readRDS(unresolved_relabeled_path)
+  
+  candidate_new_states <- setdiff(
+    unique(as.character(state_rel)),
+    c(names(state_groups), "Unresolved", "Hybrid", NA)
+  )
+  
+  nmf3ca_path <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
+  
+  if (file.exists(nmf3ca_path) && length(candidate_new_states) > 0) {
+    MP_df <- read.csv(nmf3ca_path, check.names = FALSE)
+    MP_list <- as.list(MP_df)
+    MP_list <- lapply(MP_list, function(x) x[x != "" & !is.na(x)])
+    
+    names(MP_list) <- make.names(sub("^MP", "3CA_mp_", names(MP_list)))
+    clean_map <- setNames(clean_3ca_name(names(MP_list)), names(MP_list))
+    
+    keep_cols <- names(clean_map)[clean_map %in% candidate_new_states]
+    if (length(keep_cols) > 0) {
+      new_state_gene_sets <- MP_list[keep_cols]
+      names(new_state_gene_sets) <- clean_map[keep_cols]
+    }
+  }
+}
+
+genes <- unique(unlist(c(mp.genes, new_state_gene_sets), use.names = FALSE))
 writeLines(genes, "cibersortx/CIBERSORTx_gene_subset.txt")
 
-####################
-# OPTIONAL: Filter Reference & Mixture for High-Resolution Speed (Tutorial 5)
-# Highly recommended for web-portal runs to avoid timeouts.
-####################
-message("Generating Filtered versions of inputs for High-Resolution fast run...")
-# 1. Load the mixture (produced by tcga_data_prep.R)
-mix_full <- fread("cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
-mix_f <- mix_full[GeneSymbol %in% genes]
-fwrite(mix_f, "cibersortx/CIBERSORTx_Mixture_Filtered.txt", sep = "\t")
-
-# 2. Filter the sc_reference
-# Header matches 'labels_sub', so we reconstruct the filtered table
-ref_f <- dt[GeneSymbol %in% genes]
-out_ref_f <- "cibersortx/CIBERSORTx_sc_reference_Filtered.txt"
-cat(header_line, file = out_ref_f, sep = "\n")
-fwrite(ref_f, out_ref_f, sep = "\t", append = TRUE, col.names = FALSE)
-
-message("  Fast/Filtered files written to ref_outs/cibersortx/ directory.")
-####################
+# ####################
+# # OPTIONAL: Filter Reference & Mixture for High-Resolution Speed (Tutorial 5)
+# # Highly recommended for web-portal runs to avoid timeouts.
+# ####################
+# message("Generating Filtered versions of inputs for High-Resolution fast run...")
+# # 1. Load the mixture (produced by tcga_data_prep.R)
+# mix_full <- fread("cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
+# mix_f <- mix_full[GeneSymbol %in% genes]
+# fwrite(mix_f, "cibersortx/CIBERSORTx_Mixture_Filtered.txt", sep = "\t")
+# 
+# # 2. Filter the sc_reference
+# # Header matches 'labels_sub', so we reconstruct the filtered table
+# ref_f <- dt[GeneSymbol %in% genes]
+# out_ref_f <- "cibersortx/CIBERSORTx_sc_reference_Filtered.txt"
+# cat(header_line, file = out_ref_f, sep = "\n")
+# fwrite(ref_f, out_ref_f, sep = "\t", append = TRUE, col.names = FALSE)
+# 
+# message("  Fast/Filtered files written to ref_outs/cibersortx/ directory.")
+# ####################

@@ -30,6 +30,11 @@ geneNMF.metaprograms <- readRDS(
 mp.genes <- geneNMF.metaprograms$metaprograms.genes
 
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
+relabeled_state_path <- "unresolved_states/Auto_unresolved_relabel_states.rds"
+relabeled_states <- NULL
+if (file.exists(relabeled_state_path)) {
+  relabeled_states <- readRDS(relabeled_state_path)
+}
 
 # ============================================================================
 # 2. Filter MPs by silhouette score < 0
@@ -47,12 +52,16 @@ cat("Retained MPs:", names(mp.genes), "\n")
 # 3. UCell scoring (similar to geneNMF.R line 64)
 # ============================================================================
 
-tmdata_all <- AddModuleScore_UCell(tmdata_all, features = mp.genes, ncores = 2, name = "")
-ucell_scores <- tmdata_all@meta.data[, names(mp.genes), drop = FALSE]
-
-saveRDS(ucell_scores, file = "Metaprogrammes_Results/UCell_nMP19_filtered.rds")
-cat("Saved UCell scores: Metaprogrammes_Results/UCell_nMP19_filtered.rds\n")
-ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
+ucell_path <- "Metaprogrammes_Results/UCell_nMP19_filtered.rds"
+if (file.exists(ucell_path)) {
+  cat("Using existing UCell scores:", ucell_path, "\n")
+  ucell_scores <- readRDS(ucell_path)
+} else {
+  tmdata_all <- AddModuleScore_UCell(tmdata_all, features = mp.genes, ncores = 1, name = "")
+  ucell_scores <- tmdata_all@meta.data[, names(mp.genes), drop = FALSE]
+  saveRDS(ucell_scores, file = ucell_path)
+  cat("Saved UCell scores:", ucell_path, "\n")
+}
 
 # ============================================================================
 # 4. Define mp_tree_order (after bad MP removal)
@@ -99,8 +108,9 @@ rownames(mod_mat) <- mp_descriptions[rownames(mod_mat)]
 #    (similar to MP_analysis_sc.R lines 190-272, grouped by orig.ident)
 # ============================================================================
 
-# Extract sample name by removing last "_" + barcode
-samples_vec <- sub("_[^_]+$", "", colnames(mod_mat))
+# Extract sample name from metadata (robust; avoids per-cell pseudo-samples)
+samples_vec <- tmdata_all$orig.ident[match(colnames(mod_mat), Cells(tmdata_all))]
+samples_vec[is.na(samples_vec)] <- colnames(mod_mat)[is.na(samples_vec)]
 samples <- unique(samples_vec)
 mps <- rownames(mod_mat)
 n_mps <- length(mps)
@@ -147,6 +157,7 @@ for (i in 1:n_mps) {
 # Plot correlation heatmap
 col_cor <- colorRamp2(c(-0.6, 0, 0.6), c("blue", "white", "red"))
 
+pdf("Metaprogrammes_Results/nMP19_correlation_heatmap_persample.pdf", width = 10, height = 9, useDingbats = FALSE)
 Heatmap(mean_rho,
         name = paste0("Mean Rho\n(", length(samples), " Samples)"),
         col = col_cor,
@@ -174,6 +185,7 @@ Heatmap(mean_rho,
         row_names_gp = gpar(fontsize = 10, fontface = "bold"),
         column_names_gp = gpar(fontsize = 10, fontface = "bold"),
         heatmap_legend_param = list(title_gp = gpar(fontsize = 10, fontface = "bold")))
+dev.off()
 cat("Saved: Metaprogrammes_Results/nMP19_correlation_heatmap_persample.pdf\n")
 
 # ============================================================================
@@ -242,6 +254,7 @@ display_mat <- matrix(
   dimnames = dimnames(overlap_n_mat)
 )
 
+pdf("Metaprogrammes_Results/nMP19_jaccard_self_similarity_heatmap.pdf", width = 11, height = 9, useDingbats = FALSE)
 pheatmap(
   jaccard_mat,
   cluster_rows = FALSE,
@@ -258,16 +271,15 @@ pheatmap(
   fontsize_col = 10,
   color = colorRampPalette(c("#ffffff", "#ffcccc", "#ff6666", "#cc0000", "#660000"))(100)
 )
+dev.off()
 cat("Saved: Metaprogrammes_Results/nMP19_jaccard_self_similarity_heatmap.pdf\n")
 
 # ============================================================================
-# 9. ComplexHeatmap — UCell Score Heatmap (subsampled, 20k cells)
-#    (similar to MP_analysis_sc.R lines 130-188, cluster_rows = FALSE,
-#     cluster_columns = TRUE)
+# 9. ComplexHeatmap — UCell Score Heatmap (subsampled)
 # ============================================================================
 
 set.seed(42)
-n_sub <- min(20000, ncol(tmdata_all))
+n_sub <- min(12000, ncol(tmdata_all))
 sub_idx <- sample(seq_len(ncol(tmdata_all)), size = n_sub)
 tmdata_sub <- tmdata_all[, sub_idx]
 cat("Subsampled to", ncol(tmdata_sub), "cells for heatmap\n")
@@ -275,62 +287,23 @@ cat("Subsampled to", ncol(tmdata_sub), "cells for heatmap\n")
 # Subset module scores to match
 module_scores_sub <- module_scores[Cells(tmdata_sub), mp_tree_order_names, drop = FALSE]
 
-# --- kmeans clustering for MP_state (on subset) ---
-K <- 300  # reduced from 500 proportional to 20k vs 75k
-set.seed(1)
-km <- kmeans(module_scores_sub, centers = K, nstart = 10, iter.max = 200,
-             algorithm = "MacQueen")
+if (!is.null(relabeled_states)) {
+  tmp_state <- relabeled_states[Cells(tmdata_sub)]
+  tmp_state[is.na(tmp_state)] <- "Unresolved"
+  tmdata_sub$RelabeledState <- tmp_state
+} else {
+  tmdata_sub$RelabeledState <- "Unresolved"
+}
 
-clus <- factor(km$cluster)
-centroids <- km$centers
-
-# Hierarchical clustering of centroids
-d <- as.dist(1 - cor(t(centroids), method = "pearson"))
-hc <- hclust(d, method = "average")
-
-# Determine optimal k for MP states using silhouette
-library(factoextra)
-library(cluster)
-
-p1 <- fviz_nbclust(centroids, hcut, hc_method = "average", hc_metric = "pearson",
-                    method = "silhouette", k.max = 20) +
-  labs(title = "Silhouette Analysis (Centroids) - 20k subset")
-p2 <- fviz_nbclust(centroids, hcut, hc_method = "average", hc_metric = "pearson",
-                    method = "wss", k.max = 20) +
-  labs(title = "Elbow Method (Centroids) - 20k subset")
-library(patchwork)
-print(p1 + p2)
-cat("Saved: Metaprogrammes_Results/nMP19_subset_elbow_silhouette.pdf\n")
-cat("CHECK the silhouette/elbow plot and set k below accordingly.\n")
-
-# ---- SET k HERE after inspecting the elbow/silhouette plot ----
-k <- 10  # <-- ADJUST based on silhouette/elbow result
-
-mc_state <- cutree(hc, k = k)
-names(mc_state) <- rownames(centroids)
-
-tmdata_sub$km_cluster <- as.character(km$cluster)
-tmdata_sub$MP_state <- as.character(mc_state[tmdata_sub$km_cluster])
-
-# --- Cell ordering within states ---
-mc_order <- rownames(centroids)[hc$order]
-cell_scores_sub <- module_scores_sub
-centroid_mat <- centroids[tmdata_sub$km_cluster, , drop = FALSE]
-cell_to_centroid_cor <- vapply(seq_len(nrow(cell_scores_sub)), function(i) {
-  cor(cell_scores_sub[i, ], centroid_mat[i, ], method = "pearson")
-}, numeric(1))
-
-order_df <- data.frame(
+# Stable ordering by relabeled state then sample ID
+ord_df <- data.frame(
   cell_id = Cells(tmdata_sub),
-  state = tmdata_sub$MP_state,
-  state_order = match(tmdata_sub$MP_state, unique(mc_state[hc$order])),
-  mc_order_val = match(tmdata_sub$km_cluster, mc_order),
-  cor_val = cell_to_centroid_cor
+  relabeled_state = as.character(tmdata_sub$RelabeledState),
+  sample = as.character(tmdata_sub$orig.ident),
+  stringsAsFactors = FALSE
 )
-
-order_df <- order_df[order(order_df$state_order, order_df$mc_order_val, -order_df$cor_val), ]
-cell_ord <- match(order_df$cell_id, Cells(tmdata_sub))
-tmdata_sub <- tmdata_sub[, cell_ord]
+ord_df <- ord_df[order(ord_df$relabeled_state, ord_df$sample, ord_df$cell_id), , drop = FALSE]
+tmdata_sub <- tmdata_sub[, ord_df$cell_id]
 
 # --- Prepare heatmap matrix ---
 mod_mat_sub <- t(as.matrix(tmdata_sub@meta.data[, mp_tree_order_names, drop = FALSE]))
@@ -344,15 +317,29 @@ max_val <- quantile(mod_mat_sub, 0.98, na.rm = TRUE)
 col_fun <- colorRamp2(c(-max_val, 0, max_val), c("blue", "white", "red"))
 
 # Annotations
-state_names <- as.character(unique(tmdata_sub$MP_state))
-state_cols  <- setNames(DiscretePalette(length(state_names), palette = "alphabet"), state_names)
 study_cols  <- setNames(DiscretePalette(length(unique(tmdata_sub$study)), palette = "polychrome"),
                         unique(tmdata_sub$study))
+relabeled_levels <- c(
+  "Classic Proliferative",
+  "Basal to Intestinal Metaplasia",
+  "Stress-adaptive",
+  "SMG-like Metaplasia",
+  "Immune Infiltrating",
+  sort(setdiff(unique(as.character(tmdata_sub$RelabeledState)), c(
+    "Classic Proliferative", "Basal to Intestinal Metaplasia", "Stress-adaptive", "SMG-like Metaplasia", "Immune Infiltrating",
+    "Unresolved", "Hybrid"
+  ))),
+  "Unresolved",
+  "Hybrid"
+)
+relabeled_levels <- relabeled_levels[relabeled_levels %in% unique(as.character(tmdata_sub$RelabeledState))]
+tmdata_sub$RelabeledState <- factor(as.character(tmdata_sub$RelabeledState), levels = relabeled_levels)
+relabeled_cols <- setNames(DiscretePalette(max(length(relabeled_levels), 1), palette = "alphabet"), relabeled_levels)
 
 col_ann <- HeatmapAnnotation(
-  State = tmdata_sub$MP_state,
+  RelabeledState = tmdata_sub$RelabeledState,
   Study = tmdata_sub$study,
-  col = list(State = state_cols, Study = study_cols),
+  col = list(RelabeledState = relabeled_cols, Study = study_cols),
   annotation_name_side = "left",
   show_legend = TRUE
 )
@@ -365,19 +352,19 @@ ht <- Heatmap(
 
   # Grouping
   top_annotation = col_ann,
-  column_split = tmdata_sub$MP_state,
+  column_split = tmdata_sub$RelabeledState,
   column_gap = unit(0, "mm"),
 
   # Row/Column Ordering
-  cluster_rows = FALSE,             # Keep GeneNMF tree order
+  cluster_rows = FALSE,
   row_order = rownames(mod_mat_sub),
-  cluster_columns = TRUE,           # Cluster cells within each MP_state split
+  cluster_columns = TRUE,
   clustering_method_columns = "ward.D2",
 
   # Aesthetics
   row_names_side = "left",
   row_names_gp = gpar(fontsize = 10, fontface = "italic"),
-  column_title = paste0("MPs UCell scores (20k subset, k = ", k, ")"),
+  column_title = "MPs UCell scores (12k subset; relabeled unresolved included)",
   show_column_names = FALSE,
 
   # Performance

@@ -50,25 +50,27 @@ library(data.table)
 # setup
 ####################
 setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
-dir.create("unresolved_states/", recursive = TRUE, showWarnings = FALSE)
+task_prefix <- "task4"
+out_dir <- paste0(task_prefix, "_unresolved_states")
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 ####################
 # constants
 ####################
 state_groups <- list(
   "Classic Proliferative" = c("MP2"),
-  "Basal to Intest. Meta" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
   "Stress-adaptive"       = c("MP13", "MP12"),
   "SMG-like Metaplasia"   = c("MP18", "MP16"),
-  "Immune Infiltrated"    = c("MP15")
+  "Immune Infiltrating"   = c("MP15")
 )
 
 group_cols <- c(
   "Classic Proliferative" = "#E41A1C",
-  "Basal to Intest. Meta" = "#4DAF4A",
+  "Basal to Intestinal Metaplasia" = "#4DAF4A",
   "Stress-adaptive"       = "#984EA3",
   "SMG-like Metaplasia"   = "#FF7F00",
-  "Immune Infiltrated"    = "#377EB8",
+  "Immune Infiltrating"   = "#377EB8",
   "Unresolved"            = "grey80",
   "Hybrid"                = "black"
 )
@@ -86,8 +88,8 @@ mp_descriptions <- c(
   "MP7"  = "DNA Damage Repair",
   "MP18" = "Secretory Diff. (Intest.)",
   "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Attracting",
-  "MP12" = "Stressed-basal"
+  "MP15" = "Immune Infiltration",
+  "MP12" = "Neuro-responsive Epi"
 )
 cc_mps <- c("MP1", "MP7", "MP9")
 non_cc_mps <- c("MP2", "MP5", "MP8", "MP10", "MP12", "MP13", "MP14", "MP15", "MP16", "MP17", "MP18")
@@ -177,6 +179,25 @@ meta_full_epi <- readRDS("meta_full_epi.rds")
 geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
 ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
 
+# MP tree and group order logic (moved up for earlier use)
+mp.genes <- geneNMF.metaprograms$metaprograms.genes
+bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
+if (length(bad_mps) > 0) mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
+retained_mps <- names(mp.genes)
+tree_order <- geneNMF.metaprograms$programs.tree$order
+ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
+valid_cluster_ids <- as.numeric(gsub("\\D", "", retained_mps))
+mp_tree_order <- unique(ordered_clusters)
+mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
+mp_tree_order_names <- paste0("MP", mp_tree_order)
+
+group_order_pos <- sapply(state_groups, function(mps) {
+  positions <- match(mps, mp_tree_order_names)
+  if (all(is.na(positions))) return(Inf)
+  min(positions, na.rm = TRUE)
+})
+ordered_group_names <- names(sort(group_order_pos))
+
 meta_tcga <- readRDS("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/tcga_esca_meta.rds")
 tpm_df <- data.table::fread("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 tpm_mat <- as.matrix(tpm_df[, -1])
@@ -236,6 +257,7 @@ unresolved_meta <- data.frame(
 
 total_samples <- length(unique(tmdata_all$orig.ident[common_cells]))
 total_studies <- length(unique(tmdata_all$study[common_cells]))
+total_cells <- length(common_cells)   # or ncol(tmdata_all)
 
 mp_coverage <- unresolved_meta %>%
   group_by(mp_label) %>%
@@ -243,6 +265,7 @@ mp_coverage <- unresolved_meta %>%
     n_cells = n(),
     n_samples = n_distinct(orig.ident),
     n_studies = n_distinct(study),
+    pct_cells = 100 * n() / total_cells,
     pct_samples = 100 * n_distinct(orig.ident) / total_samples,
     pct_studies = 100 * n_distinct(study) / total_studies,
     .groups = "drop"
@@ -253,13 +276,17 @@ message("Pan-cancer MP coverage in unresolved cells:")
 print(mp_coverage)
 
 candidates <- mp_coverage %>%
-  filter(n_samples >= 50 & n_studies >= 6) %>%
+  filter(
+    n_samples >= 50,
+    n_studies >= 6,
+    pct_cells >= 1
+  ) %>%
   arrange(desc(n_cells))
 
 retained_3ca <- candidates %>% pull(mp_label)
 
 message(paste("Retained pan-cancer MPs:", paste(retained_3ca, collapse = ", ")))
-write.csv(mp_coverage, "unresolved_states/Auto_unresolved_relabel_mp_coverage.csv", row.names = FALSE)
+write.csv(mp_coverage, file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_mp_coverage.csv")), row.names = FALSE)
 
 ####################
 # STEP 3: update state labels
@@ -273,11 +300,10 @@ for (cell in unresolved_cells) {
   }
 }
 
-new_state_names <- unique(clean_3ca_name(retained_3ca))
+new_state_names <- clean_3ca_name(retained_3ca)
 state_level_order_updated <- c(
-  "Classic Proliferative", "Basal to Intest. Meta", "Stress-adaptive",
-  "SMG-like Metaplasia", "Immune Infiltrated",
-  sort(new_state_names),
+  ordered_group_names,
+  new_state_names,
   "Unresolved", "Hybrid"
 )
 
@@ -287,7 +313,7 @@ new_state_cols <- setNames(
 )
 group_cols_updated <- c(group_cols, new_state_cols)
 
-saveRDS(state_updated, "unresolved_states/Auto_unresolved_relabel_states.rds")
+saveRDS(state_updated, file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_states.rds")))
 
 ####################
 # STEP 4: updated proportion plot
@@ -326,7 +352,7 @@ p_pie <- ggplot(pie_df, aes(x = "", y = pct, fill = state)) +
   theme_void(base_size = 11)
 
 ggsave(
-  "unresolved_states/Auto_unresolved_relabel_proportion.pdf",
+  file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_proportion.pdf")),
   p_bar + p_pie + plot_layout(widths = c(2, 1)),
   width = 18,
   height = 8
@@ -339,6 +365,12 @@ cc_in_ucell <- intersect(cc_mps, colnames(ucell_scores))
 cc_raw <- as.matrix(ucell_scores[common_cells, cc_in_ucell, drop = FALSE])
 mp_adj_cc <- z_normalise(cc_raw, sample_var, study_var)
 mp_adj_all <- cbind(mp_adj_noncc[common_cells, , drop = FALSE], mp_adj_cc)
+
+# normalized pan-cancer MP expression (only retained threshold MPs)
+retained_3ca <- retained_3ca[retained_3ca %in% colnames(ucell_3ca)]
+z_3ca_all <- z_normalise(ucell_3ca[common_cells, retained_3ca, drop = FALSE], sample_var, study_var)
+# raw pan-cancer MP UCell scores (same retained MPs)
+raw_3ca_all <- as.matrix(ucell_3ca[common_cells, retained_3ca, drop = FALSE])
 
 cna_cells <- intersect(rownames(meta_full_epi), common_cells)
 cna_status <- rep(NA_character_, length(common_cells))
@@ -354,16 +386,7 @@ cc_consensus <- intersect(cell_cycle_genes$Gene[cell_cycle_genes$Consensus == 1]
 cc_top50 <- names(sort(rowMeans(tmdata_all@assays$RNA$data[cc_consensus, , drop = FALSE], na.rm = TRUE), decreasing = TRUE))[1:50]
 cc_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cc_top50, , drop = FALSE]))
 
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
-retained_mps <- names(mp.genes)
-tree_order <- geneNMF.metaprograms$programs.tree$order
-ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
-valid_cluster_ids <- as.numeric(gsub("\\D", "", retained_mps))
-mp_tree_order <- unique(ordered_clusters)
-mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
-mp_tree_order_names <- paste0("MP", mp_tree_order)
+# Logic moved up to constants/loading section
 
 set.seed(42)
 MAX_CELLS_TOTAL <- 8000
@@ -391,6 +414,22 @@ non_cc_block_order <- mp_tree_order_names[
 ]
 mp_row_order <- c(cc_block_order, non_cc_block_order)
 sub_scores <- sub_scores_orig[mp_row_order, , drop = FALSE]
+
+# append normalized pan-cancer rows (retained order)
+pan_mat <- t(z_3ca_all[cells_to_plot, , drop = FALSE])
+# keep retained order, no extra sorting
+pan_mat <- pan_mat[retained_3ca[retained_3ca %in% rownames(pan_mat)], , drop = FALSE]
+rownames(pan_mat) <- clean_3ca_name(rownames(pan_mat))
+
+# append raw pan-cancer rows (retained order)
+raw_pan_mat <- t(raw_3ca_all[cells_to_plot, , drop = FALSE])
+raw_pan_mat <- raw_pan_mat[retained_3ca[retained_3ca %in% rownames(raw_pan_mat)], , drop = FALSE]
+rownames(raw_pan_mat) <- paste0(clean_3ca_name(rownames(raw_pan_mat)), " (raw)")
+
+sub_scores <- rbind(sub_scores, pan_mat, raw_pan_mat)
+
+# keep raw row IDs for robust MP-group annotation before display renaming
+row_ids_raw <- rownames(sub_scores)
 
 mp_label_map <- mp_descriptions
 missing_mps <- setdiff(rownames(sub_scores), names(mp_label_map))
@@ -457,42 +496,93 @@ col_ann <- HeatmapAnnotation(
   ),
   annotation_name_side = "left",
   show_legend = TRUE,
-  na_col = "white"
+  na_col = "white",
+  annotation_legend_param = list(
+    State = list(title_gp = gpar(fontsize = 9, fontface = "bold"), labels_gp = gpar(fontsize = 8)),
+    CNA = list(title_gp = gpar(fontsize = 9, fontface = "bold"), labels_gp = gpar(fontsize = 8)),
+    CC_score = list(title_gp = gpar(fontsize = 9, fontface = "bold"), labels_gp = gpar(fontsize = 8)),
+    Diversity = list(title_gp = gpar(fontsize = 9, fontface = "bold"), labels_gp = gpar(fontsize = 8)),
+    Study = list(title_gp = gpar(fontsize = 9, fontface = "bold"), labels_gp = gpar(fontsize = 8))
+  )
 )
 
-ordered_group_names <- names(state_groups)
-mp_to_group <- rep("Other", length(mp_row_order))
-names(mp_to_group) <- mp_row_order
+mp_to_group <- rep("Other", length(row_ids_raw))
+names(mp_to_group) <- row_ids_raw
 mp_to_group[cc_mps[cc_mps %in% names(mp_to_group)]] <- "Cell_cycle"
 for (grp in names(state_groups)) {
   grp_mps <- intersect(state_groups[[grp]], names(mp_to_group))
   mp_to_group[grp_mps] <- grp
 }
-group_colors_row <- c(group_cols[ordered_group_names], Cell_cycle = "gold", Other = "grey70")
-mp_group_label <- mp_to_group
-names(mp_group_label) <- rownames(sub_scores)
+pan_rows <- clean_3ca_name(retained_3ca)
+pan_rows_raw <- paste0(pan_rows, " (raw)")
+mp_to_group[intersect(names(mp_to_group), pan_rows)] <- "PanCancer"
+mp_to_group[intersect(names(mp_to_group), pan_rows_raw)] <- "PanCancerRaw"
 
-row_ann <- rowAnnotation(
-  MP_group = factor(mp_group_label, levels = c("Cell_cycle", ordered_group_names, "Other")),
-  col = list(MP_group = group_colors_row),
-  show_annotation_name = FALSE
+# Define labels and colors mapping
+mp_group_names <- c(
+  "Cell_cycle" = "Cell cycle",
+  "Classic Proliferative" = "Classic\nProlif",
+  "Basal to Intestinal Metaplasia" = "Basal-IM",
+  "Stress-adaptive" = "Stress\nadaptive",
+  "SMG-like Metaplasia" = "SMG-like\nMeta",
+  "Immune Infiltrating" = "Immune\nInfiltrating",
+  "PanCancer" = "Pan-Cancer\n(norm)",
+  "PanCancerRaw" = "Pan-Cancer\n(raw)",
+  "Other" = "Other"
 )
 
-lim <- as.numeric(quantile(abs(sub_scores), 0.98, na.rm = TRUE))
-col_fun_sc <- colorRamp2(c(-lim, 0, lim), c("navy", "white", "firebrick3"))
+# Colors according to labels
+group_colors_row <- c(
+  setNames(group_cols[names(state_groups)], mp_group_names[names(state_groups)]),
+  "Cell cycle" = "gold",
+  "Pan-Cancer\n(norm)" = "#4B0082",
+  "Pan-Cancer\n(raw)" = "#7F0000",
+  "Other" = "grey70"
+)
 
-ht <- Heatmap(
-  sub_scores,
-  name = "Adj score",
-  col = col_fun_sc,
-  top_annotation = col_ann,
-  left_annotation = row_ann,
-  column_split = split_vec,
-  column_order = (function() {
+# Map labels using original IDs, then rename the vector to match current sub_scores rows
+mp_group_labels <- mp_group_names[mp_to_group[row_ids_raw]]
+names(mp_group_labels) <- mp_label_map[row_ids_raw]
+
+# Separate row annotations for each segment
+row_ann_adj <- rowAnnotation(
+  MP_group = factor(mp_group_labels[adj_rows], levels = mp_group_names),
+  col = list(MP_group = group_colors_row),
+  show_annotation_name = FALSE,
+  show_legend = TRUE,
+  annotation_legend_param = list(MP_group = list(title = "MP Group", 
+                                                 title_gp = gpar(fontsize = 9, fontface = "bold"), 
+                                                 labels_gp = gpar(fontsize = 8)))
+)
+
+row_ann_raw <- rowAnnotation(
+  MP_group = factor(mp_group_labels[raw_rows], levels = mp_group_names),
+  col = list(MP_group = group_colors_row),
+  show_annotation_name = FALSE,
+  show_legend = FALSE
+)
+
+  lim <- as.numeric(quantile(abs(sub_scores), 0.98, na.rm = TRUE))
+  col_fun_sc <- colorRamp2(c(-lim, 0, lim), c("navy", "white", "firebrick3"))
+  
+  # Split heatmap into Adjusted and Raw sections
+  adj_rows <- rownames(sub_scores)[!grepl("\\(raw\\)$", rownames(sub_scores))]
+  raw_rows <- rownames(sub_scores)[grepl("\\(raw\\)$", rownames(sub_scores))]
+  
+  # Row split for adjusted part
+  row_split_adj <- factor(
+    ifelse(adj_rows %in% pan_rows,
+           "Pan-Cancer\n(norm)",
+           ifelse(adj_rows %in% mp_descriptions[cc_mps], "Cell cycle\nMPs", "State\nMPs")),
+    levels = c("Cell cycle\nMPs", "State\nMPs", "Pan-Cancer\n(norm)")
+  )
+  
+  # Column order logic from states_topmpB_reg_noreg.R
+  col_order <- (function() {
     col_order_list <- lapply(levels(split_vec), function(lvl) {
       idx <- which(as.character(split_vec) == lvl)
       if (length(idx) <= 1) return(idx)
-      mat_lvl <- sub_scores[, idx, drop = FALSE]
+      mat_lvl <- sub_scores[adj_rows, idx, drop = FALSE]
       dcols <- dist(t(mat_lvl))
       hc <- hclust(dcols, method = "ward.D2")
       idx[hc$order]
@@ -502,29 +592,69 @@ ht <- Heatmap(
       return(seq_len(ncol(sub_scores)))
     }
     full_ord
-  })(),
-  column_gap = grid::unit(1.5, "mm"),
-  row_split = factor(
-    ifelse(mp_row_order %in% cc_mps, "Cell_cycle_MPs", "Other_MPs"),
-    levels = c("Cell_cycle_MPs", "Other_MPs")
-  ),
-  row_gap = grid::unit(2.5, "mm"),
-  cluster_rows = FALSE,
-  cluster_columns = FALSE,
-  show_row_dend = FALSE,
-  row_names_side = "left",
-  row_names_gp = grid::gpar(fontsize = 9, fontface = "italic"),
-  show_column_names = FALSE,
-  column_title_rot = 30,
-  column_title_gp = grid::gpar(fontsize = 10, fontface = "bold"),
-  use_raster = TRUE,
-  raster_quality = 5,
-  border = FALSE,
-  rect_gp = grid::gpar(col = NA)
-)
+  })()
 
-pdf("unresolved_states/Auto_unresolved_relabel_heatmap.pdf", width = 18, height = 8, useDingbats = FALSE)
-draw(ht, merge_legend = TRUE)
+  ht_adj <- Heatmap(
+    sub_scores[adj_rows, , drop = FALSE],
+    name = "Adj score",
+    col = col_fun_sc,
+    top_annotation = col_ann,
+    left_annotation = row_ann_adj,
+    column_split = split_vec,
+    row_split = row_split_adj,
+    column_order = col_order,
+    cluster_rows = FALSE,
+    cluster_columns = FALSE,
+    show_row_dend = FALSE,
+    show_column_names = FALSE,
+    row_names_side = "left",
+    row_names_gp = gpar(fontsize = 8, fontface = "italic"),
+    column_title_rot = 30,
+    column_title_gp = gpar(fontsize = 10, fontface = "bold"),
+    row_gap = unit(2, "mm"),
+    column_gap = unit(1.5, "mm"),
+    use_raster = TRUE,
+    raster_quality = 3,
+    border = FALSE,
+    rect_gp = gpar(col = NA),
+    heatmap_legend_param = list(title_gp = gpar(fontsize = 9, fontface = "bold"), 
+                                labels_gp = gpar(fontsize = 8))
+  )
+  
+  # Raw scores color scale
+  raw_lim <- as.numeric(quantile(sub_scores[raw_rows, ], 0.98, na.rm = TRUE))
+  if (is.na(raw_lim) || raw_lim == 0) raw_lim <- 0.15
+  col_fun_raw <- colorRamp2(c(0, raw_lim), c("white", "firebrick3"))
+  
+  ht_raw <- Heatmap(
+    sub_scores[raw_rows, , drop = FALSE],
+    name = "Raw score",
+    col = col_fun_raw,
+    left_annotation = row_ann_raw,
+    column_split = split_vec,
+    column_order = col_order,
+    cluster_rows = FALSE,
+    cluster_columns = FALSE,
+    show_column_names = FALSE,
+    row_names_side = "left",
+    row_names_gp = gpar(fontsize = 8, fontface = "italic"),
+    column_gap = unit(1.5, "mm"),
+    use_raster = TRUE,
+    raster_quality = 3,
+    show_heatmap_legend = TRUE,
+    column_title = NULL,
+    border = FALSE,
+    rect_gp = gpar(col = NA),
+    heatmap_legend_param = list(title_gp = gpar(fontsize = 9, fontface = "bold"), 
+                                labels_gp = gpar(fontsize = 8))
+  )
+
+  ht <- ht_adj %v% ht_raw
+
+pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_heatmap.pdf")), width = 18, height = 10, useDingbats = FALSE)
+draw(ht, merge_legend = TRUE, heatmap_legend_side = "right", annotation_legend_side = "right")
+grid.text("Unresolved cells subclass: 3CA-based relabeling (noreg)", x = unit(5, "mm"), y = unit(1, "npc") - unit(5, "mm"), 
+          just = c("left", "top"), gp = gpar(fontsize = 14, fontface = "bold"))
 dev.off()
 
 ####################
@@ -585,7 +715,7 @@ state_cols <- intersect(c(names(state_groups), new_state_names), colnames(surv_d
 all_cox <- list()
 
 # ONLY plot EAC
-pdf("unresolved_states/Auto_unresolved_relabel_volcano.pdf", width = 9, height = 7)
+pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_volcano.pdf")), width = 9, height = 7)
 for (coh in c("EAC")) {
   cox_df <- run_cox_for_group(
     surv_data %>% filter(HistologyGroup == coh),
@@ -599,4 +729,20 @@ for (coh in c("EAC")) {
 dev.off()
 
 cox_res <- bind_rows(all_cox)
-write.csv(cox_res, "unresolved_states/Auto_unresolved_relabel_cox_results.csv", row.names = FALSE)
+write.csv(cox_res, file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_cox_results.csv")), row.names = FALSE)
+
+summary_dir <- file.path(
+  "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
+  "updates", "new_updates", "summaries"
+)
+dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
+summary_df <- data.frame(
+  task = task_prefix,
+  n_cells_total = length(common_cells),
+  n_unresolved_input = length(unresolved_cells),
+  n_retained_3ca = length(retained_3ca),
+  stringsAsFactors = FALSE
+)
+write.csv(summary_df, file.path(summary_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_summary.csv")), row.names = FALSE)
+
+message(sprintf("Saved unresolved relabel outputs in %s", out_dir))

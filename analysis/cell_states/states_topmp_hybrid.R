@@ -45,7 +45,12 @@ meta_full_epi <- readRDS("meta_full_epi.rds")
 
 cell_cycle_genes <- read.csv("/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Cell_Cycle_Genes.csv",
                              header = TRUE, stringsAsFactors = FALSE)[, 1:3]
-cs_genes_raw <- read.table("cancer_signatures.txt", header = FALSE)$V1
+if (file.exists("cancer_signatures.txt")) {
+  cs_genes_raw <- read.table("cancer_signatures.txt", header = FALSE)$V1
+} else {
+  warning("cancer_signatures.txt not found; CS score will be set to 0")
+  cs_genes_raw <- character(0)
+}
 
 # ============================================================================
 # 2. Silhouette filtering
@@ -127,9 +132,14 @@ cc_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cc_top50, , drop = FAL
 names(cc_score) <- colnames(tmdata_all)
 
 cs_genes <- intersect(cs_genes_raw, rownames(tmdata_all))
-gene_means_cs <- rowMeans(tmdata_all@assays$RNA$data[cs_genes, , drop = FALSE], na.rm = TRUE)
-cs_top50 <- names(sort(gene_means_cs, decreasing = TRUE))[1:50]
-cs_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cs_top50, , drop = FALSE]))
+if (length(cs_genes) > 0) {
+  gene_means_cs <- rowMeans(tmdata_all@assays$RNA$data[cs_genes, , drop = FALSE], na.rm = TRUE)
+  cs_top50 <- names(sort(gene_means_cs, decreasing = TRUE))[1:min(50, length(gene_means_cs))]
+  cs_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cs_top50, , drop = FALSE]))
+} else {
+  cs_score <- rep(0, ncol(tmdata_all))
+  names(cs_score) <- colnames(tmdata_all)
+}
 names(cs_score) <- colnames(tmdata_all)
 
 # ============================================================================
@@ -585,6 +595,7 @@ cat(format(Sys.time(), "%H:%M:%S"), "\n")
 # Output: ref_outs/Auto_topmp_v2_hybridB_subtypes.rds
 #         ref_outs/Auto_topmp_v2_hybridB_states_expanded.rds
 #         ref_outs/Auto_topmp_v2_hybridB_heatmap.pdf
+#         ref_outs/Auto_topmp_v2_hybridB_pairwise_heatmap.pdf
 #         ref_outs/Auto_topmp_v2_hybridB_mean_heatmap.pdf
 #         ref_outs/Auto_topmp_v2_hybridB_proportion.pdf
 #         ref_outs/Auto_topmp_v2_hybridB_umap_top12.pdf
@@ -620,7 +631,12 @@ cell_cycle_genes <- read.csv(
   header = TRUE,
   stringsAsFactors = FALSE
 )[, 1:3]
-cs_genes_raw <- read.table("cancer_signatures.txt", header = FALSE)$V1
+if (file.exists("cancer_signatures.txt")) {
+  cs_genes_raw <- read.table("cancer_signatures.txt", header = FALSE)$V1
+} else {
+  warning("cancer_signatures.txt not found; CS score will be set to 0")
+  cs_genes_raw <- character(0)
+}
 
 ####################
 # 2) Canonical MP setup and ordering
@@ -730,8 +746,13 @@ cc_top50 <- names(sort(rowMeans(tmdata_all@assays$RNA$data[cc_consensus, , drop 
 cc_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cc_top50, , drop = FALSE]))
 
 cs_genes <- intersect(cs_genes_raw, rownames(tmdata_all))
-cs_top50 <- names(sort(rowMeans(tmdata_all@assays$RNA$data[cs_genes, , drop = FALSE], na.rm = TRUE), decreasing = TRUE))[1:50]
-cs_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cs_top50, , drop = FALSE]))
+if (length(cs_genes) > 0) {
+  cs_top50 <- names(sort(rowMeans(tmdata_all@assays$RNA$data[cs_genes, , drop = FALSE], na.rm = TRUE), decreasing = TRUE))[1:min(50, length(cs_genes))]
+  cs_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cs_top50, , drop = FALSE]))
+} else {
+  cs_score <- rep(0, ncol(tmdata_all))
+  names(cs_score) <- colnames(tmdata_all)
+}
 
 ####################
 # 4) Hybrid-B subdivision
@@ -752,16 +773,6 @@ if (length(hybrid_cells) == 0) stop("No Hybrid cells found in state_B")
 
 assign_hybrid_subtype <- function(score_vec, order_vec, gap_thr = 0.3) {
   score_vec <- score_vec[order_vec]
-  top1 <- max(score_vec, na.rm = TRUE)
-  active <- names(score_vec)[score_vec >= (top1 - gap_thr)]
-
-  if (length(active) > 2) return("MultiHybrid_3plus")
-
-  if (length(active) == 2) {
-    active <- order_vec[order_vec %in% active]
-    return(paste(active, collapse = "__"))
-  }
-
   ord <- names(sort(score_vec, decreasing = TRUE))[1:2]
   ord <- order_vec[order_vec %in% ord]
   paste(ord, collapse = "__")
@@ -773,7 +784,7 @@ hybrid_subtype <- vapply(
   character(1)
 )
 
-hybrid_levels <- c(pair_labels, "MultiHybrid_3plus")
+hybrid_levels <- pair_labels
 hybrid_subtype <- factor(hybrid_subtype, levels = hybrid_levels)
 names(hybrid_subtype) <- hybrid_cells
 
@@ -858,10 +869,7 @@ div_vals <- subtype_div_map[as.character(split_vec)]
 div_vals[is.na(div_vals)] <- 0
 names(div_vals) <- cells_to_plot
 
-hybrid_cols <- setNames(
-  c(hue_pal()(length(pair_labels)), "black"),
-  c(pair_labels, "MultiHybrid_3plus")
-)
+hybrid_cols <- setNames(hue_pal()(length(pair_labels)), pair_labels)
 local_hybrid_cols <- hybrid_cols[levels(split_vec)]
 
 study_cols <- setNames(
@@ -967,7 +975,7 @@ p_prop <- ggplot(plot_df, aes(x = study, y = pct, fill = subtype)) +
   scale_fill_manual(values = hybrid_cols) +
   labs(
     title = "Hybrid-B subtype proportions",
-    subtitle = "10 double-hybrid classes + MultiHybrid_3plus",
+    subtitle = "Pairwise-only double-hybrid classes",
     x = NULL,
     y = "% of hybrid cells",
     fill = "Hybrid subtype"
@@ -976,6 +984,37 @@ p_prop <- ggplot(plot_df, aes(x = study, y = pct, fill = subtype)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ggsave("Auto_topmp_v2_hybridB_proportion.pdf", p_prop, width = 14, height = 7)
+
+####################
+# 6b) Pairwise-only hybrid matrix heatmap
+####################
+pair_mat <- matrix(0, nrow = length(ordered_group_names), ncol = length(ordered_group_names),
+                   dimnames = list(ordered_group_names, ordered_group_names))
+pair_tab <- table(as.character(hybrid_subtype))
+for (lbl in names(pair_tab)) {
+  if (!grepl("__", lbl)) next
+  sp <- strsplit(lbl, "__")[[1]]
+  if (length(sp) != 2) next
+  a <- sp[1]
+  b <- sp[2]
+  if (a %in% ordered_group_names && b %in% ordered_group_names) {
+    pair_mat[a, b] <- pair_tab[[lbl]]
+    pair_mat[b, a] <- pair_tab[[lbl]]
+  }
+}
+pair_pct <- 100 * pair_mat / max(length(state_B), 1)
+pair_df <- as.data.frame(as.table(pair_pct), stringsAsFactors = FALSE)
+colnames(pair_df) <- c("StateA", "StateB", "Pct")
+
+p_pair <- ggplot(pair_df, aes(StateB, StateA, fill = Pct)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = sprintf("%.2f", Pct)), size = 3) +
+  scale_fill_gradient(low = "white", high = "firebrick3") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid = element_blank()) +
+  labs(title = "Pairwise-only Hybrid-B heatmap (% of all cells)", x = NULL, y = NULL, fill = "%")
+
+ggsave("Auto_topmp_v2_hybridB_pairwise_heatmap.pdf", p_pair, width = 8, height = 6)
 
 ####################
 # 7) Mean heatmap per hybrid subtype (non-CC MPs)
@@ -1166,6 +1205,7 @@ write.csv(summary_df, summary_path, row.names = FALSE)
 cat("Saved: Auto_topmp_v2_hybridB_subtypes.rds\n")
 cat("Saved: Auto_topmp_v2_hybridB_states_expanded.rds\n")
 cat("Saved: Auto_topmp_v2_hybridB_heatmap.pdf\n")
+cat("Saved: Auto_topmp_v2_hybridB_pairwise_heatmap.pdf\n")
 cat("Saved: Auto_topmp_v2_hybridB_mean_heatmap.pdf\n")
 cat("Saved: Auto_topmp_v2_hybridB_proportion.pdf\n")
 cat("Saved: Auto_topmp_v2_realstates_plushybrid_umap_top12.pdf\n")
