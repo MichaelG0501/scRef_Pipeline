@@ -198,8 +198,8 @@ group_order_pos <- sapply(state_groups, function(mps) {
 })
 ordered_group_names <- names(sort(group_order_pos))
 
-meta_tcga <- readRDS("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/tcga_esca_meta.rds")
-tpm_df <- data.table::fread("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
+meta_tcga <- readRDS("tcga_esca_meta.rds")
+tpm_df <- data.table::fread("cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 tpm_mat <- as.matrix(tpm_df[, -1])
 rownames(tpm_mat) <- tpm_df$GeneSymbol
 
@@ -300,20 +300,51 @@ for (cell in unresolved_cells) {
   }
 }
 
-new_state_names <- clean_3ca_name(retained_3ca)
+# Apply Merges
+# 1. Merge 3CA_mp_30 Respiration 1 (from unresolved) with Classic Proliferative
+state_updated[state_updated == "3CA_mp_30 Respiration 1"] <- "Classic Proliferative"
+
+# 2. Merge 3CA_mp_12 Protein maturation and 3CA_mp_17 EMT III into 3CA_EMT_and_Protein_maturation
+state_updated[state_updated %in% c("3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III")] <- "3CA_EMT_and_Protein_maturation"
+
+# Define final levels and colors
+new_retained_3ca_names <- clean_3ca_name(retained_3ca)
+# Remove the ones that were merged into others
+new_retained_3ca_names <- setdiff(new_retained_3ca_names, c("3CA_mp_30 Respiration 1", "3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III"))
+# Add the new merged one if its inputs were present in candidate 3CA MPs
+if (any(c("3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III") %in% clean_3ca_name(retained_3ca))) {
+  new_retained_3ca_names <- unique(c(new_retained_3ca_names, "3CA_EMT_and_Protein_maturation"))
+}
+
 state_level_order_updated <- c(
   ordered_group_names,
-  new_state_names,
+  new_retained_3ca_names,
   "Unresolved", "Hybrid"
 )
 
-new_state_cols <- setNames(
-  scales::hue_pal()(length(new_state_names)),
-  new_state_names
+# Custom colors for new states to look premium
+custom_3ca_cols <- c(
+  "3CA_EMT_and_Protein_maturation" = "#666666", # Dark grey/brown for EMT-maturation
+  "3CA_mp_1 Epithelial-1"          = "#F781BF", # Pink
+  "3CA_mp_5 Epithelial-5"          = "#A65628", # Brown
+  "3CA_mp_21 Epithelial-21"         = "#FFFF33"  # Yellow
 )
+
+# For any others, use a palette
+remaining_3ca <- setdiff(new_retained_3ca_names, names(custom_3ca_cols))
+if (length(remaining_3ca) > 0) {
+  new_state_cols <- c(
+    custom_3ca_cols[intersect(names(custom_3ca_cols), new_retained_3ca_names)],
+    setNames(scales::hue_pal()(length(remaining_3ca)), remaining_3ca)
+  )
+} else {
+  new_state_cols <- custom_3ca_cols[intersect(names(custom_3ca_cols), new_retained_3ca_names)]
+}
+
 group_cols_updated <- c(group_cols, new_state_cols)
 
 saveRDS(state_updated, file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_states.rds")))
+saveRDS(state_updated, "Auto_final_states.rds")
 
 ####################
 # STEP 4: updated proportion plot
@@ -544,6 +575,10 @@ group_colors_row <- c(
 mp_group_labels <- mp_group_names[mp_to_group[row_ids_raw]]
 names(mp_group_labels) <- mp_label_map[row_ids_raw]
 
+# Split heatmap into Adjusted and Raw sections
+adj_rows <- rownames(sub_scores)[!grepl("\\(raw\\)$", rownames(sub_scores))]
+raw_rows <- rownames(sub_scores)[grepl("\\(raw\\)$", rownames(sub_scores))]
+
 # Separate row annotations for each segment
 row_ann_adj <- rowAnnotation(
   MP_group = factor(mp_group_labels[adj_rows], levels = mp_group_names),
@@ -562,20 +597,20 @@ row_ann_raw <- rowAnnotation(
   show_legend = FALSE
 )
 
-  lim <- as.numeric(quantile(abs(sub_scores), 0.98, na.rm = TRUE))
-  col_fun_sc <- colorRamp2(c(-lim, 0, lim), c("navy", "white", "firebrick3"))
-  
-  # Split heatmap into Adjusted and Raw sections
-  adj_rows <- rownames(sub_scores)[!grepl("\\(raw\\)$", rownames(sub_scores))]
-  raw_rows <- rownames(sub_scores)[grepl("\\(raw\\)$", rownames(sub_scores))]
-  
-  # Row split for adjusted part
-  row_split_adj <- factor(
-    ifelse(adj_rows %in% pan_rows,
-           "Pan-Cancer\n(norm)",
-           ifelse(adj_rows %in% mp_descriptions[cc_mps], "Cell cycle\nMPs", "State\nMPs")),
-    levels = c("Cell cycle\nMPs", "State\nMPs", "Pan-Cancer\n(norm)")
-  )
+lim <- as.numeric(quantile(abs(sub_scores), 0.98, na.rm = TRUE))
+col_fun_sc <- colorRamp2(c(-lim, 0, lim), c("navy", "white", "firebrick3"))
+
+# Row split for adjusted part
+# use the display names for matching
+cc_labels <- mp_descriptions[cc_mps]
+pan_labels <- clean_3ca_name(retained_3ca)
+
+row_split_adj <- factor(
+  ifelse(adj_rows %in% pan_labels,
+         "Pan-Cancer\n(norm)",
+         ifelse(adj_rows %in% cc_labels, "Cell cycle\nMPs", "State\nMPs")),
+  levels = c("Cell cycle\nMPs", "State\nMPs", "Pan-Cancer\n(norm)")
+)
   
   # Column order logic from states_topmpB_reg_noreg.R
   col_order <- (function() {
@@ -681,8 +716,18 @@ names(MP_list) <- make.names(sub("^MP", "3CA_mp_", names(MP_list)))
 # Filter to only the retained 3CA MPs
 new_state_sigs <- MP_list[retained_3ca]
 
-# Rename them using the clean function so they exactly match new_state_names
+# Rename them using the clean function
 names(new_state_sigs) <- clean_3ca_name(names(new_state_sigs))
+
+# Handle merges for GSVA sets (same as state labels)
+# Keep originals in new_state_sigs so they can be aggregated into groups, 
+# but they will be excluded from the final standalone Cox columns.
+
+# EMT + Protein Maturation merge into a new set
+if (any(c("3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III") %in% names(new_state_sigs))) {
+  merged_genes <- unique(unlist(new_state_sigs[intersect(c("3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III"), names(new_state_sigs))]))
+  new_state_sigs[["3CA_EMT_and_Protein_maturation"]] <- merged_genes
+}
 
 # Append the 3CA gene sets to the original GSVA sets
 gsva_sets <- c(gsva_sets, new_state_sigs)
@@ -703,30 +748,46 @@ surv_data <- meta_tcga %>%
 surv_data$HistologyGroup <- infer_histology(surv_data$type)
 
 # 5. Aggregate original MP scores into State scores (taking max MP score for each state group)
-for (nm in names(state_groups)) {
-  mps <- intersect(state_groups[[nm]], colnames(surv_data))
+# Update state groups to include Respiration for Classic Proliferative
+local_state_groups <- state_groups
+local_state_groups[["Classic Proliferative"]] <- c(local_state_groups[["Classic Proliferative"]], "3CA_mp_30 Respiration 1")
+
+for (nm in names(local_state_groups)) {
+  mps <- intersect(local_state_groups[[nm]], colnames(surv_data))
   if (length(mps) == 0) next
   surv_data[[nm]] <- apply(as.matrix(surv_data[, mps, drop = FALSE]), 1, max)
 }
 
 # 6. Combine original states and the newly added 3CA states for Cox regression
-state_cols <- intersect(c(names(state_groups), new_state_names), colnames(surv_data))
+# new_state_names in Step 3 was updated to new_retained_3ca_names
+final_3ca_names <- setdiff(clean_3ca_name(retained_3ca), c("3CA_mp_30 Respiration 1", "3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III"))
+if (any(c("3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III") %in% clean_3ca_name(retained_3ca))) {
+  final_3ca_names <- unique(c(final_3ca_names, "3CA_EMT_and_Protein_maturation"))
+}
+
+state_cols <- intersect(c(names(local_state_groups), final_3ca_names), colnames(surv_data))
 
 all_cox <- list()
 
-# ONLY plot EAC
-pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_volcano.pdf")), width = 9, height = 7)
-for (coh in c("EAC")) {
+# Plot both EAC and ESCC
+p_list <- list()
+for (coh in c("EAC", "ESCC")) {
   cox_df <- run_cox_for_group(
     surv_data %>% filter(HistologyGroup == coh),
     state_cols,
     cohort_name = coh
   )
-  all_cox[[coh]] <- cox_df
-  p <- plot_volcano(cox_df, paste0("Updated states: TCGA survival volcano (", coh, ")"))
-  if (!is.null(p)) print(p)
+  if (nrow(cox_df) > 0) {
+    all_cox[[coh]] <- cox_df
+    p_list[[coh]] <- plot_volcano(cox_df, paste0("Finalised states: TCGA survival (", coh, ")"))
+  }
 }
-dev.off()
+
+if (length(p_list) > 0) {
+  pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_volcano.pdf")), width = 16, height = 7)
+  print(wrap_plots(p_list, ncol = 2))
+  dev.off()
+}
 
 cox_res <- bind_rows(all_cox)
 write.csv(cox_res, file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_cox_results.csv")), row.names = FALSE)

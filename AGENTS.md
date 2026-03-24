@@ -195,6 +195,7 @@ All paths are relative to the project root unless absolute paths are specified.
 | DEG cache | `ref_outs/states_degs.rds` | FindAllMarkers result for 4 cell states |
 | **State RDS (reg)** | `ref_outs/Auto_topmp_v2_reg_states_B.rds` | Approach B states (CC-regressed) |
 | **State RDS (noreg)** | `ref_outs/Auto_topmp_v2_noreg_states_B.rds` | Approach B states (No CC regression) |
+| **Final State RDS** | `ref_outs/Auto_final_states.rds` | Final merged states (Approach B + 3CA relabeled + specific merges) |
 | Barretts metadata | `ref_outs/meta_barretts.rds` | Specifically for the new Barretts dataset |
 
 ### `analysis/utils.R` — Reference Patterns (NOT sourced)
@@ -273,6 +274,12 @@ Note: all 3 CNV scripts share identical library set: `data.table, dplyr, Complex
 | `Auto_hybrid_pairwise_v2.sh` | PBS wrapper for `Auto_hybrid_pairwise_v2.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
 | `Auto_task6_hybrid_pairwise_percell_heatmap.R` | Pairwise-only hybrid heatmap and subdivision (Approach B style rewrite); output includes per-cell heatmap, pairwise matrix, and UMAPs | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `UCell_nMP19_filtered.rds` | `Auto_task6_hybrid_heatmap.pdf`, `Auto_task6_hybrid_pairwise_heatmap.pdf`, `Auto_task6_hybrid_umap_top12.pdf` |
 | `Auto_task6_hybrid_pairwise_percell_heatmap.sh` | PBS wrapper for `Auto_task6_hybrid_pairwise_percell_heatmap.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
+| `Auto_top1_sample_umap_all_states.R` | Plot UMAP for the top-1 most diverse sample, including Unresolved and Hybrid states, using provided group colors | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds` | `Auto_top1_sample_umap_all_states.pdf` |
+| `Auto_overall_state_proportions.R` | Overall stacked barplot of cell state proportions for the 5 states + Unresolved + Hybrid | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds` | `Auto_overall_state_proportions.pdf` |
+| `Auto_final_percell_heatmap.R` | High-resolution heatmap of finalized states across 8,000 cells (all cells, sampled per state) | `EAC_Ref_epi.rds`, `Auto_final_states.rds`, `UCell_nMP19_filtered.rds` | `Auto_final_percell_heatmap.pdf` |
+| `Auto_pseudotime_batch_correction.R` | Pseudotime analysis with Harmony and scVI batch correction | `EAC_Ref_epi.rds`, `Auto_final_states.rds` | `Auto_partA_Harmony_pseudotime.pdf`, `Auto_partA_scVI_pseudotime.pdf` |
+
+
 
 ### `analysis/plotting/` — Publication Figures
 | File | Purpose | Key Inputs | Key Outputs |
@@ -385,6 +392,10 @@ Append new findings to the appropriate section. Don't rewrite existing documenta
 - **State naming update applied**: use `Basal to Intestinal Metaplasia` (previously `Basal to Intest. Meta` / `Barretts Metaplasia`) and `Immune Infiltrating` (previously `Immune Infiltrated`) across new analysis outputs.
 - **MP/state definitions unchanged**: MP memberships and state compositions remain identical; only labels changed.
 - **Compatibility risk**: existing `.rds` outputs generated before this rename may still carry old labels; mixed usage can break joins, plotting order, pseudotime roots, and survival feature mapping.
+- **Progressive relabeling update (23 Mar 2026)**:
+  - `3CA_mp_30 Respiration 1` relabeled cells merged into `Classic Proliferative`.
+  - `3CA_mp_12 Protein maturation` and `3CA_mp_17 EMT III` merged into `3CA_EMT_and_Protein_maturation`.
+  - Final results stored in `ref_outs/Auto_final_states.rds`. This is the recommended object for all downstream clinical/abundance analysis.
 - **Regeneration guidance after rename**:
   1. Regenerate `Auto_topmp_v2_{reg,noreg}_states_B.rds` and dependent outputs.
   2. Regenerate unresolved relabel outputs (`unresolved_states/*`) so newly relabeled states are consistent.

@@ -32,6 +32,8 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(ggrepel)
+library(ComplexHeatmap)
+library(circlize)
 library(survival)
 library(GSVA)
 library(Seurat)
@@ -68,16 +70,37 @@ run_gsva <- function(expr_mat, gene_sets) {
   gsva(expr_mat, gs, method = "gsva", kcdf = "Gaussian")
 }
 
-run_cox <- function(df, feature_cols, mode_name, method_name, feature_type) {
+run_cox <- function(df, feature_cols, mode_name, method_name, feature_type, split_method = "continuous") {
   out <- list()
   for (feat in feature_cols) {
     if (!feat %in% colnames(df)) next
     d <- df %>% filter(!is.na(OS_time), !is.na(OS_event), !is.na(.data[[feat]]), HistologyGroup %in% c("EAC"))
     if (nrow(d) < 20 || var(d[[feat]], na.rm = TRUE) == 0) next
+    
+    # Apply split method
+    if (split_method == "median") {
+      med_val <- median(d[[feat]], na.rm = TRUE)
+      d$split_val <- factor(ifelse(d[[feat]] > med_val, "High", "Low"), levels = c("Low", "High"))
+    } else if (split_method == "q1q4") {
+      quants <- quantile(d[[feat]], probs = c(0.25, 0.75), na.rm = TRUE)
+      d <- d %>% filter(.data[[feat]] <= quants[1] | .data[[feat]] >= quants[2])
+      if (nrow(d) < 20) next
+      d$split_val <- factor(ifelse(d[[feat]] >= quants[2], "High", "Low"), levels = c("Low", "High"))
+    } else {
+      d$split_val <- d[[feat]]
+    }
+    
     for (coh in c("EAC")) {
       dd <- d %>% filter(HistologyGroup == coh)
-      if (nrow(dd) < 20 || var(dd[[feat]], na.rm = TRUE) == 0) next
-      fit <- try(coxph(as.formula(paste0("Surv(OS_time, OS_event) ~ `", feat, "`")), data = dd), silent = TRUE)
+      if (nrow(dd) < 20 || var(as.numeric(dd$split_val), na.rm = TRUE) == 0) next
+      
+      form <- if (split_method == "continuous") {
+        as.formula(paste0("Surv(OS_time, OS_event) ~ `", feat, "`"))
+      } else {
+        as.formula("Surv(OS_time, OS_event) ~ split_val")
+      }
+      
+      fit <- try(coxph(form, data = dd), silent = TRUE)
       if (inherits(fit, "try-error")) next
       ss <- summary(fit)
       out[[paste(feat, coh, sep = "|")]] <- data.frame(
@@ -86,6 +109,7 @@ run_cox <- function(df, feature_cols, mode_name, method_name, feature_type) {
         cohort = coh,
         feature_type = feature_type,
         feature = feat,
+        split_method = split_method,
         HR = ss$coefficients[1, "exp(coef)"],
         P_value = ss$coefficients[1, "Pr(>|z|)"],
         n = fit$n,
@@ -121,7 +145,7 @@ if (length(bad_mps) > 0) {
 retained_mps <- names(mp.genes)
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2"),
+  "Classic Proliferative" = c("MP2", "3CA_mp_30 Respiration 1"),
   "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
   "Stress-adaptive" = c("MP13", "MP12"),
   "SMG-like Metaplasia" = c("MP18", "MP16"),
@@ -173,26 +197,26 @@ extra_mps <- setdiff(names(mp.genes), ordered_mp_list)
 retained_mps <- c(ordered_mp_list, extra_mps)
 retained_mps <- retained_mps[retained_mps %in% names(mp.genes)]
 
-meta_tcga <- readRDS("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/tcga_esca_meta.rds")
+meta_tcga <- readRDS("tcga_esca_meta.rds")
 meta_tcga$HistologyGroup <- infer_histology(meta_tcga$type)
 
-tpm_df <- data.table::fread("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
+tpm_df <- data.table::fread("cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 tpm_whole <- as.matrix(tpm_df[, -1])
 rownames(tpm_whole) <- tpm_df$GeneSymbol
 
-mal_df <- data.table::fread("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/cibersortx/CIBERSORTx_Job11_output/CIBERSORTxHiRes_Job11_Malignant_Window20.txt")
+mal_df <- data.table::fread("cibersortx/CIBERSORTx_Job11_output/CIBERSORTxHiRes_Job11_Malignant_Window20.txt")
 tpm_mal <- as.matrix(mal_df[, -1])
 rownames(tpm_mal) <- mal_df$GeneSymbol
 tpm_mal[is.na(tpm_mal)] <- 0
 
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
-unresolved_relabeled_path <- "task4_unresolved_states/Auto_task4_unresolved_relabel_states.rds"
+final_states_path <- "Auto_final_states.rds"
 
 state_reg <- readRDS("Auto_topmp_v2_reg_states_B.rds")
 state_noreg <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
 
-if (file.exists(unresolved_relabeled_path)) {
-  state_rel <- readRDS(unresolved_relabeled_path)
+if (file.exists(final_states_path)) {
+  state_rel <- readRDS(final_states_path)
 } else {
   state_rel <- NULL
 }
@@ -213,6 +237,28 @@ if (!is.null(state_rel)) {
       new_state_gene_sets <- MP_list[keep_cols]
       names(new_state_gene_sets) <- clean_map[keep_cols]
     }
+    
+    # Handle merged 3CA states specifically
+    if ("3CA_EMT_and_Protein_maturation" %in% candidate_new_states) {
+      emt_prot_genes <- unique(unlist(MP_list[intersect(c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III"), names(MP_list))]))
+      if (length(emt_prot_genes) > 0) {
+        new_state_gene_sets[["3CA_EMT_and_Protein_maturation"]] <- emt_prot_genes
+      }
+    }
+    
+    # 3CA_mp_30 is merged into Classic Proliferative, so remove it from new_state_gene_sets
+    # but ensure its genes are available for the merge
+    if ("3CA_mp_30 Respiration 1" %in% names(new_state_gene_sets)) {
+      respiration_genes <- new_state_gene_sets[["3CA_mp_30 Respiration 1"]]
+      new_state_gene_sets <- new_state_gene_sets[names(new_state_gene_sets) != "3CA_mp_30 Respiration 1"]
+    } else {
+      # In case it's in MP_list but not yet in new_state_gene_sets
+      respiration_genes <- unique(unlist(MP_list[intersect(c("X3CA_mp_30.Respiration.1"), names(MP_list))]))
+    }
+    candidate_new_states <- setdiff(candidate_new_states, "3CA_mp_30 Respiration 1")
+    
+    # Ensure Classic Proliferative includes respiration genes if needed for DGE fallback
+    # (Though primarily it's used via state_groups)
   }
 }
 
@@ -289,6 +335,9 @@ make_dge_sets <- function(mode_name) {
     }
     
     base_sets <- c(canonical_state_sets, new_state_gene_sets, extra_state_mp_sets)
+    if (!is.null(respiration_genes) && length(respiration_genes) > 0) {
+      base_sets[["Classic Proliferative"]] <- unique(c(base_sets[["Classic Proliferative"]], respiration_genes))
+    }
     for (ms in missing_states) {
       if (!is.null(base_sets[[ms]])) {
         state_list[[ms]] <- base_sets[[ms]]
@@ -301,10 +350,10 @@ make_dge_sets <- function(mode_name) {
     state_list <- state_list[ord[ord %in% names(state_list)]]
   }
 
-  mp_adj <- readRDS(paste0("Auto_topmp_v2_", mode_name, "_mp_adj.rds"))
-  mp_adj <- mp_adj[intersect(rownames(mp_adj), Cells(tmp)), retained_mps[retained_mps %in% colnames(mp_adj)], drop = FALSE]
-  topmp <- colnames(mp_adj)[max.col(mp_adj, ties.method = "first")]
-  names(topmp) <- rownames(mp_adj)
+  ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
+  ucell_scores <- ucell_scores[intersect(rownames(ucell_scores), Cells(tmp)), retained_mps[retained_mps %in% colnames(ucell_scores)], drop = FALSE]
+  topmp <- colnames(ucell_scores)[max.col(ucell_scores, ties.method = "first")]
+  names(topmp) <- rownames(ucell_scores)
   state_by_mp <- tmp$state_for_dge[names(topmp)]
   unresolved_or_hybrid <- state_by_mp %in% c("Unresolved", "Hybrid")
   topmp <- topmp[!unresolved_or_hybrid]
@@ -349,116 +398,316 @@ make_dge_sets <- function(mode_name) {
   list(state = state_list, mp = mp_list)
 }
 
-all_res <- list()
+# Pre-calculate DGE sets and Plot Overlap
+dge_by_mode <- list()
+message("Pre-calculating DGE sets and visualizing overlap...")
+overlap_pdf <- file.path(out_dir, paste0("Auto_", task_prefix, "_dge_overlap_analysis.pdf"))
+pdf(overlap_pdf, width = 12, height = 10)
 
-pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_survival_mp_state_volcano_methods_noreg.pdf")), width = 9, height = 7)
 for (mode_name in requested_modes) {
-  message("Building DGE gene sets for mode: ", mode_name)
+  message("  Calculating DGE sets for mode: ", mode_name)
   dge_sets <- make_dge_sets(mode_name)
-
-  method_inputs <- list(
-    malignant_only = tpm_mal,
-    whole_tcga = tpm_whole,
-    dge_based_malignant = tpm_mal,
-    dge_based_whole = tpm_whole
-  )
-
-  method_order <- c("malignant_only", "whole_tcga", "dge_based_malignant", "dge_based_whole")
-  panel_results <- list()
-
-  for (method_name in method_order) {
-    message("Running method: ", method_name, " | mode: ", mode_name)
-    expr_mat <- method_inputs[[method_name]]
-
-    use_dge <- grepl("^dge_based", method_name)
-    mp_sets <- if (use_dge) c(dge_sets$mp, pan_mp_sets) else c(mp.genes, pan_mp_sets)
-    state_sets <- if (use_dge) {
-      dge_sets$state
-    } else {
-      # Build canonical state gene sets from MP gene sets (NOT MP IDs)
-      canonical_state_sets <- lapply(state_groups, function(mps) {
-        mps_use <- mps[mps %in% names(mp.genes)]
-        unique(unlist(mp.genes[mps_use], use.names = FALSE))
-      })
-      canonical_state_sets <- canonical_state_sets[sapply(canonical_state_sets, length) >= 5]
-      
-      extra_state_mp_sets <- list()
-      is_mp <- candidate_new_states[candidate_new_states %in% names(mp.genes)]
-      if (length(is_mp) > 0) {
-        extra_state_mp_sets <- mp.genes[is_mp]
+  dge_by_mode[[mode_name]] <- dge_sets
+  
+  # ==========================================
+  # Pre-processing: Enforce Strict Ordering & Labels
+  # ==========================================
+  # 1. MPs
+  ref_mp <- mp.genes 
+  all_dge_mps <- retained_mps[retained_mps %in% names(dge_sets$mp)]
+  all_ref_mps <- retained_mps[retained_mps %in% names(ref_mp)]
+  
+  # Generate full descriptions for plotting labels
+  mp_labels_dge <- make_feature_label(all_dge_mps, "MP")
+  mp_labels_ref <- make_feature_label(all_ref_mps, "MP")
+  
+  # 2. States
+  canonical_state_sets <- lapply(state_groups, function(mps) {
+    # Match both original MPs and potential 3CA MPs in the groups
+    mps_original <- intersect(mps, names(mp.genes))
+    genes_original <- if(length(mps_original) > 0) unique(unlist(mp.genes[mps_original], use.names = FALSE)) else character(0)
+    
+    # Check for 3CA MPs in the state groups (e.g. Respiration 1)
+    # We use new_state_gene_sets which was checked for these
+    # but for canonical groups we should also check the already parsed respiration_genes
+    mps_3ca <- intersect(mps, "3CA_mp_30 Respiration 1")
+    genes_3ca <- if(length(mps_3ca) > 0) respiration_genes else character(0)
+    
+    unique(c(genes_original, genes_3ca))
+  })
+  canonical_state_sets <- canonical_state_sets[sapply(canonical_state_sets, length) >= 5]
+  
+  extra_state_mp_sets <- list()
+  is_mp <- candidate_new_states[candidate_new_states %in% names(mp.genes)]
+  if (length(is_mp) > 0) extra_state_mp_sets <- mp.genes[is_mp]
+  
+  ref_state <- c(canonical_state_sets, new_state_gene_sets, extra_state_mp_sets)
+  
+  expected_state_order <- ordered_states_for_plot(unique(c(names(dge_sets$state), names(ref_state))))
+  all_dge_states <- expected_state_order[expected_state_order %in% names(dge_sets$state)]
+  all_ref_states <- expected_state_order[expected_state_order %in% names(ref_state)]
+  
+  # ==========================================
+  # 1. MP Overlap Heatmap (Strict Order + Diagonal Fractions)
+  # ==========================================
+  mat_mp_inter <- matrix(0, nrow = length(all_dge_mps), ncol = length(all_ref_mps))
+  mat_mp_jaccard <- mat_mp_inter
+  
+  for (i in seq_along(all_dge_mps)) {
+    for (j in seq_along(all_ref_mps)) {
+      inter <- intersect(dge_sets$mp[[ all_dge_mps[i] ]], ref_mp[[ all_ref_mps[j] ]])
+      uni <- union(dge_sets$mp[[ all_dge_mps[i] ]], ref_mp[[ all_ref_mps[j] ]])
+      mat_mp_inter[i, j] <- length(inter)
+      mat_mp_jaccard[i, j] <- if (length(uni) > 0) length(inter)/length(uni) else 0
+    }
+  }
+  
+  # Assign descriptive names for plot axes
+  rownames(mat_mp_jaccard) <- mp_labels_dge
+  colnames(mat_mp_jaccard) <- mp_labels_ref
+  
+  right_anno_mp <- rowAnnotation(`DGE Size` = anno_barplot(rowSums(mat_mp_inter > -1) * 0 + sapply(all_dge_mps, function(x) length(dge_sets$mp[[x]])), gp = gpar(fill = "#E69F00")), annotation_name_rot = 90)
+  top_anno_mp <- HeatmapAnnotation(`Ref Size` = anno_barplot(colSums(mat_mp_inter > -1) * 0 + sapply(all_ref_mps, function(x) length(ref_mp[[x]])), gp = gpar(fill = "#56B4E9")))
+  
+  p1 <- Heatmap(mat_mp_jaccard, name = "Jaccard", 
+                column_title = paste0("MP DGE vs Original MP Overlap"),
+                col = colorRamp2(c(0, max(mat_mp_jaccard, na.rm = TRUE)), c("white", "#004488")),
+                top_annotation = top_anno_mp,
+                right_annotation = right_anno_mp,
+                cluster_rows = FALSE, cluster_columns = FALSE,
+                row_names_side = "left",
+                rect_gp = gpar(col = "gray80", lwd = 0.5),
+                cell_fun = function(j, i, x, y, width, height, fill) {
+                  if (mat_mp_inter[i, j] > 0) {
+                    txt_col <- ifelse(mat_mp_jaccard[i, j] > 0.25, "white", "black")
+                    # Check if it's the diagonal (matching MP to MP)
+                    is_diag <- all_dge_mps[i] == all_ref_mps[j]
+                    if (is_diag) {
+                      # Format: Overlap / Ref Size
+                      lbl <- paste0(mat_mp_inter[i, j], " / ", length(ref_mp[[ all_ref_mps[j] ]]))
+                    } else {
+                      lbl <- mat_mp_inter[i, j]
+                    }
+                    grid.text(lbl, x, y, gp = gpar(fontsize = 8, col = txt_col))
+                  }
+                })
+  draw(p1)
+  
+  # ==========================================
+  # 2. State Overlap Heatmap 
+  # ==========================================
+  mat_st_inter <- matrix(0, nrow = length(all_dge_states), ncol = length(all_ref_states),
+                         dimnames = list(all_dge_states, all_ref_states))
+  mat_st_jaccard <- mat_st_inter
+  
+  for (i in all_dge_states) {
+    for (j in all_ref_states) {
+      inter <- intersect(dge_sets$state[[i]], ref_state[[j]])
+      uni <- union(dge_sets$state[[i]], ref_state[[j]])
+      mat_st_inter[i, j] <- length(inter)
+      mat_st_jaccard[i, j] <- if (length(uni) > 0) length(inter)/length(uni) else 0
+    }
+  }
+  
+  right_anno_st <- rowAnnotation(`DGE Size` = anno_barplot(rowSums(mat_st_inter > -1) * 0 + sapply(all_dge_states, function(x) length(dge_sets$state[[x]])), gp = gpar(fill = "#E69F00")), annotation_name_rot = 90)
+  top_anno_st <- HeatmapAnnotation(`Ref Size` = anno_barplot(colSums(mat_st_inter > -1) * 0 + sapply(all_ref_states, function(x) length(ref_state[[x]])), gp = gpar(fill = "#56B4E9")))
+  
+  p2 <- Heatmap(mat_st_jaccard, name = "Jaccard", 
+                column_title = paste0("State DGE vs Ref State Overlap"),
+                col = colorRamp2(c(0, max(mat_st_jaccard, na.rm = TRUE)), c("white", "darkgreen")),
+                top_annotation = top_anno_st,
+                right_annotation = right_anno_st,
+                cluster_rows = FALSE, cluster_columns = FALSE,
+                row_names_side = "left",
+                rect_gp = gpar(col = "gray80", lwd = 0.5),
+                cell_fun = function(j, i, x, y, width, height, fill) {
+                  if (mat_st_inter[i, j] > 0) {
+                    txt_col <- ifelse(mat_st_jaccard[i, j] > 0.25, "white", "black")
+                    is_diag <- all_dge_states[i] == all_ref_states[j]
+                    if (is_diag) {
+                      lbl <- paste0(mat_st_inter[i, j], " / ", length(ref_state[[ all_ref_states[j] ]]))
+                    } else {
+                      lbl <- mat_st_inter[i, j]
+                    }
+                    grid.text(lbl, x, y, gp = gpar(fontsize = 8, col = txt_col))
+                  }
+                })
+  draw(p2)
+  
+  # ==========================================
+  # 3. Unified Stacked Bar Plots (Explicit Overlap Styling)
+  # ==========================================
+  
+  build_overlap_df <- function(dge_list, ref_list, ordered_names, feature_type) {
+    matched_names <- intersect(ordered_names, intersect(names(dge_list), names(ref_list)))
+    summary_list <- list()
+    for (m in matched_names) {
+      dge_genes <- dge_list[[m]]; ref_genes <- ref_list[[m]]
+      inter_len <- length(intersect(dge_genes, ref_genes))
+      if ((length(dge_genes) + length(ref_genes)) > 0) {
+        summary_list[[m]] <- data.frame(
+          Identity = make_feature_label(m, feature_type), # Apply descriptions here
+          Both = inter_len,
+          DGE_Only = length(setdiff(dge_genes, ref_genes)),
+          Ref_Only = length(setdiff(ref_genes, dge_genes))
+        )
       }
-
-      base_sets <- c(canonical_state_sets, new_state_gene_sets, extra_state_mp_sets)
-      ord <- ordered_states_for_plot(names(base_sets))
-      base_sets[ord[ord %in% names(base_sets)]]
     }
-
-    mp_gs <- run_gsva(expr_mat, mp_sets)
-    st_gs <- run_gsva(expr_mat, state_sets)
-    if (is.null(mp_gs) && is.null(st_gs)) next
-
-    merged_df <- meta_tcga %>% filter(sample_type_code == "01")
-    if (!is.null(mp_gs)) {
-      mp_df <- as.data.frame(t(mp_gs))
-      mp_df$sample_barcode <- rownames(mp_df)
-      merged_df <- merged_df %>% left_join(mp_df, by = "sample_barcode")
-    }
-    if (!is.null(st_gs)) {
-      st_df <- as.data.frame(t(st_gs))
-      st_df$sample_barcode <- rownames(st_df)
-      merged_df <- merged_df %>% left_join(st_df, by = "sample_barcode", suffix = c("", "_state"))
-    }
-
-    mp_cols <- if (!is.null(mp_gs)) intersect(colnames(as.data.frame(t(mp_gs))), colnames(merged_df)) else character(0)
-    st_cols <- if (!is.null(st_gs)) intersect(colnames(as.data.frame(t(st_gs))), colnames(merged_df)) else character(0)
-
-    cox_mp <- run_cox(merged_df, mp_cols, mode_name, method_name, "MP")
-    cox_st <- run_cox(merged_df, st_cols, mode_name, method_name, "State")
-    cox_all <- bind_rows(cox_mp, cox_st)
-    all_res[[paste(mode_name, method_name, sep = "|:")]] <- cox_all
-
-    # cache per-method panels for strict final order (4 MP + 4 State)
-    this_mp <- cox_mp %>% filter(cohort == "EAC")
-    if (nrow(this_mp) > 0) {
-      mp_levels <- c(make_feature_label(retained_mps, "MP"), make_feature_label(names(pan_mp_sets), "MP"))
-      this_mp$feature <- make_feature_label(this_mp$feature, "MP")
-      # Robust levels to ensure no missing entries
-      all_levels <- unique(c(mp_levels, as.character(this_mp$feature)))
-      this_mp <- this_mp %>% mutate(feature = factor(feature, levels = all_levels))
-      panel_results[[paste0("MP|", method_name)]] <- plot_volcano(this_mp, paste0("[", mode_name, "] ", method_name, " MP volcano (EAC)"))
-    } else {
-      panel_results[[paste0("MP|", method_name)]] <- NULL
-    }
-
-    this_st <- cox_st %>% filter(cohort == "EAC")
-    if (nrow(this_st) > 0) {
-      this_st <- this_st %>%
-        filter(!feature %in% c("Unresolved", "Hybrid")) %>%
-        mutate(feature = factor(feature, levels = ordered_states_for_plot(unique(as.character(feature)))))
-      panel_results[[paste0("State|", method_name)]] <- plot_volcano(this_st, paste0("[", mode_name, "] ", method_name, " State volcano (EAC)"))
-    } else {
-      panel_results[[paste0("State|", method_name)]] <- NULL
-    }
+    if (length(summary_list) == 0) return(NULL)
+    
+    df <- bind_rows(summary_list) %>%
+      pivot_longer(cols = c("Both", "DGE_Only", "Ref_Only"), names_to = "Category", values_to = "Count")
+    
+    # Map identity back to ordered factor based on descriptions
+    ordered_labels <- make_feature_label(matched_names, feature_type)
+    df$Identity <- factor(df$Identity, levels = rev(ordered_labels))
+    
+    # Rename categories to make the overlap obvious
+    df$Category <- factor(df$Category, 
+                          levels = c("Ref_Only", "Both", "DGE_Only"),
+                          labels = c("Unique to Reference", "Shared (Overlap)", "Unique to DGE"))
+    return(df)
   }
-
-  # print exactly 8 panels in requested order
-  for (m in method_order) {
-    p <- panel_results[[paste0("MP|", m)]]
-    if (!is.null(p)) print(p)
+  
+  # Plot MPs
+  df_mp_overlap <- build_overlap_df(dge_sets$mp, ref_mp, retained_mps, "MP")
+  if (!is.null(df_mp_overlap)) {
+    p3 <- ggplot(df_mp_overlap, aes(x = Identity, y = Count, fill = Category)) +
+      geom_col(color = "black", linewidth = 0.3, width = 0.75) + # Added outlines to define the blocks clearly
+      geom_text(aes(label = ifelse(Count > 0, Count, "")),       # Add numbers directly inside the bars
+                position = position_stack(vjust = 0.5), size = 3, color = "white", fontface = "bold") +
+      scale_fill_manual(values = c("Unique to Reference" = "#D55E00", 
+                                   "Shared (Overlap)" = "#009E73", 
+                                   "Unique to DGE" = "#CC79A7")) +
+      coord_flip() + theme_classic() +
+      labs(title = paste0("MP Gene Overlap"), 
+           x = "Metaprogram", y = "Number of Genes", fill = "") +
+      theme(legend.position = "bottom", 
+            plot.title = element_text(face = "bold", hjust = 0.5),
+            plot.subtitle = element_text(hjust = 0.5, face = "italic", color = "gray30"))
+    print(p3)
   }
-  for (m in method_order) {
-    p <- panel_results[[paste0("State|", m)]]
-    if (!is.null(p)) print(p)
+  
+  # Plot States
+  df_st_overlap <- build_overlap_df(dge_sets$state, ref_state, expected_state_order, "State")
+  if (!is.null(df_st_overlap)) {
+    p4 <- ggplot(df_st_overlap, aes(x = Identity, y = Count, fill = Category)) +
+      geom_col(color = "black", linewidth = 0.3, width = 0.75) +
+      geom_text(aes(label = ifelse(Count > 0, Count, "")), 
+                position = position_stack(vjust = 0.5), size = 3, color = "white", fontface = "bold") +
+      scale_fill_manual(values = c("Unique to Reference" = "#D55E00", 
+                                   "Shared (Overlap)" = "#009E73", 
+                                   "Unique to DGE" = "#CC79A7")) +
+      coord_flip() + theme_classic() +
+      labs(title = paste0("State Gene Overlap"), 
+           x = "State", y = "Number of Genes", fill = "") +
+      theme(legend.position = "bottom", 
+            plot.title = element_text(face = "bold", hjust = 0.5),
+            plot.subtitle = element_text(hjust = 0.5, face = "italic", color = "gray30"))
+    print(p4)
   }
 }
 dev.off()
 
+all_res <- list()
+split_methods <- c("continuous", "median", "q1q4")
+
+for (sm in split_methods) {
+  message("Running survival analysis with split: ", sm)
+  pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_survival_volcano_", sm, ".pdf")), width = 9, height = 7)
+  
+  for (mode_name in requested_modes) {
+    message("  Mode: ", mode_name)
+    dge_sets <- dge_by_mode[[mode_name]]
+
+    method_inputs <- list(
+      malignant_only = tpm_mal,
+      whole_tcga = tpm_whole,
+      dge_based_malignant = tpm_mal,
+      dge_based_whole = tpm_whole
+    )
+
+    method_order <- c("malignant_only", "whole_tcga", "dge_based_malignant", "dge_based_whole")
+    panel_results <- list()
+
+    for (method_name in method_order) {
+      expr_mat <- method_inputs[[method_name]]
+      use_dge <- grepl("^dge_based", method_name)
+      mp_sets <- if (use_dge) c(dge_sets$mp, pan_mp_sets) else c(mp.genes, pan_mp_sets)
+      state_sets <- if (use_dge) dge_sets$state else {
+        canonical_state_sets <- lapply(state_groups, function(mps) {
+          mps_use <- mps[mps %in% names(mp.genes)]
+          unique(unlist(mp.genes[mps_use], use.names = FALSE))
+        })
+        canonical_state_sets <- canonical_state_sets[sapply(canonical_state_sets, length) >= 5]
+        extra_state_mp_sets <- list()
+        is_mp <- candidate_new_states[candidate_new_states %in% names(mp.genes)]
+        if (length(is_mp) > 0) extra_state_mp_sets <- mp.genes[is_mp]
+        base_sets <- c(canonical_state_sets, new_state_gene_sets, extra_state_mp_sets)
+        ord <- ordered_states_for_plot(names(base_sets))
+        base_sets[ord[ord %in% names(base_sets)]]
+      }
+
+      mp_gs <- run_gsva(expr_mat, mp_sets)
+      st_gs <- run_gsva(expr_mat, state_sets)
+      if (is.null(mp_gs) && is.null(st_gs)) next
+
+      merged_df <- meta_tcga %>% filter(sample_type_code == "01")
+      if (!is.null(mp_gs)) {
+        mp_df <- as.data.frame(t(mp_gs))
+        mp_df$sample_barcode <- rownames(mp_df)
+        merged_df <- merged_df %>% left_join(mp_df, by = "sample_barcode")
+      }
+      if (!is.null(st_gs)) {
+        st_df <- as.data.frame(t(st_gs))
+        st_df$sample_barcode <- rownames(st_df)
+        merged_df <- merged_df %>% left_join(st_df, by = "sample_barcode", suffix = c("", "_state"))
+      }
+
+      mp_cols <- if (!is.null(mp_gs)) intersect(colnames(as.data.frame(t(mp_gs))), colnames(merged_df)) else character(0)
+      st_cols <- if (!is.null(st_gs)) intersect(colnames(as.data.frame(t(st_gs))), colnames(merged_df)) else character(0)
+
+      cox_mp <- run_cox(merged_df, mp_cols, mode_name, method_name, "MP", split_method = sm)
+      cox_st <- run_cox(merged_df, st_cols, mode_name, method_name, "State", split_method = sm)
+      cox_all <- bind_rows(cox_mp, cox_st)
+      all_res[[paste(sm, mode_name, method_name, sep = "|:")]] <- cox_all
+
+      this_mp <- cox_mp %>% filter(cohort == "EAC")
+      if (nrow(this_mp) > 0) {
+        mp_levels <- c(make_feature_label(retained_mps, "MP"), make_feature_label(names(pan_mp_sets), "MP"))
+        this_mp$feature <- make_feature_label(this_mp$feature, "MP")
+        all_levels <- unique(c(mp_levels, as.character(this_mp$feature)))
+        this_mp <- this_mp %>% mutate(feature = factor(feature, levels = all_levels))
+        panel_results[[paste0("MP|", method_name)]] <- plot_volcano(this_mp, paste0("[", sm, "] ", method_name, " MP volcano"))
+      } else {
+        panel_results[[paste0("MP|", method_name)]] <- NULL
+      }
+      this_st <- cox_st %>% filter(cohort == "EAC")
+      if (nrow(this_st) > 0) {
+        this_st <- this_st %>% filter(!feature %in% c("Unresolved", "Hybrid")) %>%
+          mutate(feature = factor(feature, levels = ordered_states_for_plot(unique(as.character(feature)))))
+        panel_results[[paste0("State|", method_name)]] <- plot_volcano(this_st, paste0("[", sm, "] ", method_name, " State volcano"))
+      } else {
+        panel_results[[paste0("State|", method_name)]] <- NULL
+      }
+    }
+
+    for (m in method_order) {
+      if (!is.null(panel_results[[paste0("MP|", m)]])) print(panel_results[[paste0("MP|", m)]])
+    }
+    for (m in method_order) {
+      if (!is.null(panel_results[[paste0("State|", m)]])) print(panel_results[[paste0("State|", m)]])
+    }
+  }
+  dev.off()
+}
+
 cox_res <- bind_rows(all_res)
 if (nrow(cox_res) > 0) {
-  cox_res$padj <- ave(cox_res$P_value, interaction(cox_res$mode, cox_res$method, cox_res$cohort, cox_res$feature_type),
+  cox_res$padj <- ave(cox_res$P_value, interaction(cox_res$mode, cox_res$method, cox_res$cohort, cox_res$feature_type, cox_res$split_method),
                       FUN = function(x) p.adjust(x, method = "BH"))
 }
-write.csv(cox_res, file.path(out_dir, paste0("Auto_", task_prefix, "_survival_mp_state_cox_methods_noreg.csv")), row.names = FALSE)
+write.csv(cox_res, file.path(out_dir, paste0("Auto_", task_prefix, "_survival_mp_state_cox_methods_noreg_splits.csv")), row.names = FALSE)
 
 summary_dir <- file.path(
   "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
@@ -468,7 +717,7 @@ dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
 summary_df <- if (nrow(cox_res) > 0) {
   cox_res %>%
-    group_by(mode, method, cohort, feature_type) %>%
+    group_by(mode, split_method, method, cohort, feature_type) %>%
     summarise(n_tested = n(), n_sig_p005 = sum(P_value < 0.05, na.rm = TRUE), .groups = "drop")
 } else {
   data.frame()

@@ -45,6 +45,7 @@ dir.create(file.path(out_root, "partA"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(out_root, "partB", "Basal_to_Intestinal_Metaplasia"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(out_root, "partB", "SMG_like_Metaplasia"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(out_root, "partB", "Stress_adaptive"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(out_root, "partB", "Basal_and_SMG_Metaplasia"), recursive = TRUE, showWarnings = FALSE)
 
 summary_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/updates/new_updates/summaries/"
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
@@ -67,6 +68,13 @@ group_cols <- c(
   "SMG-like Metaplasia"   = "#FF7F00",
   "Immune Infiltrating"   = "#377EB8"
 )
+
+# Identify any extra states (e.g. 3CA relabeled)
+extra_states <- setdiff(unique(as.character(state_B)), c(names(group_cols), "Unresolved", "Hybrid"))
+if (length(extra_states) > 0) {
+  new_cols <- setNames(scales::hue_pal()(length(extra_states)), extra_states)
+  group_cols <- c(group_cols, new_cols)
+}
 
 mp_descriptions <- c(
   "MP1"  = "G2M Cell Cycle",
@@ -98,21 +106,31 @@ state_subsets <- list(
   "Stress-adaptive" = list(
     mps = c("MP13", "MP12"),
     root_mp = "MP13"
+  ),
+  "Basal and SMG Metaplasia" = list(
+    mps = c("MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16"),
+    root_mp = "MP17",
+    source_states = c("Basal to Intestinal Metaplasia", "SMG-like Metaplasia")
   )
 )
 
 state_dir_map <- c(
   "Basal to Intestinal Metaplasia" = "Basal_to_Intestinal_Metaplasia",
   "SMG-like Metaplasia" = "SMG_like_Metaplasia",
-  "Stress-adaptive" = "Stress_adaptive"
+  "Stress-adaptive" = "Stress_adaptive",
+  "Basal and SMG Metaplasia" = "Basal_and_SMG_Metaplasia"
 )
 
 ####################
 # Load data
-####################
 message("Loading data ...")
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
-state_B <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+final_states_path <- "Auto_final_states.rds"
+if (file.exists(final_states_path)) {
+  state_B <- readRDS(final_states_path)
+} else {
+  state_B <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+}
 mp_adj_noncc <- readRDS("Auto_topmp_v2_noreg_mp_adj.rds")
 
 # Align cells
@@ -226,7 +244,7 @@ run_pseudotime <- function(
 message("=== PART A: Per-sample state pseudotime ===")
 
 # Compute diversity ranking
-target_states <- names(state_groups)
+target_states <- setdiff(names(group_cols), c("Unresolved", "Hybrid"))
 defined_cells <- names(state_B)[state_B %in% target_states]
 
 state_df <- data.frame(
@@ -265,6 +283,7 @@ pdf(file.path(out_root, "partA", paste0("Auto_", task_prefix, "_partA_top12_pseu
     width = 14, height = 6, onefile = TRUE)
 
 for (i in seq_along(top12_samples)) {
+
   sample_id <- top12_samples[i]
   message(sprintf("Part A [%d/12]: %s", i, sample_id))
 
@@ -349,8 +368,12 @@ for (state_name in names(state_subsets)) {
 
   message(sprintf("\n--- State: %s (root: %s) ---", state_name, root_mp))
 
+
   # Get cells belonging to this state
-  state_cells <- names(state_B)[state_B == state_name]
+  source_states <- subset_info$source_states
+  if (is.null(source_states)) source_states <- state_name
+  
+  state_cells <- names(state_B)[state_B %in% source_states]
   if (length(state_cells) == 0) {
     message(sprintf("  No cells for state %s, skipping", state_name))
     next

@@ -38,7 +38,12 @@ dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 # load data
 ####################
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
-state_B <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+final_states_path <- "Auto_final_states.rds"
+if (file.exists(final_states_path)) {
+  state_B <- readRDS(final_states_path)
+} else {
+  state_B <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+}
 mp_adj_noncc <- readRDS("Auto_topmp_v2_noreg_mp_adj.rds")
 geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
 ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
@@ -80,6 +85,13 @@ group_cols <- c(
   Unresolved = "grey80",
   Hybrid = "black"
 )
+
+# Identify any extra states (e.g. 3CA relabeled)
+extra_states <- setdiff(unique(as.character(state_B)), names(group_cols))
+if (length(extra_states) > 0) {
+  new_cols <- setNames(scales::hue_pal()(length(extra_states)), extra_states)
+  group_cols <- c(group_cols, new_cols)
+}
 
 mp_cols <- c(
   "MP1_G2M Cell Cycle" = "#B0B0B0",
