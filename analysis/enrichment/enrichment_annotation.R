@@ -1,6 +1,5 @@
 ####################
-# Moved from: analysis/example_anno.R
-# Reorganized as part of analysis/ restructuring
+# Final enrichment annotation script
 ####################
 library(clusterProfiler)
 library(org.Hs.eg.db)
@@ -46,7 +45,6 @@ custom_files <- list.files(individual_dir, pattern = "\\.rds$", full.names = TRU
 
 # 2. Map file names to their loaded data
 custom_refs <- lapply(custom_files, readRDS)
-# Name them by the suffix (the part after enrich_dev_)
 names(custom_refs) <- sub(".*enrich_dev_", "", basename(custom_files)) %>% sub("\\.rds$", "", .)
 
 # 3. Updated Loop for Metaprogram Enrichment
@@ -82,8 +80,6 @@ cluster_enrich <- lapply(names(mp_gene_lists), function(mp_name) {
   })
   names(res_custom_list) <- names(custom_refs)
   
-  # 5. CONSOLIDATE: Combine standard results and custom results into one flat list
-  # This places Hallmark, M, and your 5 custom stages at the same hierarchy level
   base_results <- list(
     rep_prog = mp_name,
     members  = members,
@@ -114,7 +110,6 @@ enrich_heatmap <- function(cluster_enrich, element,
                            cols = viridis::magma(100, direction = -1),
                            fontsize_row = 7, fontsize_col = 9) {
   
-  # 1) Detect if this is one of your Custom RDS elements
   is_custom <- !element %in% c("GO", "Hallmark", "MPs_3CA")
   
   df_list <- lapply(names(cluster_enrich), function(prog) {
@@ -128,10 +123,8 @@ enrich_heatmap <- function(cluster_enrich, element,
     # Filter for significance 
     r_sig <- r[which(r$p.adjust < 0.05 & r$p.adjust > 0), ]
     
-    # Logic: use significant for colors, but we need structure even if empty
     data_source <- if(is_custom) r else r_sig
     
-    # If significant data is missing and it's not custom, skip this program
     if (nrow(data_source) == 0 && !is_custom) return(NULL)
     
     term <- if ("Description" %in% colnames(data_source)) data_source$Description else data_source$ID
@@ -146,7 +139,6 @@ enrich_heatmap <- function(cluster_enrich, element,
   
   df <- dplyr::bind_rows(df_list)
   
-  # --- FIX: Ensure df has columns even if it has 0 rows ---
   if (is.null(df) || nrow(df) == 0) {
     df <- data.frame(
       Program = character(), 
@@ -159,16 +151,13 @@ enrich_heatmap <- function(cluster_enrich, element,
   
   # 3) Define terms_use (unchanged logic)
   if (is_custom) {
-    ####################
-    # Guard: custom element may be absent until per-stage reference is generated
-    ####################
+
     if (!element %in% names(custom_refs)) {
       message("Custom reference not found for element: ", element)
       return(invisible(NULL))
     }
     terms_use <- as.character(custom_refs[[element]]$TERM2NAME$term)
   } else {
-    # For GO/H/M, if df is empty after initialization, we still stop
     if (nrow(df) == 0) {
       message("No significant results found for: ", element)
       return(invisible(NULL))
@@ -194,7 +183,7 @@ enrich_heatmap <- function(cluster_enrich, element,
     }
   }
   
-  # 4) Matrix Construction (Now safe because df has columns)
+  # 4) Matrix Construction
   ordered_mps <- paste0("MP", mp_tree_order)
   # Keep only MPs that exist in cluster_enrich
   ordered_mps <- ordered_mps[ordered_mps %in% names(cluster_enrich)]
@@ -203,9 +192,7 @@ enrich_heatmap <- function(cluster_enrich, element,
   final_df <- full_grid %>%
     dplyr::left_join(df, by = c("Term", "Program")) %>%
     dplyr::mutate(
-      # padj exists now, so pmin won't error
       score = tidyr::replace_na(pmin(-log10(padj), cap), 0),
-      # Overlap exists now, so replace_na won't error
       display_text = if(element %in% c("Hallmark","GO","MPs_3CA") || is_custom) tidyr::replace_na(Overlap, "") else ""
     )
   
@@ -225,9 +212,6 @@ enrich_heatmap <- function(cluster_enrich, element,
   mat <- mat[terms_use, ordered_mps[ordered_mps %in% colnames(mat)], drop = FALSE]
   text_mat <- text_mat[terms_use, colnames(mat), drop = FALSE]
 
-  ####################
-  # Guard/normalise: ensure numeric matrix for pheatmap scaling
-  ####################
   if (nrow(mat) == 0 || ncol(mat) == 0) {
     message("No matrix content for element: ", element)
     return(invisible(NULL))
@@ -236,12 +220,11 @@ enrich_heatmap <- function(cluster_enrich, element,
   mat <- matrix(as.numeric(mat), nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
   
   mp_sizes <- sapply(colnames(mat), function(x) {
-    # If the column name is "MP1", we look up mp_gene_lists[["MP1"]]
     length(mp_gene_lists[[x]])
   })
   col_labels <- paste0(colnames(mat), "\nn=", mp_sizes)
   
-  # 6) Sorting and Gaps logic (Keep same as before)
+  # 6) Sorting and Gaps logic
   cluster_rows_param <- FALSE; row_gaps <- NULL
   if (is_custom) {
     mat <- mat[terms_use, , drop = FALSE]
@@ -336,9 +319,6 @@ png("enrich_Adult_Epithelium.png", width = 3938, height = 1900, res = 300)
 enrich_heatmap(cluster_enrich, "Adult_Epithelium", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()
 
-####################
-# Added standalone Barretts_Oesophagus enrichment figure
-####################
 png("enrich_Barretts_Oesophagus.png", width = 3938, height = 1900, res = 300)
 enrich_heatmap(cluster_enrich, "Barretts_Oesophagus", top_per_program = 8, top_n = 80, cols = cols_palette)
 dev.off()

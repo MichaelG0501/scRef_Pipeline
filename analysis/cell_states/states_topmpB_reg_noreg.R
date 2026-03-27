@@ -64,13 +64,6 @@ if (length(bad_mps) > 0) {
 }
 retained_mps <- names(mp.genes)
 
-tree_order <- geneNMF.metaprograms$programs.tree$order
-ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
-valid_cluster_ids <- as.numeric(gsub("\\D", "", retained_mps))
-mp_tree_order <- unique(ordered_clusters)
-mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
-mp_tree_order_names <- paste0("MP", mp_tree_order)
-
 mp_descriptions <- c(
   "MP1"  = "G2M Cell Cycle",
   "MP9"  = "G1S Cell Cycle",
@@ -98,6 +91,22 @@ state_groups <- list(
   "SMG-like Metaplasia"   = c("MP18", "MP16"),
   "Immune Infiltrating"   = c("MP15")
 )
+
+# Reorder MPs: CC MPs first (original relative order), then state MPs (state_groups order)
+state_ordered_mps <- unlist(state_groups, use.names = FALSE)
+# Identify original order from tree if available
+orig_tree_order <- geneNMF.metaprograms$programs.tree$order
+orig_clusters <- geneNMF.metaprograms$programs.clusters[orig_tree_order]
+orig_order <- paste0("MP", unique(orig_clusters))
+orig_order <- orig_order[orig_order %in% retained_mps]
+
+reordered_mps <- c(
+  orig_order[orig_order %in% cc_mps],
+  state_ordered_mps[state_ordered_mps %in% retained_mps]
+)
+# Add any remaining ones that might not be in state_groups or cc_mps
+reordered_mps <- unique(c(reordered_mps, orig_order))
+mp_tree_order_names <- reordered_mps
 
 group_order_pos <- sapply(state_groups, function(mps) {
   positions <- match(mps, mp_tree_order_names)

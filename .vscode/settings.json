@@ -33,5 +33,6 @@
 
     "latex-workshop.latex.recipe.default": "first",
     "latex-workshop.latex.autoBuild.run": "onSave",
-    "latex-workshop.view.pdf.viewer": "tab"
+    "latex-workshop.view.pdf.viewer": "tab",
+    "chatgpt.openOnStartup": true
 }

@@ -46,9 +46,7 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 args <- commandArgs(trailingOnly = TRUE)
 requested_modes <- if (length(args) >= 1 && nzchar(args[1])) unlist(strsplit(args[1], ",")) else c("reg", "noreg")
 requested_modes <- intersect(c("reg", "noreg"), requested_modes)
-if (length(requested_modes) == 0) stop("No valid modes requested. Use: reg,noreg or reg or noreg")
-requested_modes <- intersect("noreg", requested_modes)
-if (length(requested_modes) == 0) requested_modes <- "noreg"
+if (length(requested_modes) == 0) requested_modes <- c("reg", "noreg")
 
 clean_3ca_name <- function(x) {
   x <- gsub("^X3CA_", "3CA_", x)
@@ -145,7 +143,7 @@ if (length(bad_mps) > 0) {
 retained_mps <- names(mp.genes)
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2", "3CA_mp_30 Respiration 1"),
+  "Classic Proliferative" = c("MP2", "X3CA_mp_30.Respiration.1"),
   "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
   "Stress-adaptive" = c("MP13", "MP12"),
   "SMG-like Metaplasia" = c("MP18", "MP16"),
@@ -174,7 +172,10 @@ mp_desc <- c(
   "MP15" = "Immune Infiltration",
   "MP16" = "Secretory Diff. (Gastric)",
   "MP17" = "Basal-like Transition",
-  "MP18" = "Secretory Diff. (Intest.)"
+  "MP18" = "Secretory Diff. (Intest.)",
+  "X3CA_mp_12.Protein.maturation" = "Protein maturation",
+  "X3CA_mp_17.EMT.III"            = "EMT III",
+  "X3CA_mp_30.Respiration.1"      = "Respiration 1"
 )
 
 # Reorder MPs to follow state definition order + MP number
@@ -194,8 +195,8 @@ ordered_mp_list <- c(
   "MP1", "MP7", "MP9"
 )
 extra_mps <- setdiff(names(mp.genes), ordered_mp_list)
-retained_mps <- c(ordered_mp_list, extra_mps)
-retained_mps <- retained_mps[retained_mps %in% names(mp.genes)]
+retained_mps <- c(ordered_mp_list, extra_mps, "X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1")
+retained_mps <- retained_mps[retained_mps %in% c(names(mp.genes), "X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1")]
 
 meta_tcga <- readRDS("tcga_esca_meta.rds")
 meta_tcga$HistologyGroup <- infer_histology(meta_tcga$type)
@@ -221,48 +222,44 @@ if (file.exists(final_states_path)) {
   state_rel <- NULL
 }
 
-new_state_gene_sets <- list()
-candidate_new_states <- character(0)
-if (!is.null(state_rel)) {
-  candidate_new_states <- setdiff(unique(as.character(state_rel)), c(names(state_groups), "Unresolved", "Hybrid", NA))
-  nmf3ca_path <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
-  if (file.exists(nmf3ca_path) && length(candidate_new_states) > 0) {
-    MP_df <- read.csv(nmf3ca_path, check.names = FALSE)
-    MP_list <- as.list(MP_df)
-    MP_list <- lapply(MP_list, function(x) x[x != "" & !is.na(x)])
-    names(MP_list) <- make.names(sub("^MP", "3CA_mp_", names(MP_list)))
-    clean_map <- setNames(clean_3ca_name(names(MP_list)), names(MP_list))
-    keep_cols <- names(clean_map)[clean_map %in% candidate_new_states]
-    if (length(keep_cols) > 0) {
-      new_state_gene_sets <- MP_list[keep_cols]
-      names(new_state_gene_sets) <- clean_map[keep_cols]
-    }
-    
-    # Handle merged 3CA states specifically
-    if ("3CA_EMT_and_Protein_maturation" %in% candidate_new_states) {
-      emt_prot_genes <- unique(unlist(MP_list[intersect(c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III"), names(MP_list))]))
-      if (length(emt_prot_genes) > 0) {
-        new_state_gene_sets[["3CA_EMT_and_Protein_maturation"]] <- emt_prot_genes
+# Load 3CA MP gene sets for separate inclusion in volcano plots
+nmf3ca_path <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
+pan_mp_sets <- list() 
+new_state_gene_sets <- list() 
+
+if (file.exists(nmf3ca_path)) {
+  MP_df <- read.csv(nmf3ca_path, check.names = FALSE)
+  MP_list <- as.list(MP_df)
+  MP_list <- lapply(MP_list, function(x) x[x != "" & !is.na(x)])
+  names(MP_list) <- make.names(sub("^MP", "3CA_mp_", names(MP_list)))
+  
+  # 1. Target 3CA MPs (separate for MP volcano)
+  target_3ca_mps <- c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1")
+  pan_mp_sets <- MP_list[intersect(target_3ca_mps, names(MP_list))]
+  
+  # 2. Respiration genes for state merge fallback
+  respiration_genes <- if ("X3CA_mp_30.Respiration.1" %in% names(MP_list)) MP_list[["X3CA_mp_30.Respiration.1"]] else character(0)
+
+  # 3. Handle additional candidate states from final relabeling
+  if (!is.null(state_rel)) {
+    candidate_new_states <- setdiff(unique(as.character(state_rel)), c(names(state_groups), "Unresolved", "Hybrid", NA))
+    if (length(candidate_new_states) > 0) {
+      clean_map <- setNames(clean_3ca_name(names(MP_list)), names(MP_list))
+      for (st in candidate_new_states) {
+        if (st == "3CA_EMT_and_Protein_maturation") {
+          emt_prot_genes <- unique(unlist(MP_list[intersect(c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III"), names(MP_list))]))
+          new_state_gene_sets[[st]] <- emt_prot_genes
+        } else {
+          orig_name <- names(clean_map)[clean_map == st][1]
+          if (!is.na(orig_name)) new_state_gene_sets[[st]] <- MP_list[[orig_name]]
+        }
       }
     }
-    
-    # 3CA_mp_30 is merged into Classic Proliferative, so remove it from new_state_gene_sets
-    # but ensure its genes are available for the merge
-    if ("3CA_mp_30 Respiration 1" %in% names(new_state_gene_sets)) {
-      respiration_genes <- new_state_gene_sets[["3CA_mp_30 Respiration 1"]]
-      new_state_gene_sets <- new_state_gene_sets[names(new_state_gene_sets) != "3CA_mp_30 Respiration 1"]
-    } else {
-      # In case it's in MP_list but not yet in new_state_gene_sets
-      respiration_genes <- unique(unlist(MP_list[intersect(c("X3CA_mp_30.Respiration.1"), names(MP_list))]))
-    }
-    candidate_new_states <- setdiff(candidate_new_states, "3CA_mp_30 Respiration 1")
-    
-    # Ensure Classic Proliferative includes respiration genes if needed for DGE fallback
-    # (Though primarily it's used via state_groups)
   }
 }
+retained_3ca_order <- names(new_state_gene_sets)
 
-pan_mp_sets <- new_state_gene_sets
+# pan_mp_sets was handles above
 
 retained_3ca_order <- names(new_state_gene_sets)
 
@@ -323,8 +320,9 @@ make_dge_sets <- function(mode_name) {
   missing_states <- setdiff(expected_states, names(state_list))
   if (length(missing_states) > 0) {
     canonical_state_sets <- lapply(state_groups, function(mps) {
-      mps_use <- mps[mps %in% names(mp.genes)]
-      unique(unlist(mp.genes[mps_use], use.names = FALSE))
+      genes_NM <- unlist(mp.genes[intersect(mps, names(mp.genes))], use.names = FALSE)
+      genes_3CA <- unlist(pan_mp_sets[intersect(mps, names(pan_mp_sets))], use.names = FALSE)
+      unique(c(genes_NM, genes_3CA))
     })
     canonical_state_sets <- canonical_state_sets[sapply(canonical_state_sets, length) >= 5]
     
@@ -335,9 +333,6 @@ make_dge_sets <- function(mode_name) {
     }
     
     base_sets <- c(canonical_state_sets, new_state_gene_sets, extra_state_mp_sets)
-    if (!is.null(respiration_genes) && length(respiration_genes) > 0) {
-      base_sets[["Classic Proliferative"]] <- unique(c(base_sets[["Classic Proliferative"]], respiration_genes))
-    }
     for (ms in missing_states) {
       if (!is.null(base_sets[[ms]])) {
         state_list[[ms]] <- base_sets[[ms]]
@@ -385,10 +380,11 @@ make_dge_sets <- function(mode_name) {
   # Fallback for missing MPs (not significant in DGE)
   missing_mps <- setdiff(retained_mps, names(mp_list))
   if (length(missing_mps) > 0) {
-    # only those actually in mp.genes
-    avail_miss <- missing_mps[missing_mps %in% names(mp.genes)]
+    # Combine NM and 3CA source sets for fallback
+    all_source_mps <- c(mp.genes, pan_mp_sets)
+    avail_miss <- missing_mps[missing_mps %in% names(all_source_mps)]
     if (length(avail_miss) > 0) {
-      mp_list <- c(mp_list, mp.genes[avail_miss])
+      mp_list <- c(mp_list, all_source_mps[avail_miss])
     }
   }
 
@@ -633,11 +629,12 @@ for (sm in split_methods) {
     for (method_name in method_order) {
       expr_mat <- method_inputs[[method_name]]
       use_dge <- grepl("^dge_based", method_name)
-      mp_sets <- if (use_dge) c(dge_sets$mp, pan_mp_sets) else c(mp.genes, pan_mp_sets)
+      mp_sets <- if (use_dge) dge_sets$mp else c(mp.genes, pan_mp_sets)
       state_sets <- if (use_dge) dge_sets$state else {
         canonical_state_sets <- lapply(state_groups, function(mps) {
-          mps_use <- mps[mps %in% names(mp.genes)]
-          unique(unlist(mp.genes[mps_use], use.names = FALSE))
+          genes_NM <- unlist(mp.genes[intersect(mps, names(mp.genes))], use.names = FALSE)
+          genes_3CA <- unlist(pan_mp_sets[intersect(mps, names(pan_mp_sets))], use.names = FALSE)
+          unique(c(genes_NM, genes_3CA))
         })
         canonical_state_sets <- canonical_state_sets[sapply(canonical_state_sets, length) >= 5]
         extra_state_mp_sets <- list()
@@ -678,7 +675,7 @@ for (sm in split_methods) {
         this_mp$feature <- make_feature_label(this_mp$feature, "MP")
         all_levels <- unique(c(mp_levels, as.character(this_mp$feature)))
         this_mp <- this_mp %>% mutate(feature = factor(feature, levels = all_levels))
-        panel_results[[paste0("MP|", method_name)]] <- plot_volcano(this_mp, paste0("[", sm, "] ", method_name, " MP volcano"))
+        panel_results[[paste0("MP|", method_name)]] <- plot_volcano(this_mp, paste0("[", sm, "] ", mode_name, " ", method_name, " MP volcano"))
       } else {
         panel_results[[paste0("MP|", method_name)]] <- NULL
       }
@@ -686,7 +683,7 @@ for (sm in split_methods) {
       if (nrow(this_st) > 0) {
         this_st <- this_st %>% filter(!feature %in% c("Unresolved", "Hybrid")) %>%
           mutate(feature = factor(feature, levels = ordered_states_for_plot(unique(as.character(feature)))))
-        panel_results[[paste0("State|", method_name)]] <- plot_volcano(this_st, paste0("[", sm, "] ", method_name, " State volcano"))
+        panel_results[[paste0("State|", method_name)]] <- plot_volcano(this_st, paste0("[", sm, "] ", mode_name, " ", method_name, " State volcano"))
       } else {
         panel_results[[paste0("State|", method_name)]] <- NULL
       }
@@ -707,7 +704,7 @@ if (nrow(cox_res) > 0) {
   cox_res$padj <- ave(cox_res$P_value, interaction(cox_res$mode, cox_res$method, cox_res$cohort, cox_res$feature_type, cox_res$split_method),
                       FUN = function(x) p.adjust(x, method = "BH"))
 }
-write.csv(cox_res, file.path(out_dir, paste0("Auto_", task_prefix, "_survival_mp_state_cox_methods_noreg_splits.csv")), row.names = FALSE)
+write.csv(cox_res, file.path(out_dir, paste0("Auto_", task_prefix, "_survival_mp_state_cox_methods_splits.csv")), row.names = FALSE)
 
 summary_dir <- file.path(
   "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",

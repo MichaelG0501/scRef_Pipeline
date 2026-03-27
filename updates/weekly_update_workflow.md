@@ -117,13 +117,18 @@ Slides are **results-focused** — straight to figures, with an optional brief o
 
 ### Rules
 - **No title slide**. No `\titlepage`. Jump straight into result figures or a brief methods overview if needed.
-- **Optional overview slide**. Use only when introducing or comparing methods (e.g., Approach A vs B). Keep to bullet points, small font. Example: frame title "Two Approaches to State Definition" with itemized description of each approach.
+- **Titles**: Should plainly state what the graph is (e.g. "TCGA Survival Analysis Comparison - States - Continuous Cox"). Never include things like "PartA", "page 1", "example", etc.
+- **Footnotes & Spacing**: 
+  - If self-explanatory (e.g. "State proportions"): Omit the footnote completely. Use figure height `0.92\textheight` or `0.94\textheight` and no `\vspace`.
+  - If requires context (e.g. noting a biological finding or methodological detail): Provide a short, direct footnote. No fancy AI words. Use figure height `0.88\textheight` and add `\vspace{-3mm}` before the footnote.
+  - For side-by-side or mutli-panel comparisons where a footnote is used, use `\vspace{1mm}` or `\vspace{2mm}` to ensure enough separation from the columns.
+- **Layouts**: 
+  - **Single figure**: full width/height.
+  - **Side-by-side**: Use `\begin{columns}` with `0.5\textwidth` each for direct comparisons (e.g., Correlation vs Jaccard, PDO vs scAtlas, reg vs noreg). Use `0.8\textheight` for figure height inside columns.
+  - **Many panels (e.g., 4 plots)**: Use a 2x2 grid via `\begin{minipage}{0.48\textwidth}` macros with `0.48\textheight` or `0.5\textheight` per plot.
+- **Text slides** Use only when a brief methods summary is essential (e.g. describing 'Five approaches to pairwise distance' or 'reg vs noreg'). Keep to bullet points, small font.
 - **No next-steps slide**. Those go in the `.md` document only.
-- **Every slide = one figure**, full-width or side-by-side, with an optional 1-line footnote in `\footnotesize`. Footnotes must be **informative** — explain what the figure shows or a key finding, not just "as requested".
-- **Text slides** only when a brief methods note is essential (e.g., describing two approaches). Keep to bullet points, small font.
-- **Side-by-side figures**: use `\begin{columns}` with `0.5\textwidth` each when comparing two plots.
-- **reg/noreg comparison**: When presenting state-based results (Survival, Hybrid proportions, etc.), always provide a side-by-side `reg` vs `noreg` comparison frame to prove result stability.
-- **Tables**: use `booktabs` (`\toprule`, `\midrule`, `\bottomrule`) for clean metric tables.
+- **Never convert to .pptx until user confirms the content.**
 
 ### LaTeX Template
 

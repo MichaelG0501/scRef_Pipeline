@@ -1,8 +1,8 @@
 ####################
 # Auto_clinical_variable_plots_topmp_v2B_reg_noreg.R
-# Unified clinical association plotting for Approach B reg and noreg states.
-# Keeps the full variable coverage from clinical_variable_plots.R and writes
-# paired pages (reg then noreg) into the same PDF output.
+# Unified clinical association plotting for epithelial states.
+# Prefers the post-relabel final states from Auto_unresolved_relabel.R when
+# available, and otherwise falls back to the requested reg/noreg state RDS.
 ####################
 
 library(dplyr)
@@ -20,10 +20,24 @@ requested_modes <- intersect(c("reg", "noreg"), requested_modes)
 if (length(requested_modes) == 0) stop("No valid modes requested. Use: reg,noreg or reg or noreg")
 
 meta_full_epi <- readRDS("meta_full_epi.rds")
-state_map <- list(
-  reg = readRDS("Auto_topmp_v2_reg_states_B.rds"),
-  noreg = readRDS("Auto_topmp_v2_noreg_states_B.rds")
-)
+####################
+# Prefer final updated states after unresolved relabeling when available.
+####################
+final_states_path <- "Auto_final_states.rds"
+if (file.exists(final_states_path)) {
+  state_map <- list(
+    final = readRDS(final_states_path)
+  )
+  requested_modes <- "final"
+} else {
+  state_map <- list()
+  if ("reg" %in% requested_modes) {
+    state_map$reg <- readRDS("Auto_topmp_v2_reg_states_B.rds")
+  }
+  if ("noreg" %in% requested_modes) {
+    state_map$noreg <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+  }
+}
 
 clinical_sheet <- read_excel(
   "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx",
@@ -60,24 +74,52 @@ build_cell_df <- function(state_vec, mode_name) {
     )
 }
 
-cell_df <- bind_rows(
-  build_cell_df(state_map$reg, "reg"),
-  build_cell_df(state_map$noreg, "noreg")
+cell_df <- bind_rows(lapply(names(state_map), function(mode_name) {
+  build_cell_df(state_map[[mode_name]], mode_name)
+}))
+
+####################
+# Final-state order and colours aligned to Auto_final_states.rds naming.
+####################
+core_state_levels <- c(
+  "Classic Proliferative",
+  "Basal to Intestinal Metaplasia",
+  "Stress-adaptive",
+  "SMG-like Metaplasia",
+  "Immune Infiltrating"
+)
+preferred_extra_states <- c("3CA_EMT_and_Protein_maturation")
+trailing_state_levels <- c("Unresolved", "Hybrid")
+
+present_states <- unique(as.character(cell_df$state))
+other_extra_states <- setdiff(
+  present_states,
+  c(core_state_levels, preferred_extra_states, trailing_state_levels)
 )
 
 state_levels <- c(
-  "Classic Proliferative", "Basal to Intest. Meta", "Stress-adaptive",
-  "SMG-like Metaplasia", "Immune Infiltrated", "Unresolved", "Hybrid"
+  core_state_levels[core_state_levels %in% present_states],
+  preferred_extra_states[preferred_extra_states %in% present_states],
+  sort(other_extra_states),
+  trailing_state_levels[trailing_state_levels %in% present_states]
 )
+
 state_colors <- c(
   "Classic Proliferative" = "#E41A1C",
-  "Basal to Intest. Meta" = "#4DAF4A",
+  "Basal to Intestinal Metaplasia" = "#4DAF4A",
   "Stress-adaptive"       = "#984EA3",
   "SMG-like Metaplasia"   = "#FF7F00",
-  "Immune Infiltrated"    = "#377EB8",
+  "Immune Infiltrating"   = "#377EB8",
+  "3CA_EMT_and_Protein_maturation" = "#666666",
   "Unresolved"            = "grey80",
   "Hybrid"                = "black"
 )
+if (length(other_extra_states) > 0) {
+  state_colors <- c(
+    state_colors,
+    setNames(scales::hue_pal()(length(other_extra_states)), other_extra_states)
+  )
+}
 
 compute_plot_data <- function(data, group_var, filter_expr = NULL, studyname = NULL) {
   if (!is.null(studyname)) {
@@ -220,4 +262,4 @@ summary_rows <- lapply(requested_modes, function(mode_name) {
 summary_df <- bind_rows(summary_rows)
 write.csv(summary_df, file.path(summary_dir, "Auto_clinical_assoc_topmp_v2B_reg_noreg_summary.csv"), row.names = FALSE)
 
-message("Saved unified reg+noreg clinical association outputs.")
+message("Saved clinical association outputs using final states when available.")

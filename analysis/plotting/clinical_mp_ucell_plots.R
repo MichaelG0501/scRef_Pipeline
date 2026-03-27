@@ -52,7 +52,7 @@ clinical_sheet <- read_excel(
   mutate(orig.ident = paste(Author, Year, `Sample Name`, sep = "_"))
 
 ####################
-# 2) MP order and annotations (matched to Auto_states_topmp_v2.R)
+# 2) MP order and annotations (matched to final updated state naming)
 ####################
 mp_descriptions <- c(
   "MP1" = "G2M_cycle",
@@ -71,14 +71,14 @@ mp_descriptions <- c(
   "MP18" = "Adaptive_secretory"
 )
 
-# State groups from Auto_states_topmp_v2.R
+# State groups aligned to Auto_final_states.rds naming
 state_groups <- list(
   "Cell Cycle"              = c("MP1", "MP7", "MP9"),
   "Classic Proliferative"   = c("MP2"),
-  "Barretts Metaplasia"   = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "EMT-related"             = c("MP13", "MP12"),
-  "Intestinal Metaplasia"  = c("MP18", "MP16"),
-  "Immune Infiltrated"      = c("MP15")
+  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress-adaptive"         = c("MP13", "MP12"),
+  "SMG-like Metaplasia"     = c("MP18", "MP16"),
+  "Immune Infiltrating"     = c("MP15")
 )
 
 # Silhouette filtering
@@ -130,10 +130,10 @@ mp_ordered <- c(mp_ordered, remaining)
 group_palette <- c(
   "Cell Cycle"            = "#FFD700",
   "Classic Proliferative" = "#E41A1C",
-  "Intestinal Metaplasia" = "#4DAF4A",
-  "EMT-related"           = "#984EA3",
-  "Secretory"             = "#FF7F00",
-  "Immune Infiltrated"    = "#377EB8",
+  "Basal to Intestinal Metaplasia" = "#4DAF4A",
+  "Stress-adaptive"       = "#984EA3",
+  "SMG-like Metaplasia"   = "#FF7F00",
+  "Immune Infiltrating"   = "#377EB8",
   "Other"                 = "grey60"
 )
 
@@ -230,9 +230,12 @@ plot_dot_heatmap <- function(data, group_var, title, filter_expr = NULL, studyna
       z_score = ifelse(mp_sd > 0, (group_mean - mp_mean) / mp_sd, 0)
     ) %>%
     ungroup()
+  plot_df$z_score <- as.numeric(plot_df$z_score)
+  plot_df$z_score[!is.finite(plot_df$z_score)] <- 0
   
   # Clamp z-scores for colour scale
   z_lim <- max(abs(plot_df$z_score), na.rm = TRUE)
+  if (!is.finite(z_lim)) z_lim <- 0.5
   z_lim <- max(z_lim, 0.5)
   
   # Display labels and grouping
@@ -397,8 +400,11 @@ plot_dot_faceted <- function(data, group_var, title, filter_expr = NULL) {
       z_score = ifelse(mp_sd > 0, (group_mean - mp_mean) / mp_sd, 0)
     ) %>%
     ungroup()
+  plot_data$z_score <- as.numeric(plot_data$z_score)
+  plot_data$z_score[!is.finite(plot_data$z_score)] <- 0
   
   z_lim <- max(abs(plot_data$z_score), na.rm = TRUE)
+  if (!is.finite(z_lim)) z_lim <- 0.5
   z_lim <- max(z_lim, 0.5)
   
   # Study stats for facet labels

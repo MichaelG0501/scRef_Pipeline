@@ -23,6 +23,7 @@
 #   ref_outs/unresolved_states/Auto_unresolved_relabel_states.rds
 #   ref_outs/unresolved_states/Auto_unresolved_relabel_proportion.pdf
 #   ref_outs/unresolved_states/Auto_unresolved_relabel_heatmap.pdf
+#   ref_outs/unresolved_states/Auto_unresolved_relabel_cc_boxplot.pdf
 #   ref_outs/unresolved_states/Auto_unresolved_relabel_volcano.pdf
 #   ref_outs/unresolved_states/Auto_unresolved_relabel_cox_results.csv
 #   ref_outs/unresolved_states/Auto_unresolved_relabel_mp_coverage.csv
@@ -184,12 +185,22 @@ mp.genes <- geneNMF.metaprograms$metaprograms.genes
 bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
 if (length(bad_mps) > 0) mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
 retained_mps <- names(mp.genes)
-tree_order <- geneNMF.metaprograms$programs.tree$order
-ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
-valid_cluster_ids <- as.numeric(gsub("\\D", "", retained_mps))
-mp_tree_order <- unique(ordered_clusters)
-mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
-mp_tree_order_names <- paste0("MP", mp_tree_order)
+# Reorder MPs: CC MPs first (original relative order), then state MPs (state_groups order)
+state_ordered_mps <- unlist(state_groups, use.names = FALSE)
+# To keep original relative order of CC, we identify their current sequence
+orig_tree_order <- geneNMF.metaprograms$programs.tree$order
+orig_clusters <- geneNMF.metaprograms$programs.clusters[orig_tree_order]
+orig_order <- paste0("MP", unique(orig_clusters))
+orig_order <- orig_order[orig_order %in% retained_mps]
+
+reordered_mps <- c(
+  orig_order[orig_order %in% cc_mps],
+  state_ordered_mps[state_ordered_mps %in% retained_mps]
+)
+# Add any remaining ones (like 3CA ones if they were added to retained_mps, 
+# although they are typically handled separately in the rows below)
+reordered_mps <- unique(c(reordered_mps, orig_order))
+mp_tree_order_names <- reordered_mps
 
 group_order_pos <- sapply(state_groups, function(mps) {
   positions <- match(mps, mp_tree_order_names)
@@ -390,7 +401,40 @@ ggsave(
 )
 
 ####################
-# STEP 5: per-cell heatmap (all cells)
+# STEP 5: cell-cycle boxplot
+####################
+cell_cycle_genes <- read.csv(
+  "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Cell_Cycle_Genes.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE
+)[, 1:3]
+cc_consensus <- intersect(cell_cycle_genes$Gene[cell_cycle_genes$Consensus == 1], rownames(tmdata_all))
+cc_top50 <- names(sort(rowMeans(tmdata_all@assays$RNA$data[cc_consensus, , drop = FALSE], na.rm = TRUE), decreasing = TRUE))[1:50]
+cc_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cc_top50, , drop = FALSE]))
+
+cc_df <- data.frame(
+  state = factor(as.character(state_updated[names(cc_score)]), levels = state_level_order_updated),
+  cc_score = as.numeric(cc_score),
+  stringsAsFactors = FALSE
+) %>% filter(!is.na(state))
+
+p_cc <- ggplot(cc_df, aes(state, cc_score, fill = state)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.85) +
+  geom_jitter(width = 0.15, size = 0.15, alpha = 0.2) +
+  scale_fill_manual(values = group_cols_updated, drop = FALSE) +
+  labs(title = "Finalised states: Cell-cycle score by state", x = NULL, y = "Cell-cycle score") +
+  theme_classic(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1), legend.position = "none")
+
+ggsave(
+  file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_cc_boxplot.pdf")),
+  p_cc,
+  width = 12,
+  height = 7
+)
+
+####################
+# STEP 6: per-cell heatmap (all cells)
 ####################
 cc_in_ucell <- intersect(cc_mps, colnames(ucell_scores))
 cc_raw <- as.matrix(ucell_scores[common_cells, cc_in_ucell, drop = FALSE])
@@ -403,19 +447,11 @@ z_3ca_all <- z_normalise(ucell_3ca[common_cells, retained_3ca, drop = FALSE], sa
 # raw pan-cancer MP UCell scores (same retained MPs)
 raw_3ca_all <- as.matrix(ucell_3ca[common_cells, retained_3ca, drop = FALSE])
 
+# CNA status logic unchanged
 cna_cells <- intersect(rownames(meta_full_epi), common_cells)
 cna_status <- rep(NA_character_, length(common_cells))
 names(cna_status) <- common_cells
 cna_status[cna_cells] <- as.character(meta_full_epi[cna_cells, "classification"])
-
-cell_cycle_genes <- read.csv(
-  "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Cell_Cycle_Genes.csv",
-  header = TRUE,
-  stringsAsFactors = FALSE
-)[, 1:3]
-cc_consensus <- intersect(cell_cycle_genes$Gene[cell_cycle_genes$Consensus == 1], rownames(tmdata_all))
-cc_top50 <- names(sort(rowMeans(tmdata_all@assays$RNA$data[cc_consensus, , drop = FALSE], na.rm = TRUE), decreasing = TRUE))[1:50]
-cc_score <- colMeans(as.matrix(tmdata_all@assays$RNA$data[cc_top50, , drop = FALSE]))
 
 # Logic moved up to constants/loading section
 
@@ -693,7 +729,7 @@ grid.text("Unresolved cells subclass: 3CA-based relabeling (noreg)", x = unit(5,
 dev.off()
 
 ####################
-# STEP 6: survival volcano using GSVA
+# STEP 7: survival volcano using GSVA
 ####################
 set.seed(42)
 

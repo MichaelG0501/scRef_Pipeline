@@ -284,40 +284,62 @@ p_combined <- (p_mp | p_state) +
   plot_layout(guides = "collect", widths = c(1.8, 1)) & 
   theme(legend.position = "bottom", legend.text = element_text(size = 16))
 
-# Define Page 3: Delta Plots (EAC - ESCC)
-mean_mp$delta <- mean_mp$EAC - mean_mp$ESCC
-mean_state$delta <- mean_state$EAC - mean_state$ESCC
+####################
+# Define Page 3: Delta Plots (EAC - ESCC) with Sample-level Stats
+# 1. Prepare statistics
+temp_mp_stats <- mp_stats %>% ungroup() %>% select(MP_label, stars, p_val)
+temp_state_stats <- state_stats %>% ungroup() %>% 
+  mutate(feature_name = gsub("^State: ", "", State_label)) %>%
+  select(feature_name, stars, p_val)
 
-# Common limits for delta plots? User didn't ask but makes sense.
+mean_mp <- mean_mp %>%
+  mutate(delta = EAC - ESCC) %>%
+  left_join(temp_mp_stats, by = c("label" = "MP_label")) %>%
+  mutate(Direction = ifelse(delta > 0, "High in EAC", "High in ESCC"),
+         Direction = factor(Direction, levels = c("High in EAC", "High in ESCC")))
+
+mean_state <- mean_state %>%
+  mutate(delta = EAC - ESCC) %>%
+  left_join(temp_state_stats, by = c("feature" = "feature_name")) %>%
+  mutate(Direction = ifelse(delta > 0, "High in EAC", "High in ESCC"),
+         Direction = factor(Direction, levels = c("High in EAC", "High in ESCC")))
+
+# Determine limits for delta axes with more padding for labels/stars
 common_delta_lims <- c(min(c(mean_mp$delta, mean_state$delta), na.rm=TRUE),
                        max(c(mean_mp$delta, mean_state$delta), na.rm=TRUE))
-padding_delta <- (common_delta_lims[2] - common_delta_lims[1]) * 0.05
+padding_delta <- (common_delta_lims[2] - common_delta_lims[1]) * 0.25
 common_delta_lims <- c(common_delta_lims[1] - padding_delta, common_delta_lims[2] + padding_delta)
 
-p_delta_mp <- ggplot(mean_mp, aes(x = reorder(label, delta), y = delta, fill = delta > 0)) +
+p_delta_mp <- ggplot(mean_mp, aes(x = reorder(label, delta), y = delta, fill = Direction)) +
   geom_col(color = "black", linewidth = 0.3) +
+  geom_text(aes(label = stars, hjust = ifelse(delta >= 0, -0.2, 1.2)), 
+            size = 5.5, fontface = "bold", vjust = 0.7) +
   coord_flip() +
-  scale_fill_manual(values = c("TRUE" = "#E41A1C", "FALSE" = "#377EB8"), 
-                    labels = c("High in ESCC", "High in EAC"), name = "Direction") +
+  scale_fill_manual(values = c("High in EAC" = "#E41A1C", "High in ESCC" = "#377EB8")) +
   scale_y_continuous(limits = common_delta_lims) +
   theme_classic(base_size = 18) +
-  labs(title = "MP Delta (EAC - ESCC)", x = NULL, y = "Delta Mean Score") +
+  labs(title = "MP Delta: EAC - ESCC", 
+       subtitle = "Stars: Sample-level Wilcoxon test", x = NULL, y = "Delta Mean Score") +
   theme(axis.text = element_text(color = "black", size = 13),
         plot.title = element_text(face = "bold"))
 
-p_delta_state <- ggplot(mean_state, aes(x = reorder(label, delta), y = delta, fill = delta > 0)) +
+p_delta_state <- ggplot(mean_state, aes(x = reorder(label, delta), y = delta, fill = Direction)) +
   geom_col(color = "black", linewidth = 0.3) +
+  geom_text(aes(label = stars, hjust = ifelse(delta >= 0, -0.2, 1.2)), 
+            size = 5.5, fontface = "bold", vjust = 0.7) +
   coord_flip() +
-  scale_fill_manual(values = c("TRUE" = "#E41A1C", "FALSE" = "#377EB8"), guide = "none") +
+  scale_fill_manual(values = c("High in EAC" = "#E41A1C", "High in ESCC" = "#377EB8"), guide = "none") +
   scale_y_continuous(limits = common_delta_lims) +
   theme_classic(base_size = 18) +
-  labs(title = "State Delta (EAC - ESCC)", x = NULL, y = "Delta Mean Score") +
+  labs(title = "State Delta: EAC - ESCC", 
+       subtitle = "Stars: Sample-level Wilcoxon test", x = NULL, y = "Delta Mean Score") +
   theme(axis.text = element_text(color = "black", size = 13),
         plot.title = element_text(face = "bold"))
 
 p_page3 <- (p_delta_mp | p_delta_state) + 
   plot_layout(guides = "collect", widths = c(1.8, 1)) & 
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", legend.title = element_blank())
+####################
 
 pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_tcga_eac_escc_compare_plots.pdf")), width = 16, height = 9, onefile = TRUE)
 print(p_page1)
