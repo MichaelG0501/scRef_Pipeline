@@ -595,7 +595,14 @@ can read results on the login node without loading heavy `.rds` files, create fo
     - `full_cohort_dge`
     - `eac_only_dge`
   - Output directory: `ref_outs/geo_survival/geo_task2_survival/`
+  - Volcano layout:
+    - one combined EAC-only PDF with MP pages first and State pages second
+    - one page per split method
+    - each page is side-by-side: left = `eac_only_reference`, right = `eac_only_dge`
   - Summary CSV: `updates/new_updates/summaries/Auto_geo_survival_clinical_mps_v2_reg_noreg_summary.csv`
+- `analysis/clinical/Auto_geo_survival_clinical_mps_v2_reg_noreg.sh`
+  - PBS wrapper for `Auto_geo_survival_clinical_mps_v2_reg_noreg.R`
+  - Resources: `ncpus=8`, `mem=96gb`, `walltime=06:00:00`, env `dmtcp`
 
 - GEO dataset-specific notes:
   - `GSE19417`
@@ -606,6 +613,69 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - Platform: `GPL6102`
   - GEO public files include clinicopathology and expression only
   - Prepared for reference but not marked `analysis_ready_for_survival`
+
+####################
+####################
+## 30 Mar 2026 Cross-platform Bulk QC + Integrated Survival
+
+- `analysis/clinical/Auto_bulk_tcga_geo_qc.R`
+  - Purpose: harmonize TCGA whole-bulk RNA-seq and GEO `GSE19417` bulk microarray for cross-platform QC before pooled survival analysis.
+  - Harmonization rules:
+    - shared genes only (`TCGA ∩ GEO`)
+    - TCGA transform = `log2(TPM + 1)`
+    - GEO transform = keep supplied processed log-scale matrix
+    - per-dataset standardization = row-wise z-score
+  - QC strategy:
+    - PCA on the top variable shared genes after harmonization
+    - per-dataset QC pages: one page for `TCGA`, one page for `GEO_GSE19417`
+    - each page combines PCA, histology-consistency metrics, and expression-strength metrics (`median`, `IQR`, `breadth`)
+    - QC is binary only (`Keep` / `Remove`); there is no separate review tier
+    - automatic removal is moderately stringent: low-expression outliers are removed directly, and histology mismatches are removed when also inconsistent in local/global PCA structure
+  - Outputs: `ref_outs/bulk_crossplatform/` with `Auto_bulk_crossplatform_qc_review.pdf`, before/after PCA PDFs, full sample QC table, removed/retained CSVs, preprocessing summary CSV, QC objects RDS, and summary CSV `updates/new_updates/summaries/Auto_bulk_tcga_geo_qc_summary.csv`
+
+- `analysis/clinical/Auto_bulk_tcga_geo_integrated_survival.R`
+  - Purpose: rerun MP/state survival after QC on a harmonized TCGA + GEO bulk matrix, rather than reusing platform-specific scores.
+  - Scoring rules:
+    - recompute scores directly from harmonized expression using gene-set mean expression
+    - do not reuse previous GSVA outputs
+    - include both reference gene sets and DGE-derived gene sets
+  - Retained 4-method structure:
+    - `full_cohort_reference`
+    - `eac_only_reference`
+    - `full_cohort_dge`
+    - `eac_only_dge`
+  - Survival outputs:
+    - per-dataset continuous/median/q1q4 Cox
+    - pooled Cox with `dataset` covariate
+    - continuous score-by-dataset interaction tests for direction heterogeneity
+    - one combined EAC-only volcano PDF with MP pages first and State pages second
+    - one page per split method
+    - each page is side-by-side: left = `eac_only_reference`, right = `eac_only_dge`
+  - Output directory: `ref_outs/bulk_crossplatform/survival/`
+  - Key outputs: `Auto_bulk_crossplatform_survival_results.csv`, `Auto_bulk_crossplatform_direction_summary.csv`, `Auto_bulk_crossplatform_interaction_results.csv`, `Auto_bulk_crossplatform_survival_volcano_eac_only.pdf`, MP score distribution PDF, and summary CSV `updates/new_updates/summaries/Auto_bulk_tcga_geo_integrated_survival_summary.csv`
+- `analysis/clinical/Auto_bulk_tcga_geo_integrated_survival.sh`
+  - PBS wrapper for `Auto_bulk_tcga_geo_integrated_survival.R`
+  - Resources: `ncpus=8`, `mem=96gb`, `walltime=06:00:00`, env `dmtcp`
+
+- `analysis/clinical/Auto_survival_clinical_mps_v2_reg_noreg_filtered.R`
+  - Purpose: rerun the TCGA whole-bulk survival volcano workflow on the QC-retained TCGA samples only.
+  - Input filter: keeps `dataset == "TCGA"` and `integration_keep == TRUE` from `ref_outs/bulk_crossplatform/Auto_bulk_crossplatform_qc_sample_table.csv`
+  - Methods retained:
+    - `malignant_filtered_reference`
+    - `malignant_filtered_dge`
+    - `whole_filtered_reference`
+    - `whole_filtered_dge`
+  - Volcano layout:
+    - one combined PDF with MP pages first and State pages second
+    - one page per split method
+    - 2 x 2 layout: malignant reference, malignant DGE, whole-bulk reference, whole-bulk DGE
+  - Outputs: `ref_outs/task2_filtered_survival/Auto_task2_filtered_survival_volcano_methods_reg_noreg.pdf`, filtered Cox CSV, and summary CSV `updates/new_updates/summaries/Auto_survival_clinical_mps_v2_reg_noreg_filtered_summary.csv`
+- `analysis/clinical/Auto_survival_clinical_mps_v2_reg_noreg_filtered.sh`
+  - PBS wrapper for `Auto_survival_clinical_mps_v2_reg_noreg_filtered.R`
+  - Resources: `ncpus=8`, `mem=128gb`, `walltime=08:00:00`, env `dmtcp`
+- `analysis/clinical/Auto_survival_clinical_mps_v2_reg_noreg.sh`
+  - PBS wrapper for `survival_clinical_mps_v2_reg_noreg.R`
+  - Resources: `ncpus=8`, `mem=128gb`, `walltime=08:00:00`, env `dmtcp`
 ####################
 ####################
 ## 25 Mar 2026 External Epithelial MP UCell Heatmap

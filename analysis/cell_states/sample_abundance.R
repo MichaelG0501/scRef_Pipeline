@@ -438,6 +438,53 @@ p6 <- plot_abundance(
   totals_df = totals_df
 )
 
+####################
+# p7: Basal Metaplasia Breakdown
+####################
+# Population: Cells in "Basal to Intestinal Metaplasia" state
+# Categories: Focus on the 5 defining MPs (MP17, MP14, MP5, MP10, MP8)
+basal_cells <- names(state_B)[state_B == "Basal to Intestinal Metaplasia"]
+basal_topmp_label <- topmp_all_label[basal_cells]
+basal_sample_by_cell <- sample_by_cell[basal_cells]
+
+basal_mp_ids <- c("MP17", "MP14", "MP5", "MP10", "MP8")
+basal_levels <- label_mp(basal_mp_ids)
+
+# Proportions scaled to 100% of these 5 MPs within the basal population
+prop_basal <- make_prop_data(basal_topmp_label, basal_sample_by_cell, basal_levels)
+prop_basal <- force_100(prop_basal)
+
+# Secondary axis: total count of "Basal to Intestinal Metaplasia" cells per sample
+totals_basal <- data.frame(
+  orig.ident = as.character(basal_sample_by_cell),
+  stringsAsFactors = FALSE
+) %>%
+  count(orig.ident, name = "total_n") %>%
+  right_join(data.frame(orig.ident = unique(sample_by_cell), stringsAsFactors = FALSE), by = "orig.ident") %>%
+  mutate(total_n = ifelse(is.na(total_n), 0, total_n))
+
+# Sorting order: proportion of MP17 (within this state, scaled to 100% of these 5 MPs)
+mp17_label <- label_mp("MP17")
+basal_sort_order <- prop_basal %>%
+  filter(label == mp17_label) %>%
+  arrange(desc(pct), orig.ident) %>%
+  pull(orig.ident)
+
+# Specialized palette for basal MPs to ensure high separability and NO overlap with state colors
+# (States use: Red, Green, Purple, Orange, Blue)
+col_basal <- setNames(
+  c("#FF69B4", "#FFD700", "#00CED1", "#A0522D", "#708090"), 
+  basal_levels
+)
+
+p7 <- plot_abundance(
+  prop_data = prop_basal,
+  sample_order = basal_sort_order,
+  col_map = col_basal,
+  title_text = "Basal Metaplasia MP Breakdown | Sort: MP17 Proportion",
+  totals_df = totals_basal
+)
+
 pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_sample_abundance.pdf")), width = pdf_w, height = pdf_h, onefile = TRUE)
 print(p1)
 print(p2)
@@ -445,6 +492,7 @@ print(p3)
 print(p4)
 print(p5)
 print(p6)
+print(p7)
 dev.off()
 
 ####################

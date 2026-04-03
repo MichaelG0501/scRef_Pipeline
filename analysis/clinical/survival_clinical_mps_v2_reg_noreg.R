@@ -34,6 +34,7 @@ library(ggplot2)
 library(ggrepel)
 library(ComplexHeatmap)
 library(circlize)
+library(gridExtra)
 library(survival)
 library(GSVA)
 library(Seurat)
@@ -43,10 +44,11 @@ task_prefix <- "task2"
 out_dir <- paste0(task_prefix, "_survival")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-args <- commandArgs(trailingOnly = TRUE)
-requested_modes <- if (length(args) >= 1 && nzchar(args[1])) unlist(strsplit(args[1], ",")) else c("reg", "noreg")
-requested_modes <- intersect(c("reg", "noreg"), requested_modes)
-if (length(requested_modes) == 0) requested_modes <- c("reg", "noreg")
+open_pdf_device <- function(path, width, height) {
+  grDevices::cairo_pdf(filename = path, width = width, height = height, onefile = TRUE)
+}
+
+requested_modes <- "noreg"
 
 clean_3ca_name <- function(x) {
   x <- gsub("^X3CA_", "3CA_", x)
@@ -132,6 +134,39 @@ plot_volcano <- function(df, ttl) {
     scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "firebrick3"), guide = "none") +
     theme_minimal(base_size = 12) +
     labs(title = ttl, x = "log2(HR)", y = "-log10(p)")
+}
+
+make_placeholder_plot <- function(title_text) {
+  ggplot() +
+    theme_void() +
+    annotate("text", x = 0, y = 0, label = "No model available", size = 5) +
+    labs(title = title_text)
+}
+
+make_tcga_page <- function(top_left, top_right, bottom_left, bottom_right, page_title) {
+  gridExtra::arrangeGrob(
+    top_left %||% make_placeholder_plot("Malignant reference"),
+    top_right %||% make_placeholder_plot("Malignant DGE"),
+    bottom_left %||% make_placeholder_plot("Whole TCGA reference"),
+    bottom_right %||% make_placeholder_plot("Whole TCGA DGE"),
+    ncol = 2,
+    top = grid::textGrob(page_title, gp = grid::gpar(fontsize = 14, fontface = "bold"))
+  )
+}
+
+write_grob_pdf <- function(path, grob_list, width, height) {
+  grob_list <- grob_list[!vapply(grob_list, is.null, logical(1))]
+  if (length(grob_list) == 0) stop("No grobs available to write: ", path)
+  open_pdf_device(path, width = width, height = height)
+  for (g in grob_list) {
+    grid::grid.newpage()
+    grid::grid.draw(g)
+  }
+  dev.off()
+}
+
+`%||%` <- function(x, y) {
+  if (is.null(x)) y else x
 }
 
 geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
@@ -607,10 +642,11 @@ dev.off()
 
 all_res <- list()
 split_methods <- c("continuous", "median", "q1q4")
+volcano_pages_mp <- list()
+volcano_pages_state <- list()
 
 for (sm in split_methods) {
   message("Running survival analysis with split: ", sm)
-  pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_survival_volcano_", sm, ".pdf")), width = 9, height = 7)
   
   for (mode_name in requested_modes) {
     message("  Mode: ", mode_name)
@@ -689,15 +725,38 @@ for (sm in split_methods) {
       }
     }
 
-    for (m in method_order) {
-      if (!is.null(panel_results[[paste0("MP|", m)]])) print(panel_results[[paste0("MP|", m)]])
-    }
-    for (m in method_order) {
-      if (!is.null(panel_results[[paste0("State|", m)]])) print(panel_results[[paste0("State|", m)]])
-    }
+    volcano_pages_mp[[paste(mode_name, sm, sep = "|")]] <- make_tcga_page(
+      panel_results[["MP|malignant_only"]],
+      panel_results[["MP|dge_based_malignant"]],
+      panel_results[["MP|whole_tcga"]],
+      panel_results[["MP|dge_based_whole"]],
+      paste0(mode_name, " MP volcano: ", sm)
+    )
+    volcano_pages_state[[paste(mode_name, sm, sep = "|")]] <- make_tcga_page(
+      panel_results[["State|malignant_only"]],
+      panel_results[["State|dge_based_malignant"]],
+      panel_results[["State|whole_tcga"]],
+      panel_results[["State|dge_based_whole"]],
+      paste0(mode_name, " State volcano: ", sm)
+    )
   }
-  dev.off()
 }
+
+unlink(file.path(out_dir, paste0("Auto_", task_prefix, "_survival_volcano_continuous.pdf")), force = TRUE)
+unlink(file.path(out_dir, paste0("Auto_", task_prefix, "_survival_volcano_median.pdf")), force = TRUE)
+unlink(file.path(out_dir, paste0("Auto_", task_prefix, "_survival_volcano_q1q4.pdf")), force = TRUE)
+unlink(file.path(out_dir, paste0("Auto_", task_prefix, "_survival_mp_state_volcano_methods_noreg.pdf")), force = TRUE)
+
+ordered_volcano_pages <- c(
+  unname(volcano_pages_mp[paste("noreg", split_methods, sep = "|")]),
+  unname(volcano_pages_state[paste("noreg", split_methods, sep = "|")])
+)
+write_grob_pdf(
+  file.path(out_dir, paste0("Auto_", task_prefix, "_survival_volcano_methods_reg_noreg.pdf")),
+  grob_list = ordered_volcano_pages,
+  width = 14,
+  height = 10
+)
 
 cox_res <- bind_rows(all_res)
 if (nrow(cox_res) > 0) {
