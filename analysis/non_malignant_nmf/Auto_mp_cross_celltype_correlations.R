@@ -74,7 +74,7 @@ if (!is.finite(ucell_cutoff) || ucell_cutoff <= 0 || ucell_cutoff >= 1) {
   stop("UCell cutoff must be a numeric value between 0 and 1")
 }
 
-cache_version <- "2026-04-13_v4"
+cache_version <- "2026-04-17_v5"
 force_rebuild <- toupper(Sys.getenv("AUTO_MPXCELL_FORCE_REBUILD", "FALSE")) %in% c("TRUE", "1", "YES")
 pair_evidence_allowed <- c("literature supported", "putative")
 min_positive_samples <- 5
@@ -394,6 +394,40 @@ calc_adjusted_scores <- function(score_df, sample_meta, mp_names, cutoff) {
   sample_meta <- sample_meta[match(common_cells, sample_meta$cell), , drop = FALSE]
   score_mat <- as.matrix(score_df[common_cells, mp_names, drop = FALSE])
   positive_mat <- score_mat > cutoff
+
+  sample_factor <- factor(sample_meta$sample, levels = unique(sample_meta$sample))
+  sample_counts <- as.numeric(table(sample_factor))
+  names(sample_counts) <- levels(sample_factor)
+
+  adj_sum <- rowsum(positive_mat * 1, group = sample_factor, reorder = FALSE)
+  adj_pct <- sweep(adj_sum, 1, sample_counts[rownames(adj_sum)], "/") * 100
+  adj_pct <- as.data.frame(adj_pct, stringsAsFactors = FALSE)
+  adj_pct$sample <- rownames(adj_pct)
+  adj_pct$study <- derive_study(adj_pct$sample)
+  adj_pct$n_cells <- sample_counts[adj_pct$sample]
+
+  coverage_counts <- colSums(as.matrix(adj_pct[, mp_names, drop = FALSE]) > 0, na.rm = TRUE)
+
+  list(
+    adjusted_scores = adj_pct,
+    coverage_counts = coverage_counts,
+    sample_counts = sample_counts
+  )
+}
+
+####################
+# Assignment-based adjusted scores for finalized cancer-state labels.
+# These cells are already discretely labeled, so positivity is defined
+# as state membership rather than a UCell threshold.
+####################
+calc_adjusted_scores_from_positive_mat <- function(positive_mat, sample_meta, mp_names) {
+  common_cells <- intersect(rownames(positive_mat), sample_meta$cell)
+  if (length(common_cells) == 0) {
+    stop("No overlapping cells between positive matrix and metadata")
+  }
+
+  sample_meta <- sample_meta[match(common_cells, sample_meta$cell), , drop = FALSE]
+  positive_mat <- as.matrix(positive_mat[common_cells, mp_names, drop = FALSE]) > 0
 
   sample_factor <- factor(sample_meta$sample, levels = unique(sample_meta$sample))
   sample_counts <- as.numeric(table(sample_factor))
@@ -761,9 +795,10 @@ make_pair_bubble_plot <- function(plot_df, pair_name, x_nodes, y_nodes) {
     scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0, na.value = "grey90") +
     scale_size_continuous(range = c(0.7, 7.5), limits = c(0, NA)) +
     scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.20)) +
-    theme_minimal(base_size = 10) +
+    theme_minimal(base_size = 14) +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 11),
+      axis.text.y = element_text(size = 11),
       panel.grid = element_blank(),
       legend.position = "right"
     ) +
@@ -893,9 +928,13 @@ plot_network <- function(edge_df, node_df, title_text, subtitle_text, edge_low, 
       linewidth = guide_legend()
     ) +
     coord_equal(clip = "off") +
-    theme_void(base_size = 12) +
+    theme_void(base_size = 15) +
     theme(
       legend.position = "right",
+      legend.text = element_text(size = 11),
+      legend.title = element_text(size = 12, face = "bold"),
+      plot.title = element_text(face = "bold", size = 18),
+      plot.subtitle = element_text(size = 13, color = "grey25"),
       plot.margin = margin(20, 120, 20, 120)
     ) +
     labs(
@@ -928,6 +967,496 @@ plot_network <- function(edge_df, node_df, title_text, subtitle_text, edge_low, 
       fill = alpha("white", 0.92),
       label.padding = unit(0.09, "lines")
     )
+}
+
+####################
+# Plot subtitle helper so state-based cancer modes explicitly state that
+# cancer-state positivity comes from finalized labels rather than UCell.
+####################
+describe_mode_positivity <- function(mode_cfg) {
+  if (identical(mode_cfg$cancer_definition, "state")) {
+    paste0(
+      "Cancer states use finalized cell-state labels; all non-cancer compartments use UCell > ",
+      ucell_cutoff
+    )
+  } else {
+    paste0("All compartments use UCell > ", ucell_cutoff)
+  }
+}
+
+####################
+# Compact all-node interaction map. Significant positive interactions
+# are drawn once in the lower triangle; dot size gives the percentage of
+# eligible samples where both nodes are present and fill gives Spearman rho.
+####################
+prepare_interaction_dotmap_data <- function(edge_df, node_df) {
+  if (nrow(edge_df) == 0) {
+    return(tibble())
+  }
+  if (!"n_lr_pairs" %in% colnames(edge_df)) {
+    edge_df$n_lr_pairs <- NA_real_
+  }
+  if (!"top_lr_label" %in% colnames(edge_df)) {
+    edge_df$top_lr_label <- NA_character_
+  }
+  if (!"co_positive_sample_pct" %in% colnames(edge_df)) {
+    edge_df$co_positive_sample_pct <- NA_real_
+  }
+  if ("edge_label.x" %in% colnames(edge_df)) {
+    edge_df$edge_label <- edge_df$edge_label.x
+  }
+  if ("celltype_pair.x" %in% colnames(edge_df)) {
+    edge_df$celltype_pair <- edge_df$celltype_pair.x
+  }
+  if ("pair_scope.x" %in% colnames(edge_df)) {
+    edge_df$pair_scope <- edge_df$pair_scope.x
+  }
+
+  node_order_df <- node_df %>%
+    arrange(celltype_order, mp_plot_order, node_label) %>%
+    mutate(node_order = row_number()) %>%
+    select(node_id, node_label, celltype_display, node_order)
+
+  edge_df %>%
+    left_join(node_order_df, by = c("node1_id" = "node_id")) %>%
+    rename(
+      node1_order = node_order,
+      node1_plot_label = node_label,
+      node1_celltype_plot = celltype_display
+    ) %>%
+    left_join(node_order_df, by = c("node2_id" = "node_id"), suffix = c("", "_node2")) %>%
+    rename(
+      node2_order = node_order,
+      node2_plot_label = node_label,
+      node2_celltype_plot = celltype_display
+    ) %>%
+    filter(!is.na(node1_order), !is.na(node2_order)) %>%
+    mutate(
+      x_label = ifelse(node1_order <= node2_order, node1_plot_label, node2_plot_label),
+      y_label = ifelse(node1_order <= node2_order, node2_plot_label, node1_plot_label),
+      x_order = pmin(node1_order, node2_order),
+      y_order = pmax(node1_order, node2_order),
+      lr_supported = !is.na(n_lr_pairs) & n_lr_pairs > 0,
+      co_positive_sample_pct = ifelse(
+        is.na(co_positive_sample_pct),
+        NA_real_,
+        pmax(0, pmin(100, co_positive_sample_pct))
+      )
+    ) %>%
+    select(
+      edge_id,
+      edge_label,
+      celltype_pair,
+      pair_scope,
+      compartment1,
+      compartment2,
+      node1_label,
+      node2_label,
+      mp1_name,
+      mp2_name,
+      shared_sample_n,
+      co_positive_sample_n,
+      co_positive_sample_pct,
+      pearson_r,
+      spearman_r,
+      spearman_p,
+      spearman_significance,
+      n_lr_pairs,
+      top_lr_label,
+      x_label,
+      y_label,
+      x_order,
+      y_order,
+      lr_supported
+    ) %>%
+    mutate(
+      edge_label = as.character(edge_label),
+      celltype_pair = as.character(celltype_pair),
+      pair_scope = as.character(pair_scope),
+      node1_label = as.character(node1_label),
+      node2_label = as.character(node2_label),
+      mp1_name = as.character(mp1_name),
+      mp2_name = as.character(mp2_name),
+      top_lr_label = as.character(top_lr_label)
+    )
+}
+
+plot_interaction_dotmap <- function(edge_df, node_df, title_text, subtitle_text) {
+  ordered_nodes <- node_df %>%
+    arrange(celltype_order, mp_plot_order, node_label) %>%
+    mutate(node_order = row_number())
+  node_levels <- ordered_nodes$node_label
+  separator_df <- ordered_nodes %>%
+    count(celltype_display, celltype_order, name = "n") %>%
+    arrange(celltype_order) %>%
+    mutate(separator = cumsum(n) + 0.5) %>%
+    filter(separator < max(separator))
+
+  plot_df <- prepare_interaction_dotmap_data(edge_df, node_df)
+  if (nrow(plot_df) == 0) {
+    return(
+      ggplot() +
+        annotate("text", x = 0, y = 0, label = "No significant positive interactions", size = 5) +
+        theme_void(base_size = 12) +
+        labs(title = title_text, subtitle = subtitle_text)
+    )
+  }
+
+  plot_df <- plot_df %>%
+    mutate(
+      x_label = factor(x_label, levels = node_levels),
+      y_label = factor(y_label, levels = node_levels)
+    )
+
+  ggplot(plot_df, aes(x = x_label, y = y_label)) +
+    geom_vline(data = separator_df, aes(xintercept = separator), inherit.aes = FALSE, color = "grey88", linewidth = 0.35) +
+    geom_hline(data = separator_df, aes(yintercept = separator), inherit.aes = FALSE, color = "grey88", linewidth = 0.35) +
+    geom_point(
+      aes(size = co_positive_sample_pct, fill = spearman_r),
+      shape = 21,
+      color = "grey45",
+      stroke = 0.25,
+      alpha = 0.92
+    ) +
+    geom_point(
+      data = plot_df %>% filter(lr_supported),
+      aes(size = co_positive_sample_pct, fill = spearman_r),
+      shape = 21,
+      color = "black",
+      stroke = 0.95,
+      alpha = 0.98
+    ) +
+    geom_point(
+      data = plot_df %>% filter(lr_supported),
+      aes(size = co_positive_sample_pct),
+      shape = 4,
+      color = "black",
+      stroke = 0.55,
+      alpha = 0.85
+    ) +
+    scale_x_discrete(drop = FALSE, position = "top") +
+    scale_y_discrete(drop = FALSE, limits = rev(node_levels)) +
+    scale_fill_gradient(
+      low = "#F7F7F7",
+      high = "#B2182B",
+      limits = c(0, if(nrow(plot_df) > 0) max(plot_df$spearman_r, na.rm = TRUE) else 1),
+      oob = squish,
+      name = "Spearman\nrho"
+    ) +
+    scale_size_continuous(
+      range = c(1.2, 8.5),
+      limits = c(0, 100),
+      breaks = c(10, 25, 50, 75),
+      name = "Co-positive\nsamples (%)"
+    ) +
+    guides(
+      fill = guide_colorbar(barheight = unit(60, "pt")),
+      size = guide_legend(override.aes = list(shape = 21, fill = "grey70", color = "grey35"))
+    ) +
+    coord_fixed(clip = "off") +
+    theme_minimal(base_size = 18) +
+    theme(
+      axis.text.x = element_text(angle = 55, hjust = 0, vjust = 0.5, size = 14),
+      axis.text.y = element_text(size = 14),
+      axis.title = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "right",
+      legend.text = element_text(size = 12),
+      legend.title = element_text(size = 13, face = "bold"),
+      plot.title = element_text(face = "bold", size = 22),
+      plot.subtitle = element_text(size = 15, color = "grey25"),
+      plot.margin = margin(18, 28, 18, 18)
+    ) +
+    labs(
+      title = title_text
+    )
+}
+
+prepare_focal_interaction_dotmap_data <- function(edge_df, node_df, focal, include_within = FALSE) {
+  if (nrow(edge_df) == 0) {
+    return(tibble())
+  }
+  if (!"n_lr_pairs" %in% colnames(edge_df)) {
+    edge_df$n_lr_pairs <- NA_real_
+  }
+  if (!"top_lr_label" %in% colnames(edge_df)) {
+    edge_df$top_lr_label <- NA_character_
+  }
+  if (!"co_positive_sample_pct" %in% colnames(edge_df)) {
+    edge_df$co_positive_sample_pct <- NA_real_
+  }
+  if ("edge_label.x" %in% colnames(edge_df)) {
+    edge_df$edge_label <- edge_df$edge_label.x
+  }
+  if ("celltype_pair.x" %in% colnames(edge_df)) {
+    edge_df$celltype_pair <- edge_df$celltype_pair.x
+  }
+  if ("pair_scope.x" %in% colnames(edge_df)) {
+    edge_df$pair_scope <- edge_df$pair_scope.x
+  }
+
+  node_lookup <- node_df %>%
+    arrange(celltype_order, mp_plot_order, node_label) %>%
+    mutate(node_order = row_number()) %>%
+    select(node_id, node_label, celltype_display, celltype_order, mp_plot_order, node_order)
+
+  edge_df %>%
+    left_join(node_lookup, by = c("node1_id" = "node_id")) %>%
+    rename(
+      node1_plot_label = node_label,
+      node1_celltype_plot = celltype_display,
+      node1_celltype_order = celltype_order,
+      node1_mp_plot_order = mp_plot_order,
+      node1_order = node_order
+    ) %>%
+    left_join(node_lookup, by = c("node2_id" = "node_id"), suffix = c("", "_node2")) %>%
+    rename(
+      node2_plot_label = node_label,
+      node2_celltype_plot = celltype_display,
+      node2_celltype_order = celltype_order,
+      node2_mp_plot_order = mp_plot_order,
+      node2_order = node_order
+    ) %>%
+    filter(node1_celltype_plot == focal | node2_celltype_plot == focal) %>%
+    filter(include_within | node1_celltype_plot != node2_celltype_plot) %>%
+    mutate(
+      focal_label = ifelse(node1_celltype_plot == focal, node1_plot_label, node2_plot_label),
+      partner_label = ifelse(node1_celltype_plot == focal, node2_plot_label, node1_plot_label),
+      partner_celltype = ifelse(node1_celltype_plot == focal, node2_celltype_plot, node1_celltype_plot),
+      partner_celltype_order = ifelse(node1_celltype_plot == focal, node2_celltype_order, node1_celltype_order),
+      partner_mp_plot_order = ifelse(node1_celltype_plot == focal, node2_mp_plot_order, node1_mp_plot_order),
+      lr_supported = !is.na(n_lr_pairs) & n_lr_pairs > 0,
+      co_positive_sample_pct = ifelse(
+        is.na(co_positive_sample_pct),
+        NA_real_,
+        pmax(0, pmin(100, co_positive_sample_pct))
+      )
+    ) %>%
+    mutate(focal_celltype = focal) %>%
+    select(
+      focal_celltype,
+      partner_celltype,
+      edge_id,
+      edge_label,
+      celltype_pair,
+      pair_scope,
+      focal_label,
+      partner_label,
+      node1_label,
+      node2_label,
+      mp1_name,
+      mp2_name,
+      shared_sample_n,
+      co_positive_sample_n,
+      co_positive_sample_pct,
+      pearson_r,
+      spearman_r,
+      spearman_p,
+      spearman_significance,
+      n_lr_pairs,
+      top_lr_label,
+      lr_supported,
+      partner_celltype_order,
+      partner_mp_plot_order
+    ) %>%
+    mutate(
+      focal_celltype = as.character(focal_celltype),
+      partner_celltype = as.character(partner_celltype),
+      edge_label = as.character(edge_label),
+      celltype_pair = as.character(celltype_pair),
+      pair_scope = as.character(pair_scope),
+      focal_label = as.character(focal_label),
+      partner_label = as.character(partner_label),
+      node1_label = as.character(node1_label),
+      node2_label = as.character(node2_label),
+      mp1_name = as.character(mp1_name),
+      mp2_name = as.character(mp2_name),
+      top_lr_label = as.character(top_lr_label)
+    )
+}
+
+make_focal_interaction_grid <- function(node_df, focal, include_within = FALSE) {
+  focal_nodes <- node_df %>%
+    filter(celltype_display == focal) %>%
+    arrange(mp_plot_order, node_label) %>%
+    transmute(focal_label = node_label, focal_order = row_number())
+
+  partner_nodes <- node_df %>%
+    filter(include_within | celltype_display != focal) %>%
+    arrange(celltype_order, mp_plot_order, node_label) %>%
+    transmute(
+      partner_label = node_label,
+      partner_celltype = celltype_display,
+      partner_celltype_order = celltype_order,
+      partner_mp_plot_order = mp_plot_order,
+      partner_order = row_number()
+    )
+  partner_celltype_levels <- celltype_display_order[celltype_display_order %in% unique(partner_nodes$partner_celltype)]
+
+  expand.grid(
+    focal_label = focal_nodes$focal_label,
+    partner_label = partner_nodes$partner_label,
+    stringsAsFactors = FALSE
+  ) %>%
+    left_join(focal_nodes, by = "focal_label") %>%
+    left_join(partner_nodes, by = "partner_label") %>%
+    mutate(
+      focal_label = factor(focal_label, levels = focal_nodes$focal_label),
+      partner_label = factor(partner_label, levels = partner_nodes$partner_label),
+      partner_celltype = factor(partner_celltype, levels = partner_celltype_levels)
+    )
+}
+
+plot_focal_interaction_dotmap <- function(edge_df, node_df, focal, include_within = FALSE) {
+  focal_grid <- make_focal_interaction_grid(node_df, focal, include_within = include_within)
+  focal_levels <- levels(focal_grid$focal_label)
+  partner_levels <- levels(focal_grid$partner_label)
+  partner_celltype_levels <- levels(focal_grid$partner_celltype)
+
+  plot_df <- prepare_focal_interaction_dotmap_data(edge_df, node_df, focal, include_within = include_within) %>%
+    mutate(
+      focal_label = factor(focal_label, levels = focal_levels),
+      partner_label = factor(partner_label, levels = partner_levels),
+      partner_celltype = factor(partner_celltype, levels = partner_celltype_levels)
+    )
+
+  base_plot <- ggplot() +
+    geom_tile(
+      data = focal_grid,
+      aes(x = partner_label, y = focal_label),
+      fill = "#FBFBF8",
+      color = "#ECE8DE",
+      linewidth = 0.18
+    ) +
+    facet_grid(. ~ partner_celltype, scales = "free_x", space = "free_x", drop = FALSE) +
+    scale_y_discrete(limits = rev(focal_levels), drop = FALSE) +
+    theme_minimal(base_size = 14) +
+    theme(
+      axis.text.x = element_text(angle = 48, hjust = 1, vjust = 1, size = 9.5, color = "grey15"),
+      axis.text.y = element_text(size = 10.5, color = "grey10"),
+      axis.title = element_blank(),
+      panel.grid = element_blank(),
+      panel.spacing.x = unit(0.75, "lines"),
+      strip.background = element_rect(fill = alpha(plot_colour_lookup[focal], 0.12), color = NA),
+      strip.text.x = element_text(face = "bold", size = 11, color = "grey10"),
+      legend.position = "right",
+      legend.text = element_text(size = 10),
+      legend.title = element_text(size = 11, face = "bold"),
+      plot.title = element_text(face = "bold", size = 18, margin = margin(b = 10)),
+      plot.caption = element_blank(),
+      plot.margin = margin(16, 26, 42, 18)
+    ) +
+    labs(
+      title = paste0(focal, " interaction map")
+    )
+
+  if (nrow(plot_df) == 0) {
+    return(
+      base_plot +
+        annotate("text", x = 1, y = 1, label = "No significant positive interactions", size = 4, color = "grey45")
+    )
+  }
+
+  dot_plot <- base_plot +
+    geom_point(
+      data = plot_df,
+      aes(x = partner_label, y = focal_label, size = co_positive_sample_pct, fill = spearman_r),
+      shape = 21,
+      color = "grey45",
+      stroke = 0.28,
+      alpha = 0.93
+    ) +
+    scale_fill_gradient(
+      low = "#F8F4ED",
+      high = "#B7212E",
+      limits = c(0, if(nrow(plot_df) > 0) max(plot_df$spearman_r, na.rm = TRUE) else 1),
+      oob = squish,
+      name = "Spearman\nrho"
+    ) +
+    scale_size_continuous(
+      range = c(1.3, 8.6),
+      limits = c(0, 100),
+      breaks = c(10, 25, 50, 75),
+      name = "Co-positive\nsamples (%)"
+    ) +
+    guides(
+      fill = guide_colorbar(barheight = unit(55, "pt"), order = 1),
+      size = guide_legend(order = 2, override.aes = list(shape = 21, fill = "grey70", color = "grey35"))
+    )
+
+  lr_plot_df <- plot_df %>% filter(lr_supported)
+  if (nrow(lr_plot_df) == 0) {
+    return(dot_plot)
+  }
+
+  dot_plot +
+    geom_point(
+      data = lr_plot_df,
+      aes(x = partner_label, y = focal_label, size = co_positive_sample_pct, fill = spearman_r),
+      shape = 21,
+      color = "black",
+      stroke = 0.95,
+      alpha = 0.98
+    ) +
+    geom_point(
+      data = lr_plot_df,
+      aes(x = partner_label, y = focal_label, shape = "Supported"),
+      size = 2.15,
+      color = "black",
+      stroke = 0.55
+    ) +
+    scale_shape_manual(name = "LR support", values = c("Supported" = 4), drop = FALSE) +
+    guides(shape = guide_legend(order = 3, override.aes = list(size = 3.2, color = "black")))
+}
+
+write_focal_interaction_dotmap <- function(edge_df, node_df, out_path, include_within = FALSE) {
+  pdf(out_path, width = 22, height = 10.5, onefile = TRUE)
+  on.exit(dev.off(), add = TRUE)
+
+  for (focal in celltype_display_order) {
+    print(plot_focal_interaction_dotmap(edge_df, node_df, focal, include_within = include_within))
+  }
+}
+
+add_co_positive_support <- function(edge_df, compartment_data) {
+  if (nrow(edge_df) == 0) {
+    return(edge_df)
+  }
+
+  co_n <- numeric(nrow(edge_df))
+  co_pct <- numeric(nrow(edge_df))
+  co_n[] <- NA_real_
+  co_pct[] <- NA_real_
+
+  for (edge_idx in seq_len(nrow(edge_df))) {
+    edge_row <- edge_df[edge_idx, , drop = FALSE]
+    comp1 <- compartment_data[[edge_row$compartment1]]
+    comp2 <- compartment_data[[edge_row$compartment2]]
+    if (is.null(comp1) || is.null(comp2)) next
+
+    eligible_studies <- strsplit(edge_row$eligible_studies, ";", fixed = TRUE)[[1]]
+    eligible_studies <- eligible_studies[nzchar(eligible_studies)]
+    if (length(eligible_studies) == 0) next
+
+    samples1 <- comp1$adjusted_scores$sample[comp1$adjusted_scores$study %in% eligible_studies]
+    samples2 <- comp2$adjusted_scores$sample[comp2$adjusted_scores$study %in% eligible_studies]
+    eligible_samples <- intersect(samples1, samples2)
+    if (length(eligible_samples) == 0) next
+
+    score1 <- comp1$adjusted_scores[match(eligible_samples, comp1$adjusted_scores$sample), , drop = FALSE]
+    score2 <- comp2$adjusted_scores[match(eligible_samples, comp2$adjusted_scores$sample), , drop = FALSE]
+    keep <- !is.na(score1$sample) & !is.na(score2$sample)
+    score1 <- score1[keep, , drop = FALSE]
+    score2 <- score2[keep, , drop = FALSE]
+    if (nrow(score1) == 0) next
+
+    co_n[edge_idx] <- sum(score1[[edge_row$mp1_name]] > 0 & score2[[edge_row$mp2_name]] > 0, na.rm = TRUE)
+    co_pct[edge_idx] <- 100 * co_n[edge_idx] / nrow(score1)
+  }
+
+  edge_df$co_positive_sample_n <- co_n
+  edge_df$co_positive_sample_pct <- co_pct
+  edge_df
 }
 
 load_or_build_cache <- function(cache_filename, build_fun, step_name, cache_dir_use = cache_dir) {
@@ -1332,19 +1861,12 @@ run_analysis_mode <- function(mode_cfg) {
       colnames(score_mat) <- state_keep
       score_df <- as.data.frame(score_mat, stringsAsFactors = FALSE)
       sample_meta <- make_sample_meta(merged_meta_mode[cells_use, , drop = FALSE])
-      adj_bits <- calc_adjusted_scores(score_df, sample_meta, state_keep, cutoff = ucell_cutoff)
-      cutoff_tbl <- calc_cutoff_sensitivity(
-        score_df = score_df,
-        sample_meta = sample_meta,
-        mp_names = state_keep,
-        cutoffs = cutoff_grid,
-        compartment = cfg_row$compartment,
-        display_name = cfg_row$display
-      ) %>%
-        mutate(
-          celltype_order = unname(pair_order_lookup[cfg_row$display]),
-          mp_plot_order = match(mp_name, state_keep)
-        )
+      ####################
+      # Finalized cancer states are categorical labels, so adjusted scores
+      # are defined directly from state membership without a UCell cutoff.
+      ####################
+      adj_bits <- calc_adjusted_scores_from_positive_mat(score_df, sample_meta, state_keep)
+      cutoff_tbl <- tibble()
 
       node_stats <- tibble(
         compartment = cfg_row$compartment,
@@ -1375,6 +1897,7 @@ run_analysis_mode <- function(mode_cfg) {
         mp_names = state_keep,
         mp_display = setNames(state_keep, state_keep),
         gene_sets = cancer_state_ref_mode$gene_sets[state_keep],
+        positive_rule = "assigned_state",
         cells_use = cells_use,
         sample_meta = sample_meta,
         adjusted_scores = adj_bits$adjusted_scores,
@@ -1450,6 +1973,7 @@ run_analysis_mode <- function(mode_cfg) {
       mp_names = keep_mps,
       mp_display = setNames(mp_display, keep_mps),
       gene_sets = mp_genes[keep_mps],
+      positive_rule = "ucell_cutoff",
       cells_use = cells_use,
       sample_meta = sample_meta,
       adjusted_scores = adj_bits$adjusted_scores,
@@ -1486,6 +2010,9 @@ run_analysis_mode <- function(mode_cfg) {
   node_summary <- step1_cache_mode$node_summary
   cutoff_summary <- step1_cache_mode$cutoff_summary
 
+  # Mode-specific significance threshold
+  mode_positive_sig_cutoff <- if (identical(mode_cfg$cancer_definition, "state")) 1.5 else positive_sig_cutoff
+
   ####################
   # Save adjusted-score tables and cutoff diagnostics
   ####################
@@ -1499,44 +2026,56 @@ run_analysis_mode <- function(mode_cfg) {
   write.csv(node_summary, file.path(analysis_out_dir, "Auto_celltype_node_summary.csv"), row.names = FALSE)
   write.csv(cutoff_summary, file.path(analysis_out_dir, "Auto_celltype_cutoff_sensitivity.csv"), row.names = FALSE)
 
-  cutoff_count_plot <- cutoff_summary %>%
-    group_by(celltype_display, cutoff) %>%
-    summarise(n_nodes_passing = sum(coverage_pass), .groups = "drop") %>%
-    ggplot(aes(x = cutoff, y = n_nodes_passing, color = celltype_display)) +
-    geom_line(linewidth = 0.8) +
-    geom_point(size = 2) +
-    geom_vline(xintercept = ucell_cutoff, linetype = "dashed", color = "grey40") +
-    scale_color_manual(values = plot_colour_lookup) +
-    theme_minimal(base_size = 12) +
-    theme(panel.grid.minor = element_blank()) +
-    labs(
-      title = paste0("Positive-node coverage across cutoff choices: ", mode_cfg$analysis_label),
-      subtitle = paste0("Dashed line = active cutoff (", ucell_cutoff, ")"),
-      x = "UCell positivity cutoff",
-      y = paste0("Number of nodes with > ", min_positive_samples, " positive samples"),
-      color = "Cell type"
-    )
+  if (nrow(cutoff_summary) > 0) {
+    cutoff_subtitle_text <- if (identical(mode_cfg$cancer_definition, "state")) {
+      paste0(
+        "Dashed line = active UCell cutoff (",
+        ucell_cutoff,
+        "); cancer-state labels are assignment-based and excluded"
+      )
+    } else {
+      paste0("Dashed line = active cutoff (", ucell_cutoff, ")")
+    }
 
-  cutoff_box_plot <- cutoff_summary %>%
-    ggplot(aes(x = factor(cutoff), y = sample_coverage_n, fill = celltype_display)) +
-    geom_boxplot(outlier.size = 0.7) +
-    geom_hline(yintercept = min_positive_samples, linetype = "dashed", color = "grey40") +
-    scale_fill_manual(values = plot_colour_lookup) +
-    facet_wrap(~celltype_display, scales = "free_y", ncol = 4) +
-    theme_minimal(base_size = 12) +
-    theme(panel.grid.minor = element_blank(), legend.position = "none") +
-    labs(
-      title = "Per-node sample coverage across cutoff choices",
-      x = "UCell positivity cutoff",
-      y = "Positive samples per node"
-    )
+    cutoff_count_plot <- cutoff_summary %>%
+      group_by(celltype_display, cutoff) %>%
+      summarise(n_nodes_passing = sum(coverage_pass), .groups = "drop") %>%
+      ggplot(aes(x = cutoff, y = n_nodes_passing, color = celltype_display)) +
+      geom_line(linewidth = 0.8) +
+      geom_point(size = 2) +
+      geom_vline(xintercept = ucell_cutoff, linetype = "dashed", color = "grey40") +
+      scale_color_manual(values = plot_colour_lookup) +
+      theme_minimal(base_size = 12) +
+      theme(panel.grid.minor = element_blank()) +
+      labs(
+        title = paste0("Positive-node coverage across cutoff choices: ", mode_cfg$analysis_label),
+        subtitle = cutoff_subtitle_text,
+        x = "UCell positivity cutoff",
+        y = paste0("Number of nodes with > ", min_positive_samples, " positive samples"),
+        color = "Cell type"
+      )
 
-  ggsave(
-    file.path(analysis_out_dir, "Auto_celltype_cutoff_sensitivity.pdf"),
-    cutoff_count_plot / cutoff_box_plot + plot_layout(heights = c(1, 1)),
-    width = 14,
-    height = 11
-  )
+    cutoff_box_plot <- cutoff_summary %>%
+      ggplot(aes(x = factor(cutoff), y = sample_coverage_n, fill = celltype_display)) +
+      geom_boxplot(outlier.size = 0.7) +
+      geom_hline(yintercept = min_positive_samples, linetype = "dashed", color = "grey40") +
+      scale_fill_manual(values = plot_colour_lookup) +
+      facet_wrap(~celltype_display, scales = "free_y", ncol = 4) +
+      theme_minimal(base_size = 12) +
+      theme(panel.grid.minor = element_blank(), legend.position = "none") +
+      labs(
+        title = "Per-node sample coverage across cutoff choices",
+        x = "UCell positivity cutoff",
+        y = "Positive samples per node"
+      )
+
+    ggsave(
+      file.path(analysis_out_dir, "Auto_celltype_cutoff_sensitivity.pdf"),
+      cutoff_count_plot / cutoff_box_plot + plot_layout(heights = c(1, 1)),
+      width = 14,
+      height = 11
+    )
+  }
 
   ####################
   # Step 2 cache: pairwise correlations
@@ -1617,6 +2156,8 @@ run_analysis_mode <- function(mode_cfg) {
 
           pear_bits <- safe_cor_test(score_a[[mp_a]], score_b[[mp_b]], method = "pearson")
           spear_bits <- safe_cor_test(score_a[[mp_a]], score_b[[mp_b]], method = "spearman")
+          co_positive_sample_n <- sum(score_a[[mp_a]] > 0 & score_b[[mp_b]] > 0, na.rm = TRUE)
+          co_positive_sample_pct <- 100 * co_positive_sample_n / nrow(score_a)
 
           pair_results[[length(pair_results) + 1]] <- tibble(
             edge_id = paste(comp_a_name, mp_a, comp_b_name, mp_b, sep = "__"),
@@ -1634,6 +2175,8 @@ run_analysis_mode <- function(mode_cfg) {
             mp1_display = comp_a$node_stats$mp_display[match(mp_a, comp_a$node_stats$mp_name)],
             mp2_display = comp_b$node_stats$mp_display[match(mp_b, comp_b$node_stats$mp_name)],
             shared_sample_n = nrow(score_a),
+            co_positive_sample_n = co_positive_sample_n,
+            co_positive_sample_pct = co_positive_sample_pct,
             eligible_studies = paste(sort(eligible_studies), collapse = ";"),
             pearson_r = pear_bits$estimate,
             pearson_p = pear_bits$p.value,
@@ -1667,7 +2210,7 @@ run_analysis_mode <- function(mode_cfg) {
         result_df = result_df,
         study_summary = study_summary,
         positive_edges = result_df %>%
-          filter(spearman_sig, !is.na(pearson_r), pearson_r > 0, spearman_significance >= positive_sig_cutoff) %>%
+          filter(spearman_sig, !is.na(pearson_r), pearson_r > 0, spearman_significance >= mode_positive_sig_cutoff) %>%
           arrange(desc(spearman_significance), desc(pearson_r)),
         negative_edges = result_df %>%
           filter(spearman_sig, !is.na(pearson_r), pearson_r < 0, spearman_significance >= negative_sig_cutoff) %>%
@@ -1678,8 +2221,14 @@ run_analysis_mode <- function(mode_cfg) {
 
   result_df <- step2_cache_mode$result_df
   study_summary <- step2_cache_mode$study_summary
-  positive_edges <- step2_cache_mode$positive_edges
-  negative_edges <- step2_cache_mode$negative_edges
+  
+  # Re-filter edges from result_df in case thresholds changed since cache creation
+  positive_edges <- result_df %>%
+    filter(spearman_sig, !is.na(pearson_r), pearson_r > 0, spearman_significance >= mode_positive_sig_cutoff) %>%
+    arrange(desc(spearman_significance), desc(pearson_r))
+  negative_edges <- result_df %>%
+    filter(spearman_sig, !is.na(pearson_r), pearson_r < 0, spearman_significance >= negative_sig_cutoff) %>%
+    arrange(desc(spearman_significance), pearson_r)
 
   if (!"edge_label" %in% colnames(result_df)) {
     result_df <- result_df %>% mutate(edge_label = paste(node1_label, node2_label, sep = " <-> "))
@@ -1690,6 +2239,9 @@ run_analysis_mode <- function(mode_cfg) {
   if (!"edge_label" %in% colnames(negative_edges) && nrow(negative_edges) > 0) {
     negative_edges <- negative_edges %>% mutate(edge_label = paste(node1_label, node2_label, sep = " <-> "))
   }
+  result_df <- add_co_positive_support(result_df, compartment_data)
+  positive_edges <- add_co_positive_support(positive_edges, compartment_data)
+  negative_edges <- add_co_positive_support(negative_edges, compartment_data)
 
   write.csv(study_summary, file.path(analysis_out_dir, "Auto_celltype_shared_sample_summary.csv"), row.names = FALSE)
   write.csv(result_df, file.path(analysis_out_dir, "Auto_celltype_correlations_all.csv"), row.names = FALSE)
@@ -1741,7 +2293,12 @@ run_analysis_mode <- function(mode_cfg) {
       edge_df = positive_edges,
       node_df = node_summary,
       title_text = paste("Positive correlations:", mode_cfg$analysis_label),
-      subtitle_text = paste0("Edges shown when Pearson > 0, Spearman p < 0.05, and -log10(p) >= ", positive_sig_cutoff),
+      subtitle_text = paste0(
+        "Edges shown when Pearson > 0, Spearman p < 0.05, and -log10(p) >= ",
+        mode_positive_sig_cutoff,
+        "; ",
+        describe_mode_positivity(mode_cfg)
+      ),
       edge_low = "#F9D7CF",
       edge_high = "#8F0000"
     ),
@@ -1799,7 +2356,11 @@ run_analysis_mode <- function(mode_cfg) {
     candidate_cells <- comp$sample_meta$cell[comp$sample_meta$sample %in% shared_samples]
     candidate_cells <- intersect(candidate_cells, rownames(score_df))
     if (length(candidate_cells) == 0) return(character(0))
-    candidate_cells[score_df[candidate_cells, mp_name] > ucell_cutoff]
+    if (identical(comp$positive_rule, "assigned_state")) {
+      candidate_cells[score_df[candidate_cells, mp_name] > 0]
+    } else {
+      candidate_cells[score_df[candidate_cells, mp_name] > ucell_cutoff]
+    }
   }
   match_driver_target_lr_mode <- function(driver_top_genes, target_mp_genes, edge_row, driver_label, target_label) {
     if (length(driver_top_genes) == 0 || length(target_mp_genes) == 0 || is.null(lr_ref_mode)) {
@@ -1900,13 +2461,46 @@ run_analysis_mode <- function(mode_cfg) {
 
   lr_pairs_df <- step3_cache_mode$lr_pairs_df
   lr_edge_summary <- step3_cache_mode$lr_edge_summary
-  positive_edges_lr <- step3_cache_mode$positive_edges_lr
+  
+  # Re-sync positive_edges_lr with potentially updated positive_edges (from threshold changes)
+  # This ensures new edges (sig 1.5-4.0) appear as dots even if Step 3 cache only had sig > 4.0.
+  positive_edges_lr <- positive_edges %>%
+    left_join(lr_edge_summary, by = "edge_id") %>%
+    arrange(desc(spearman_significance), desc(n_lr_pairs), desc(n_literature_supported))
+
+  positive_edges_lr <- add_co_positive_support(positive_edges_lr, compartment_data)
 
   if (nrow(lr_pairs_df) > 0) {
     write.csv(lr_pairs_df, file.path(analysis_out_dir, "Auto_celltype_ligand_receptor_pairs.csv"), row.names = FALSE)
     write.csv(lr_edge_summary, file.path(analysis_out_dir, "Auto_celltype_ligand_receptor_edge_summary.csv"), row.names = FALSE)
     write.csv(positive_edges_lr, file.path(analysis_out_dir, "Auto_celltype_positive_edges_lr_annotated.csv"), row.names = FALSE)
   }
+
+  ####################
+  # Focal-celltype interaction dotmap. Each PDF page focuses on one
+  # cell type, with its MPs/states as rows and partner MPs/states as
+  # column groups.
+  ####################
+  interaction_dotmap_df <- bind_rows(lapply(
+    celltype_display_order,
+    function(focal) prepare_focal_interaction_dotmap_data(
+      positive_edges_lr,
+      node_summary,
+      focal = focal,
+      include_within = mode_cfg$include_within
+    )
+  ))
+  write.csv(
+    interaction_dotmap_df,
+    file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap_data.csv"),
+    row.names = FALSE
+  )
+  write_focal_interaction_dotmap(
+    edge_df = positive_edges_lr,
+    node_df = node_summary,
+    file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap.pdf"),
+    include_within = mode_cfg$include_within
+  )
 
   excel_output_paths <- character(0)
   if (nrow(lr_edge_summary) > 0) {
@@ -1921,7 +2515,10 @@ run_analysis_mode <- function(mode_cfg) {
         edge_df = positive_edges_lr,
         node_df = node_summary,
         title_text = paste("Positive correlations with LR support:", mode_cfg$analysis_label),
-        subtitle_text = paste0("Only literature-supported and putative LR pairs retained; positivity = ", ucell_cutoff),
+        subtitle_text = paste0(
+          "Only literature-supported and putative LR pairs retained; ",
+          describe_mode_positivity(mode_cfg)
+        ),
         edge_low = "#F9D7CF",
         edge_high = "#8F0000",
         annotation_df = edge_annotations
@@ -1936,7 +2533,12 @@ run_analysis_mode <- function(mode_cfg) {
       ggplot(aes(x = n_lr_pairs, y = edge_label, fill = n_literature_supported)) +
       geom_col() +
       scale_fill_gradient(low = "#FEE0D2", high = "#A50F15") +
-      theme_minimal(base_size = 11) +
+      theme_minimal(base_size = 14) +
+      theme(
+        axis.text = element_text(size = 11),
+        axis.title = element_text(size = 12),
+        plot.title = element_text(face = "bold", size = 16)
+      ) +
       labs(
         title = "Top positive edges by LR support",
         subtitle = "Counts shown after removing all excluded LR pairs",
@@ -1953,7 +2555,12 @@ run_analysis_mode <- function(mode_cfg) {
       ggplot(aes(x = n_edges_supported, y = pair_label, fill = pair_evidence)) +
       geom_col(position = "stack") +
       scale_fill_manual(values = c("literature supported" = "#66A61E", "putative" = "#E6AB02")) +
-      theme_minimal(base_size = 11) +
+      theme_minimal(base_size = 14) +
+      theme(
+        axis.text = element_text(size = 11),
+        axis.title = element_text(size = 12),
+        plot.title = element_text(face = "bold", size = 16)
+      ) +
       labs(
         title = "Most recurrent retained LR pairs",
         x = "Positive edges supported",
@@ -1976,6 +2583,112 @@ run_analysis_mode <- function(mode_cfg) {
     )
   }
 
+  cancer_edge_df <- result_df %>%
+    filter(compartment1 == "cancer" | compartment2 == "cancer")
+  cancer_positive_edge_df <- cancer_edge_df %>%
+    filter(spearman_sig, !is.na(pearson_r), pearson_r > 0)
+
+  ####################
+  # Cancer-TME interaction summary Excel (TME-centric with Gene Lists)
+  ####################
+  if (nrow(cancer_positive_edge_df) > 0) {
+    message("Generating TME-centric Cancer-TME interaction Excel")
+    
+    # 1. Prepare ordering information
+    celltype_preferred_order <- c("fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma")
+    cancer_mp_order <- compartment_data$cancer$node_stats$mp_name
+    
+    # 2. Add co-positive support if not already present
+    if (!"co_positive_sample_pct" %in% colnames(cancer_positive_edge_df)) {
+        cancer_positive_edge_df <- add_co_positive_support(cancer_positive_edge_df, compartment_data)
+    }
+
+    # 3. Process interactions and group by TME MP
+    tme_interaction_groups <- cancer_positive_edge_df %>%
+      mutate(
+        cancer_mp = ifelse(compartment1 == "cancer", mp1_name, mp2_name),
+        cancer_display = ifelse(compartment1 == "cancer", mp1_display, mp2_display),
+        tme_compartment = ifelse(compartment1 == "cancer", compartment2, compartment1),
+        tme_mp = ifelse(compartment1 == "cancer", mp2_name, mp1_name),
+        tme_display = ifelse(compartment1 == "cancer", mp2_display, mp1_display),
+        log10p = spearman_significance,
+        support_pct = co_positive_sample_pct,
+        cancer_order = match(cancer_mp, cancer_mp_order)
+      ) %>%
+      group_by(tme_compartment, tme_mp, tme_display) %>%
+      nest() %>%
+      mutate(
+        ct_order = match(tme_compartment, celltype_preferred_order),
+        mp_num = as.numeric(gsub("\\D", "", tme_mp))
+      ) %>%
+      arrange(ct_order, mp_num)
+
+    # 4. Create Excel Workbook
+    interaction_wb <- createWorkbook()
+    addWorksheet(interaction_wb, "TME-Cancer Interactions")
+
+    # Styles
+    tmeHeaderStyle <- createStyle(fontSize = 12, fontColour = "#FFFFFF", fgFill = "#2F5597", halign = "center", textDecoration = "bold")
+    cancerNameStyle <- createStyle(fontSize = 10, fgFill = "#E9E9E9", halign = "left", textDecoration = "bold")
+    cancerStatStyle <- createStyle(fontSize = 9, halign = "left", textDecoration = "italic")
+    geneStyle <- createStyle(fontSize = 10, halign = "left")
+
+    # 5. Fill columns (One per TME MP)
+    curr_col <- 1
+    for (i in seq_len(nrow(tme_interaction_groups))) {
+      group <- tme_interaction_groups[i, ]
+      # Order partners by Cancer MP tree order
+      partners <- group$data[[1]] %>% arrange(cancer_order)
+      
+      # Row 1: TME MP Name
+      writeData(interaction_wb, sheet = 1, x = paste0(group$tme_compartment, " ", group$tme_display), startRow = 1, startCol = curr_col)
+      addStyle(interaction_wb, sheet = 1, style = tmeHeaderStyle, rows = 1, cols = curr_col)
+      
+      # Rows 2+: Cancer MPs
+      curr_row <- 2
+      for (j in seq_len(nrow(partners))) {
+        p <- partners[j, ]
+        # Cancer MP Name
+        writeData(interaction_wb, sheet = 1, x = p$cancer_display, startRow = curr_row, startCol = curr_col)
+        addStyle(interaction_wb, sheet = 1, style = cancerNameStyle, rows = curr_row, cols = curr_col)
+        curr_row <- curr_row + 1
+        
+        # Stats & Support
+        stat_text <- sprintf("-log10(p): %.2f, Support: %.1f%%", p$log10p, p$support_pct)
+        writeData(interaction_wb, sheet = 1, x = stat_text, startRow = curr_row, startCol = curr_col)
+        addStyle(interaction_wb, sheet = 1, style = cancerStatStyle, rows = curr_row, cols = curr_col)
+        curr_row <- curr_row + 1
+      }
+      
+      # TME-MP Gene List
+      genes <- compartment_data[[group$tme_compartment]]$gene_sets[[group$tme_mp]]
+      if (is.null(genes) || length(genes) == 0) {
+          # Fallback to original RDS if cache is incomplete
+          mp_path_orig <- file.path("ref_outs", compartment_data[[group$tme_compartment]]$mp_path)
+          if (file.exists(mp_path_orig)) {
+              mp_outs_orig <- readRDS(mp_path_orig)
+              if ("metaprograms.genes" %in% names(mp_outs_orig)) {
+                  genes <- mp_outs_orig$metaprograms.genes[[group$tme_mp]]
+              } else if ("programs.genes" %in% names(mp_outs_orig)) {
+                  genes <- mp_outs_orig$programs.genes[[group$tme_mp]]
+              }
+          }
+      }
+      if (is.null(genes)) genes <- "No genes found"
+      
+      # Write genes (one per row)
+      writeData(interaction_wb, sheet = 1, x = genes, startRow = curr_row, startCol = curr_col)
+      addStyle(interaction_wb, sheet = 1, style = geneStyle, rows = curr_row:(curr_row + length(genes) - 1), cols = curr_col)
+      
+      setColWidths(interaction_wb, sheet = 1, cols = curr_col, widths = 30)
+      curr_col <- curr_col + 1
+    }
+
+    interaction_excel_path <- file.path(analysis_out_dir, "Auto_cancer_tme_interactions_TME_centric.xlsx")
+    saveWorkbook(interaction_wb, interaction_excel_path, overwrite = TRUE)
+    excel_output_paths <- c(excel_output_paths, interaction_excel_path)
+  }
+
   mode_summary <- tibble(
     analysis_id = mode_cfg$analysis_id,
     analysis_label = mode_cfg$analysis_label,
@@ -1988,13 +2701,18 @@ run_analysis_mode <- function(mode_cfg) {
     n_nodes_total = nrow(node_summary),
     n_nodes_passing_coverage = sum(node_summary$coverage_pass),
     n_pairwise_tests = nrow(result_df),
+    n_cancer_pairwise_tests = nrow(cancer_edge_df),
     n_positive_edges = nrow(positive_edges),
     n_negative_edges = nrow(negative_edges),
+    n_cancer_positive_edges_p05 = nrow(cancer_positive_edge_df),
+    n_cancer_positive_edges_sig = sum(cancer_positive_edge_df$spearman_significance >= mode_positive_sig_cutoff, na.rm = TRUE),
+    max_cancer_positive_spearman_significance = if (nrow(cancer_positive_edge_df) == 0) NA_real_ else max(cancer_positive_edge_df$spearman_significance, na.rm = TRUE),
     n_lr_rows = nrow(lr_pairs_df),
     n_lr_supported_edges = if (nrow(lr_edge_summary) == 0) 0 else sum(lr_edge_summary$n_lr_pairs > 0),
     n_lr_pairs_all_reference = if (is.null(lr_ref_mode)) NA_integer_ else lr_ref_mode$n_pairs_all,
     n_lr_pairs_retained_reference = if (is.null(lr_ref_mode)) NA_integer_ else lr_ref_mode$n_pairs_retained,
     n_lr_pairs_excluded_reference = if (is.null(lr_ref_mode)) NA_integer_ else lr_ref_mode$n_pairs_excluded,
+    cancer_positive_rule = if (identical(mode_cfg$cancer_definition, "state")) "assigned_state_label" else paste0("ucell_gt_", ucell_cutoff),
     excel_outputs = if (length(excel_output_paths) == 0) "" else paste(excel_output_paths, collapse = "; ")
   )
   write.csv(mode_summary, file.path(analysis_out_dir, "Auto_celltype_mode_summary.csv"), row.names = FALSE)
@@ -2176,8 +2894,13 @@ cutoff_count_plot <- cutoff_summary %>%
   geom_point(size = 2) +
   geom_vline(xintercept = ucell_cutoff, linetype = "dashed", color = "grey40") +
   scale_color_manual(values = plot_colour_lookup) +
-  theme_minimal(base_size = 12) +
-  theme(panel.grid.minor = element_blank()) +
+  theme_minimal(base_size = 15) +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(face = "bold", size = 17)
+  ) +
   labs(
     title = "MP retention is highly sensitive to the UCell positivity cutoff",
     subtitle = paste0("Dashed line = active cutoff (", ucell_cutoff, "); 0.5 is sparse for these UCell score ranges"),
@@ -2192,9 +2915,12 @@ cutoff_box_plot <- cutoff_summary %>%
   geom_hline(yintercept = min_positive_samples, linetype = "dashed", color = "grey40") +
   scale_fill_manual(values = plot_colour_lookup) +
   facet_wrap(~celltype_display, scales = "free_y", ncol = 4) +
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_size = 15) +
   theme(
     panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 13),
+    strip.text = element_text(face = "bold", size = 11),
     legend.position = "none"
   ) +
   labs(
@@ -2322,12 +3048,13 @@ step2_cache <- load_or_build_cache(
     result_df <- result_df %>%
       mutate(edge_label = paste(node1_label, node2_label, sep = " <-> "))
 
+    # Use the threshold defined in the mode scope
     positive_edges <- result_df %>%
       filter(
         spearman_sig,
         !is.na(pearson_r),
         pearson_r > 0,
-        spearman_significance >= positive_sig_cutoff
+        spearman_significance >= mode_positive_sig_cutoff
       ) %>%
       arrange(desc(spearman_significance), desc(pearson_r))
 
@@ -2738,7 +3465,12 @@ if (nrow(lr_edge_summary) > 0) {
     ggplot(aes(x = n_lr_pairs, y = edge_label, fill = n_literature_supported)) +
     geom_col() +
     scale_fill_gradient(low = "#FEE0D2", high = "#A50F15") +
-    theme_minimal(base_size = 11) +
+    theme_minimal(base_size = 14) +
+    theme(
+      axis.text = element_text(size = 11),
+      axis.title = element_text(size = 12),
+      plot.title = element_text(face = "bold", size = 16)
+    ) +
     labs(
       title = "Top positive edges by LR support",
       subtitle = "Counts shown after removing all excluded LR pairs",
@@ -2755,7 +3487,12 @@ if (nrow(lr_edge_summary) > 0) {
     ggplot(aes(x = n_edges_supported, y = pair_label, fill = pair_evidence)) +
     geom_col(position = "stack") +
     scale_fill_manual(values = c("literature supported" = "#66A61E", "putative" = "#E6AB02")) +
-    theme_minimal(base_size = 11) +
+    theme_minimal(base_size = 14) +
+    theme(
+      axis.text = element_text(size = 11),
+      axis.title = element_text(size = 12),
+      plot.title = element_text(face = "bold", size = 16)
+    ) +
     labs(
       title = "Most recurrent retained LR pairs",
       x = "Positive edges supported",

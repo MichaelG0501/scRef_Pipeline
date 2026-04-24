@@ -81,7 +81,29 @@ for (sample in sample_dirs) {
 
   # T cell CD4/CD8 split
   if (celltype_arg %in% c("cd4", "cd8")) {
-    tmdata$tcell_subtype <- classify_tcell(tmdata)
+    ####################
+    # Skip single-cell T-cell subsets that can produce malformed
+    # Assay5 layer dimensions after subsetting in Seurat v5.
+    ####################
+    if (ncol(tmdata) < 2) {
+      print(paste0("Skipping ", sample, ": only ", ncol(tmdata), " t.cell cells before CD4/CD8 split"))
+      rm(tmdata); gc(); next
+    }
+    ####################
+    # Robust fallback: if layer extraction fails for this sample,
+    # skip it instead of aborting the full celltype run.
+    ####################
+    subtype_try <- tryCatch(
+      classify_tcell(tmdata),
+      error = function(e) {
+        print(paste0("Skipping ", sample, ": classify_tcell failed - ", e$message))
+        NULL
+      }
+    )
+    if (is.null(subtype_try)) {
+      rm(tmdata); gc(); next
+    }
+    tmdata$tcell_subtype <- subtype_try
     keep <- tmdata$tcell_subtype == ct_info$subtype
     if (sum(keep) < 1) { rm(tmdata); gc(); next }
     tmdata <- subset(tmdata, cells = colnames(tmdata)[keep])
@@ -93,6 +115,8 @@ for (sample in sample_dirs) {
     rm(tmdata); gc(); next
   }
 
+  # Strip existing sample prefix if present to avoid double-prefixing by multiNMF
+  tmdata <- RenameCells(tmdata, new.names = gsub(paste0("^", sample, "_"), "", colnames(tmdata)))
   tmdata_annotated[[sample]] <- tmdata
   print(paste0("Loaded ", sample, ": ", ncol(tmdata), " ", celltype_arg, " cells"))
   rm(tmdata); gc()

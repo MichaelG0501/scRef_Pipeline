@@ -250,6 +250,7 @@ Convert the compiled PDF to high-resolution PNG slides, then assemble into PPTX:
 ```bash
 module load tools/prod
 module load texlive/20230313-GCC-13.2.0
+module load poppler/24.04.0-GCC-13.2.0
 cd updates/DDmon
 mkdir -p pptx_slides_png
 pdftoppm -png -r 600 update_DDmon.pdf pptx_slides_png/slide
@@ -268,7 +269,7 @@ Only upload the final PPTX:
 
 ```bash
 module load rclone
-rclone copy updates/DDmon/update_DDmon.pptx gdrive:IMPERIAL/ --progress
+rclone copyto updates/DDmon/update_DDmon.pptx gdrive:IMPERIAL/update_DDmon.pptx --progress
 ```
 
 ---

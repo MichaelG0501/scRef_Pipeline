@@ -2,6 +2,7 @@
 #PBS -l select=1:ncpus=8:mem=72gb
 #PBS -l walltime=08:00:00
 #PBS -N nmf_${celltype}
+#PBS -koed
 
 echo "Start: $(date +%T)"
 

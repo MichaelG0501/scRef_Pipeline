@@ -58,16 +58,17 @@ These rules are **mandatory** for any agent operating in this repo:
 2. **Conda init**: Always run `eval "$(~/miniforge3/bin/conda shell.bash hook)"` before activating envs.
 3. **Interactive first**: Tasks under 8 cores / 64 GB → write only the `.R` script, no `.sh` wrapper. User runs interactively.
 4. **PBS required**: Heavy tasks → must create PBS `.sh` script with `#PBS` resource headers.
-5. **File naming**: New persistent files MUST be prefixed with `Auto_` (e.g., `Auto_analysis.R`).
-6. **Modifying existing files**: New code MUST be wrapped in 20-hash comment blocks:
+5. **Live Logging**: Always use live streaming log file mode by adding `#PBS -koed` to the submission script. This ensures standard out and standard error are written to their final destination as the job is running, allowing for real-time monitoring from login nodes.
+6. **File naming**: New persistent files MUST be prefixed with `Auto_` (e.g., `Auto_analysis.R`).
+7. **Modifying existing files**: New code MUST be wrapped in 20-hash comment blocks:
    ```r
    ####################
    # your new code here
    ####################
    ```
-7. **No deleting/modifying** existing lines outside 20-hash blocks without permission.
-8. **Test scripts**: Name `delete_<desc>.R` and delete immediately after use.
-9. **Max concurrent PBS jobs**: 46 (throttled via `while [[ $(qstat | grep sg3723 | wc -l) -gt 46 ]]`).
+8. **No deleting/modifying** existing lines outside 20-hash blocks without permission.
+9. **Test scripts**: Name `delete_<desc>.R` and delete immediately after use.
+10. **Max concurrent PBS jobs**: 46 (throttled via `while [[ $(qstat | grep sg3723 | wc -l) -gt 46 ]]`).
 
 ### PBS Job Template
 ```bash
@@ -75,6 +76,7 @@ These rules are **mandatory** for any agent operating in this repo:
 #PBS -l select=1:ncpus=<N>:mem=<M>gb
 #PBS -l walltime=<HH:MM:SS>
 #PBS -N <jobname>
+#PBS -koed
 echo $(date +%T)
 module purge
 module load tools/dev

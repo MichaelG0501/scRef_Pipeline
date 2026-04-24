@@ -1,27 +1,38 @@
-# Auto Cross-Celltype MP Correlation Workflow
+# Auto MP and Cancer-State Cross-Celltype Correlation Methodology
 
-Generated: 2026-04-13 BST
+Generated: 2026-04-17 BST
 
-## Goal
+## 1. Goal and Scope
 
-Reproduce the cross-celltype metaprogram (MP) co-occurrence analysis on the full single-cell atlas, then annotate significant positive cross-celltype associations with curated ligand-receptor (LR) support.
+This workflow quantifies sample-level co-occurrence between cancer programs or finalized cancer states and non-malignant metaprograms (MPs), then annotates significant positive associations with curated ligand-receptor (LR) support.
 
-This workflow is designed to mirror the logic described for Fig. 5a in the linked Nature paper, with implementation adapted to this repository and to the available scATLAS objects.
+The analysis is built on the full atlas, not the epithelial subset alone. Cancer is always restricted to malignant epithelial cells, while non-malignant MPs are evaluated only within their matched cell type.
 
-## Analysis scope
+The script now runs four related analysis modes in one pass:
 
-- The analysis uses the full atlas `ref_outs/EAC_Ref_merged_strict.rds`, not the epithelial-only object.
-- Cancer MPs are scored only in malignant epithelial cells.
-- Non-malignant MPs are scored only within their matched TME compartment.
-- Correlations are computed across samples using adjusted scores, where each adjusted score is the percentage of cells in a sample that are positive for a given MP.
-- LR annotation is applied only to retained positive cross-celltype edges.
+1. `01_cancer_mps_cross_only`
+   - Cancer represented by malignant-epithelial MP-positive cells.
+   - Only cross-celltype correlations are tested.
+2. `02_cancer_mps_cross_and_within`
+   - Cancer represented by malignant-epithelial MP-positive cells.
+   - Both cross-celltype and within-celltype correlations are tested.
+3. `03_cancer_states_cross_only`
+   - Cancer represented by finalized cancer-state labels.
+   - Only cross-celltype correlations are tested.
+4. `04_cancer_states_cross_and_within`
+   - Cancer represented by finalized cancer-state labels.
+   - Both cross-celltype and within-celltype correlations are tested.
 
-## Main inputs
+Each mode writes to its own subfolder under `ref_outs/non_malignant_mp_correlations/`.
+
+---
+
+## 2. Core Inputs
 
 - `ref_outs/EAC_Ref_merged_strict.rds`
-  - Full atlas containing all cell types.
+  - Full scRNA-seq atlas containing all cell types and `celltype_update`.
 - `ref_outs/meta_full_epi.rds`
-  - Epithelial metadata used to define malignant cells for the cancer compartment.
+  - Epithelial metadata used to define malignant epithelial cells.
 - `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds`
   - Cancer MP definitions.
 - `ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds`
@@ -40,41 +51,116 @@ This workflow is designed to mirror the logic described for Fig. 5a in the linke
 - `ref_outs/nmf_cd4/UCell_default.rds`
 - `ref_outs/nmf_cd8/MP_outs_default.rds`
 - `ref_outs/nmf_cd8/UCell_default.rds`
+- `ref_outs/Auto_final_states.rds`
+  - Finalized per-cell cancer-state labels.
+- `ref_outs/Auto_six_state_markers/Auto_six_state_markers_ranked.csv`
+  - Ranked recurrent state-marker table used to define cancer-state gene sets for LR matching.
 - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx`
-  - LR catalog, using sheet `All.Pairs`.
+  - Ligand-receptor reference catalog, using sheet `All.Pairs`.
 
-## Compartments included
+---
+
+## 3. Compartments Included
+
+The workflow evaluates eight compartments:
 
 - `cancer`
-- `macrophage`
 - `fibroblast`
 - `endothelial`
+- `cd8`
+- `cd4`
+- `macrophage`
 - `nk`
 - `plasma`
-- `cd4`
+
+The display and page order is:
+
+- `cancer`
+- `fibroblast`
+- `endothelial`
 - `cd8`
+- `cd4`
+- `macrophage`
+- `nk`
+- `plasma`
 
-## Fixed parameters used by the script
+---
 
-- UCell positivity cutoff: default `0.25`
-- Minimum positive-sample coverage for an MP to be retained: `> 5` samples
+## 4. Cancer and Non-Malignant Cell Definitions
+
+### 4.1 Cancer cells
+
+Cancer is never defined as all epithelial cells. It is restricted to epithelial cells with:
+
+- `malignancy == "malignant_level_1"`, or
+- `malignancy == "malignant_level_2"`
+
+This malignant epithelial subset is the cancer denominator in both MP-based and state-based modes.
+
+### 4.2 Non-malignant compartments
+
+Non-malignant cells are taken from the full atlas using `celltype_update`, with T-cell subtype splitting where needed:
+
+- fibroblast -> `fibroblast`
+- endothelial -> `endothelial`
+- macrophage -> `macrophage`
+- nk -> `nk.cell`
+- plasma -> `plasma`
+- cd4 -> `t.cell` plus `cd4` subtype restriction
+- cd8 -> `t.cell` plus `cd8` subtype restriction
+
+This ensures that all sample matching uses the full atlas while each MP score is evaluated only in its matched cell class.
+
+---
+
+## 5. Cancer Representation in the Two Cancer Modes
+
+### 5.1 Cancer MP modes
+
+For the cancer MP modes, cancer cells are scored using the silhouette-filtered epithelial MP UCell matrix. User-facing cancer labels use descriptive cancer MP names, and the cancer MP plot order follows the same ordering logic used in `analysis/cell_states/states_unresolved_relabel.R`:
+
+- all cell-cycle cancer MPs first
+- then the remaining cancer MPs in the finalized state-linked order
+
+### 5.2 Cancer state modes
+
+For the cancer state modes, cancer cells are represented by finalized labels from `Auto_final_states.rds`.
+
+The retained final states are:
+
+- `Classic Proliferative`
+- `Basal to Intestinal Metaplasia`
+- `Stress-adaptive`
+- `SMG-like Metaplasia`
+- `Immune Infiltrating`
+- `3CA_EMT_and_Protein_maturation`
+
+This branch does not apply any UCell threshold to cancer-state positivity. A cancer cell is positive for a state if and only if it carries that finalized state label. The sample-level cancer-state adjusted score is therefore the percentage of malignant epithelial cells in a sample assigned to that state.
+
+---
+
+## 6. Common Fixed Parameters
+
+These values are hard-coded in the current script:
+
+- Non-cancer UCell positivity cutoff: `0.25`
+- Minimum positive-sample coverage for a node to pass the coverage filter: `> 5` samples
 - Minimum shared samples per study for a celltype pair to be eligible: `10`
-- Minimum number of eligible shared samples for a tested MP pair: `3`
+- Minimum total eligible shared samples for a tested node pair: `3`
 - Positive edge threshold: Pearson `> 0`, Spearman `P < 0.05`, and `-log10(P) >= 4`
 - Negative edge threshold: Pearson `< 0` and Spearman `P < 0.05`
-- Top genes used for LR annotation: top `4,000` ranked genes per node
-- LR evidence retained: only `literature supported` and `putative`
-- LR evidence excluded: all rows with `Pair.Evidence` beginning `EXCLUDED`
+- Top ranked genes used for LR annotation: `4,000`
+- Retained LR evidence classes: `literature supported`, `putative`
+- Removed LR evidence classes: all `EXCLUDED*`
+- Cancer-state marker genes retained for LR target matching: top `100` ranked genes per finalized state
 
-## Why the UCell cutoff is 0.25
+---
 
-The original paper used a score threshold of `> 1` with `sigScores` from `scalop`, which is not directly comparable to the UCell score range used here. In this repository, the non-malignant UCell distributions are much narrower, and a `0.5` cutoff was too sparse for several compartments. The script therefore defaults to `0.25` and writes cutoff-sensitivity diagnostics so this choice can be inspected and retuned if needed.
+## 7. Step-by-Step Workflow
 
-## Workflow
+### 7.1 Resolve paths and create output structure
 
-### 1. Resolve project paths and create output directories
-
-The script first resolves the active project root from the two expected HPC mount styles:
+The script resolves the project root from either HPC mount style:
 
 - `/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline`
 - `/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline`
@@ -82,118 +168,88 @@ The script first resolves the active project root from the two expected HPC moun
 It then sets the working directory to `ref_outs/` and creates:
 
 - `ref_outs/non_malignant_mp_correlations/`
-- `ref_outs/non_malignant_mp_correlations/cache/`
+- one subfolder per analysis mode
+- one cache directory per mode
 - `updates/new_updates/summaries/`
 
-### 2. Define display metadata and cancer MP descriptions
+### 7.2 Load the full atlas, malignant metadata, and state references
 
-The script registers the eight compartments, their atlas celltype labels, input paths, and plotting colours.
+The script loads the full merged atlas once and extracts:
 
-For cancer MPs, user-facing plot and export labels are converted from raw MP IDs to descriptive labels using the internal lookup table:
+- per-cell metadata
+- the RNA expression matrix used later for LR ranking
+- the malignant epithelial cell set
 
-- `MP1` -> `G2M Cell Cycle`
-- `MP2` -> `MYC-related Proliferation`
-- `MP5` -> `Epithelial IFN Resp.`
-- `MP7` -> `DNA Damage Repair`
-- `MP8` -> `Intestinal Diff.`
-- `MP9` -> `G1S Cell Cycle`
-- `MP10` -> `Columnar Diff.`
-- `MP12` -> `Neuro-responsive Epi.`
-- `MP13` -> `Hypoxic Inflam. Epi.`
-- `MP14` -> `Hypoxia Adapted Epi.`
-- `MP15` -> `Immune Infiltration`
-- `MP16` -> `Secretory Diff. (Gastric)`
-- `MP17` -> `Basal-like Transition`
-- `MP18` -> `Secretory Diff. (Intest.)`
+For state modes it also loads:
 
-These descriptions are used wherever cancer MPs appear in node labels, network labels, and LR exports.
+- finalized per-cell state labels
+- the ranked six-state marker table
+- a state-specific gene set per finalized state, taking the top ranked recurrent markers after state-aware filtering
 
-For cancer MP ordering in plots, the script follows the same logic used in `analysis/cell_states/states_unresolved_relabel.R`:
+### 7.3 Load MP definitions and apply the silhouette filter
 
-- all cancer cell-cycle MPs are grouped first
-- the remaining cancer MPs then follow the state order
-- this order is carried through the bubble plot pages and node-ordered outputs
+For every MP-scored compartment, the script loads the MP object and corresponding UCell score matrix. It applies the repository-standard silhouette filter before any downstream use:
 
-### 3. Load the full atlas and derive per-cell sample metadata
+- MPs with silhouette `< 0` are discarded
+- only retained MPs proceed to adjusted-score construction, correlation, and LR annotation
 
-The script loads:
-
-- the full merged atlas from `EAC_Ref_merged_strict.rds`
-- epithelial metadata from `meta_full_epi.rds`
-
-It then creates a simple sample-level metadata table per cell containing:
-
-- cell barcode
-- `orig.ident` sample ID
-- study label
-
-If `study` is missing, the script derives it from the first two underscore-delimited tokens of the sample name.
-
-### 4. Define cancer cells and matched non-malignant compartments
-
-The cancer compartment is not taken as all epithelial cells. It is explicitly restricted to epithelial cells with:
-
-- `malignancy == "malignant_level_1"` or
-- `malignancy == "malignant_level_2"`
-
-Non-malignant compartments are matched to the atlas using `celltype_update` in the full atlas:
-
-- macrophage -> `macrophage`
-- fibroblast -> `fibroblast`
-- endothelial -> `endothelial`
-- nk -> `nk.cell`
-- plasma -> `plasma`
-- cd4 -> `t.cell` with subtype restriction to `cd4`
-- cd8 -> `t.cell` with subtype restriction to `cd8`
-
-This ensures the analysis is built from the complete sample context, while still scoring each compartment only within its biologically relevant cells.
-
-### 5. Load MP definitions and apply the silhouette filter
-
-For each compartment, the script loads the MP object and corresponding UCell score matrix.
-
-Before any downstream analysis, it applies the repository-standard silhouette filter:
-
-- MPs with silhouette `< 0` are discarded.
-- Only retained MPs are taken forward.
-
-This is done for both cancer and all non-malignant compartments.
-
-### 6. Match score matrices back to the full atlas
+### 7.4 Intersect each score matrix with the atlas cell set
 
 For each compartment, the script intersects:
 
-- cells in the UCell score matrix
-- cells available in the atlas
-- cells that pass the compartment-specific filtering rule
+- cells present in the score matrix
+- cells present in the atlas
+- cells that satisfy the compartment-specific cell definition
 
-This produces a compartment-specific cell set that is then used consistently for:
+This produces a single consistent cell set per compartment for all downstream steps.
 
-- adjusted score calculation
-- sample coverage summaries
-- positive-cell extraction for LR annotation
+### 7.5 Build per-sample adjusted scores
 
-### 7. Calculate adjusted scores for each MP in each sample
+Adjusted scores are always percentages within a compartment and sample.
 
-For each compartment separately:
+For MP-scored compartments:
 
-1. A cell is declared MP-positive when `UCell > cutoff`.
+1. A cell is considered positive when `UCell > 0.25`.
 2. Cells are grouped by `orig.ident`.
-3. For each sample and MP, the adjusted score is calculated as:
+3. For each MP in each sample, the adjusted score is:
 
-`100 x (number of MP-positive cells in that sample and compartment) / (total number of cells of that compartment in that sample)`
+`100 x (number of positive cells in sample) / (total cells of that compartment in sample)`
 
-The script saves one adjusted-score CSV per compartment. These tables are the direct sample-level inputs to the correlation analysis.
+For finalized cancer states:
 
-### 8. Calculate MP coverage and cutoff sensitivity
+1. A one-hot matrix is constructed from the final labels.
+2. State positivity is the assigned label itself, not a UCell threshold.
+3. For each final state in each sample, the adjusted score is:
 
-For every retained MP, the script calculates:
+`100 x (number of malignant epithelial cells assigned to that state in sample) / (total malignant epithelial cells in sample)`
 
-- the number of samples with adjusted score `> 0`
-- the percentage of samples with adjusted score `> 0`
-- the percentage of cells positive at the current cutoff
+This distinction is important:
 
-The script repeats this across the cutoff grid:
+- cancer MP modes use UCell-thresholded cancer scores
+- cancer state modes use assignment-based cancer-state fractions
+- non-cancer compartments always remain MP-based and UCell-thresholded
+
+### 7.6 Compute node coverage summaries
+
+Each retained node stores:
+
+- compartment
+- display cell type
+- node identifier
+- node label
+- underlying MP or finalized state
+- sample coverage count
+- denominator sample count
+- coverage percentage
+- whether coverage exceeds the minimum threshold
+
+These summaries are saved as `Auto_celltype_node_summary.csv` within each analysis-mode folder.
+
+### 7.7 Generate cutoff-sensitivity diagnostics
+
+Cutoff sensitivity is meaningful only for UCell-scored compartments.
+
+The script evaluates the cutoff grid:
 
 - `0.10`
 - `0.15`
@@ -205,69 +261,41 @@ The script repeats this across the cutoff grid:
 - `0.50`
 - plus any user-provided cutoff
 
-This produces:
+For each cutoff and each UCell-scored node, it records:
 
-- `Auto_cross_celltype_cutoff_sensitivity.csv`
-- `Auto_cross_celltype_cutoff_sensitivity.pdf`
+- positive sample coverage
+- positive sample percentage
+- positive cell fraction
+- whether the node passes the sample-coverage filter
 
-The purpose is to document how sensitive sample coverage is to the positivity threshold.
+In the cancer-state modes, the cancer compartment is excluded from cutoff sensitivity because cancer states are assignment-based rather than threshold-based.
 
-### 9. Retain only MPs with non-trivial sample coverage
+### 7.8 Define eligible sample overlap for each celltype pair
 
-After adjusted-score construction, an MP is retained for downstream pairwise testing only if it is positive in more than 5 samples.
+For each compartment pair:
 
-This removes extremely sparse MPs that would otherwise create unstable or uninformative correlations.
+1. The script identifies samples present in both compartments.
+2. Those samples are mapped to studies.
+3. Shared samples are counted per study.
+4. Only studies with at least `10` shared samples are retained.
+5. The corresponding eligible samples are kept for the actual correlation tests.
 
-### 10. Build the node table used across all downstream outputs
+This rule is applied to:
 
-Each retained compartment-MP combination becomes one network node. The node summary stores:
+- only cross-celltype pairs in the `cross_only` modes
+- both cross-celltype and same-celltype pairs in the `cross_and_within` modes
 
-- compartment
-- celltype display name
-- MP ID
-- MP display name
-- node label
-- sample coverage counts and percentages
-- mean positive-cell fraction
-- coverage pass/fail
+### 7.9 Compute Pearson and Spearman correlations
 
-Cancer nodes use descriptive MP labels instead of raw MP IDs in the node label.
-
-### 11. Define eligible sample overlap between every pair of different cell types
-
-The script tests all pairwise combinations of different compartments.
-
-For each celltype pair:
-
-1. It finds samples present in both compartments.
-2. It maps those samples to studies.
-3. It counts the number of shared samples per study.
-4. It retains only studies with at least 10 shared samples.
-5. It keeps only samples from those eligible studies.
-
-This reproduces the intended rule that cross-celltype associations should be evaluated only where there is sufficient matched tumour coverage.
-
-### 12. Compute Pearson and Spearman correlations for every eligible MP pair
-
-Within each eligible celltype pair, the script tests every retained MP from compartment A against every retained MP from compartment B.
-
-For each MP pair, it computes across the eligible shared samples:
+For every eligible node pair, the script computes across the retained samples:
 
 - Pearson correlation coefficient and P value
 - Spearman correlation coefficient and P value
-- `-log10(Spearman P value)`
+- `-log10(Spearman P)`
 
-The resulting master table is saved as:
+The full result table is written as `Auto_celltype_correlations_all.csv` inside each mode folder.
 
-- `Auto_cross_celltype_correlations_all.csv`
-
-The script also writes:
-
-- `Auto_cross_celltype_correlations_positive.csv`
-- `Auto_cross_celltype_correlations_negative.csv`
-- `Auto_cross_celltype_shared_sample_summary.csv`
-
-### 13. Define positive and negative edge sets
+### 7.10 Define positive and negative edge sets
 
 Positive edges are defined as:
 
@@ -280,210 +308,196 @@ Negative edges are defined as:
 - Pearson `r < 0`
 - Spearman `P < 0.05`
 
-This follows the logic described in the paper: stronger significance filtering for positive co-occurrence edges, while retaining all statistically significant negative edges.
+The stronger threshold for positive edges mirrors the published Fig. 5a logic.
 
-### 14. Generate cross-celltype overview plots
+### 7.11 Build bubble and network visualizations
 
-The script writes:
+Each mode writes:
 
-- `Auto_cross_celltype_correlation_bubble.pdf`
-  - bubble size = `-log10(Spearman P)`
-  - bubble fill = Pearson `r`
-  - one page per focal cell type
-  - within each page, panels are split by celltype pair without bidirectional duplication
-  - focal page order is `cancer`, `fibroblast`, `endothelial`, `cd8`, `cd4`, `macrophage`, `nk`
-- `Auto_cross_celltype_positive_network.pdf`
-- `Auto_cross_celltype_negative_network.pdf`
+- `Auto_celltype_correlation_bubble.pdf`
+- `Auto_celltype_positive_network.pdf`
+- `Auto_celltype_negative_network.pdf`
+- `Auto_celltype_interaction_dotmap.pdf`
+- `Auto_celltype_interaction_dotmap_data.csv`
 
-These plots use the node labels built earlier. Cancer nodes display the cancer MP description plus the `cancer` suffix. Celltype colours follow the publication UMAP palette used in `analysis/plotting/publication_umap.R`.
+Bubble plot design:
 
-### 15. Load and clean the LR reference
+- one page per focal cell type
+- focal cell type always on the x-axis
+- all focal-to-partner comparisons shown on that focal page
+- fixed panel size so sparse partner sets do not stretch the page
+- cancer MP ordering follows the finalized state-linked order
 
-The script loads the `All.Pairs` sheet from:
+Network plot design:
+
+- node color follows the publication palette from `analysis/plotting/publication_umap.R`
+- node size reflects positive sample coverage
+- edge color and width reflect `-log10(Spearman P)`
+- labels are laid out with force-directed coordinates and repel text
+
+Interaction dotmap design:
+
+- the PDF is paginated with one page per focal cell type
+- each page places only the focal cell type's MPs/states on the rows
+- columns contain all possible partner MPs/states, grouped into celltype facets
+- same-celltype columns are included only in the cross-and-within modes
+- cancer appears first, with cancer MPs labelled by description and ordered by the existing cancer MP tree/state-linked order
+- non-cancer compartments follow `fibroblast`, `endothelial`, `cd8`, `cd4`, `macrophage`, `nk`, `plasma`
+- only interactions meeting the final positive-network threshold are shown: Pearson `> 0`, Spearman `P < 0.05`, and `-log10(Spearman P) >= 4`
+- dot fill represents Spearman rho
+- dot size represents the percentage of eligible shared samples where both interacting nodes have adjusted score `> 0`
+- interactions with retained LR support are marked by a black ring and cross, with no explanatory caption printed on the page
+- the paired CSV stores the focal cell type, partner cell type, plotted row/column labels, support percentage, Spearman statistics, and LR-support flag
+
+### 7.12 Load and filter the ligand-receptor catalog
+
+The script reads the `All.Pairs` sheet from:
 
 - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx`
 
-It standardizes the LR columns and derives:
-
-- ligand symbol
-- receptor symbol
-- pair name
-- pair source
-- pair evidence
-- support database flags
-- support database count
-
-Critically, it retains only:
+The LR table is standardized to a common schema and then filtered so that only:
 
 - `literature supported`
 - `putative`
 
-It excludes all rows labelled:
+are retained.
 
-- `EXCLUDED`
-- `EXCLUDED not ligand`
-- `EXCLUDED not receptor`
-- any other `EXCLUDED*` variant
+All `EXCLUDED*` rows are removed before any LR matching.
 
-The LR status table records both total rows and retained rows after evidence filtering.
+### 7.13 Recover the positive cells contributing to each retained positive edge
 
-### 16. Extract positive cells for each retained positive edge
+LR annotation is applied only to retained positive edges.
 
-LR annotation is applied only to positive edges.
+For each positive edge:
 
-For each retained positive edge:
+1. The script recovers the eligible studies stored for that edge.
+2. It derives the matching eligible samples.
+3. It identifies the cells in those samples that contributed to the node definition.
 
-1. The script recovers the eligible studies for that edge.
-2. It derives the corresponding eligible shared samples.
-3. For each node, it identifies the cells in those shared samples with `UCell > cutoff` for that MP.
-4. If either node has zero positive cells, the edge receives no LR annotation.
+Contribution logic depends on the node type:
 
-This ensures the LR step is restricted to the exact cells that contributed to the observed cross-sample association.
+- MP nodes: cells with `UCell > 0.25`
+- finalized cancer-state nodes: cells carrying that final state label
 
-### 17. Rank expressed genes in the contributing cells
+This means the LR step uses exactly the cells that generated the sample-level adjusted score for that node.
+
+### 7.14 Rank genes and test LR support
 
 For each positive node:
 
-- RNA expression is taken from the full atlas `RNA` assay.
-- Mean expression is computed across the positive cells only.
-- Genes are ranked by mean expression.
-- The top 4,000 genes are retained.
+- the RNA assay is used
+- mean expression is calculated across the contributing cells
+- genes are ranked by mean expression
+- the top `4,000` genes are retained
 
-This produces a ranked expressed-gene list representing the active transcriptional context of each node.
+For each positive edge, the script then checks both biologically relevant directions:
 
-### 18. Match LR pairs in both biologically relevant directions
+1. driver top genes as ligands against target node gene-set receptors
+2. driver top genes as receptors against target node gene-set ligands
 
-For each positive edge, the script checks both directions:
+Cancer-state gene sets come from the ranked final-state marker table. MP gene sets come from the silhouette-filtered MP objects.
 
-1. Driver top genes as ligands against target MP genes as receptors.
-2. Driver top genes as receptors against target MP genes as ligands.
+### 7.15 Summarise LR support
 
-This is done for both node1 -> node2 and node2 -> node1, so each edge is interrogated symmetrically.
+The raw LR table stores one row per retained LR match. The script then aggregates LR support to the edge level, including:
 
-For every retained LR match, the output stores:
-
-- ligand
-- receptor
-- pair name
-- pair evidence
-- pair source
-- support database list
-- support database count
-- match mode
-- edge identity
-- node labels
-- celltype pair
-- Pearson and Spearman statistics
-- positive cell counts for driver and target nodes
-
-### 19. Summarise LR support at the edge level
-
-The script aggregates LR rows into edge-level summaries that capture:
-
-- total candidate LR pairs
+- number of matched LR rows
+- number of distinct retained LR pairs
 - number of literature-supported pairs
 - number of putative pairs
-- maximum support database count
 - top example retained pairs
 
-These summaries are joined back onto the positive edge table and saved as:
+These are written as:
 
-- `Auto_cross_celltype_ligand_receptor_edge_summary.csv`
-- `Auto_cross_celltype_positive_edges_lr_annotated.csv`
+- `Auto_celltype_ligand_receptor_pairs.csv`
+- `Auto_celltype_ligand_receptor_edge_summary.csv`
+- `Auto_celltype_positive_edges_lr_annotated.csv`
 
-The raw pair-level table is saved as:
+### 7.16 Export the focal-celltype Excel workbook
 
-- `Auto_cross_celltype_ligand_receptor_pairs.csv`
-
-### 20. Generate the LR-annotated positive network
-
-When LR-supported edges are present, the script produces:
-
-- `Auto_cross_celltype_positive_network_lr_annotated.pdf`
-
-This is the positive network with top LR labels added to the strongest annotated edges.
-
-It also writes:
-
-- `Auto_cross_celltype_ligand_receptor_summary.pdf`
-
-This summary PDF contains:
-
-- a barplot of positive edges ranked by number of retained LR pairs
-- a barplot of the most recurrent retained LR pairs across edges
-
-### 21. Export the formatted focal-celltype Excel workbook
-
-The script generates one formatted Excel workbook.
+Each mode writes:
 
 - `Auto_cross_celltype_ligand_receptor_pairs_by_focal_celltype.xlsx`
 
-Structure:
+Workbook structure:
 
-- one `Overview` sheet summarizing LR-supported edges
-- one sheet per focal cell type without bidirectional duplication
+- `Overview` sheet
+- one sheet per focal cell type
 
 Within each focal sheet:
 
-- rows are grouped by partner cell type
-- for example, in the `cancer` sheet, cancer-fibroblast rows appear together, then cancer-endothelial rows, then other partner compartments
-- rows are then sorted by edge significance and LR support
-- the `Direction` column is encoded as `1` when the focal cell type is the ligand side and `0` when the focal cell type is the receptor side
-- database-source bookkeeping columns are intentionally omitted; only the retained evidence class (`literature supported` or `putative`) is shown
+- all rows for that focal cell type are retained
+- partner cell types are grouped together
+- reverse-direction rows are not removed from the workbook
+- `Direction` is written as `ligand` or `receptor`
+- only the retained evidence class is kept from the LR catalog metadata
+- database-support bookkeeping columns are omitted
+- tab color matches the focal cell type
 
-This workbook is the main review file when the reader wants to follow one focal compartment at a time.
+### 7.17 Write mode-level summaries and global summary
 
-The workbook is styled with:
+Each mode writes `Auto_celltype_mode_summary.csv`, including:
 
-- formatted headers
-- frozen panes
-- numeric formatting
-- wrapped text in annotation fields
-- colour scaling on `-log10 Spearman p`
-- tab colours matched to the focal cell type where applicable
+- analysis id
+- cancer representation
+- whether within-celltype tests were included
+- cache version
+- active UCell cutoff
+- cancer positive-rule description
+- number of nodes
+- number of pairwise tests
+- number of positive and negative edges
+- cancer-specific diagnostic counts
+- LR catalog retention counts
+- workbook path
 
-### 22. Write a final run summary
-
-The script writes:
+The script also combines all mode summaries into:
 
 - `updates/new_updates/summaries/Auto_mp_cross_celltype_correlations_summary.csv`
 
-This summary records:
+The cancer-specific diagnostics are included to distinguish:
 
-- cache version
-- active cutoff
-- number of retained nodes
-- number of pairwise tests
-- number of positive and negative edges
-- LR catalog retention statistics
-- workbook paths
+- lack of cancer-state coverage
+- from lack of cancer-state edges passing the positive-network significance threshold
 
-## Cache behaviour
+---
 
-Large intermediate steps are cached under:
+## 8. Interpreting the Cancer-State Modes
 
-- `ref_outs/non_malignant_mp_correlations/cache/`
+In the finalized cancer-state modes, there is no cancer-state positivity cutoff. If a cancer-state network shows few or no cancer-state edges in the positive graph, the correct interpretation is:
 
-The cache files are:
+- first check that cancer-state coverage is high in `Auto_adjusted_scores_cancer.csv` and `Auto_celltype_node_summary.csv`
+- then check `Auto_celltype_mode_summary.csv` for:
+  - `n_cancer_positive_edges_p05`
+  - `n_cancer_positive_edges_sig4`
+  - `max_cancer_positive_spearman_significance`
 
-- `Auto_cross_celltype_step1_compartment_cache.rds`
-- `Auto_cross_celltype_step2_correlation_cache.rds`
-- `Auto_cross_celltype_step3_lr_cache.rds`
+If cancer-state nodes have strong sample coverage but `n_cancer_positive_edges_sig4 = 0`, then the absence of cancer-state edges in the positive network is due to the significance threshold, not to state sparsity or a missing positivity cutoff.
 
-Each cache stores the current `cache_version`. On rerun:
+---
 
-- if the cache exists and the version matches, it is loaded
-- otherwise, that step is rebuilt and the cache is overwritten
+## 9. Cache Structure
 
-To force a full rebuild, set:
+Each analysis mode has its own cache directory:
 
-```bash
-AUTO_MPXCELL_FORCE_REBUILD=TRUE
-```
+- `01_cancer_mps_cross_only/cache/`
+- `02_cancer_mps_cross_and_within/cache/`
+- `03_cancer_states_cross_only/cache/`
+- `04_cancer_states_cross_and_within/cache/`
 
-## Run commands
+The cached steps are:
 
-### Interactive run
+- `Auto_celltype_step1_compartment_cache.rds`
+- `Auto_celltype_step2_correlation_cache.rds`
+- `Auto_celltype_step3_lr_cache.rds`
+
+Each cache stores the current `cache_version`. If the version changes, the step is rebuilt automatically. A full rebuild can also be forced manually.
+
+---
+
+## 10. Run Commands
+
+### Interactive full rebuild
 
 ```bash
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
@@ -492,7 +506,7 @@ cd /rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
 AUTO_MPXCELL_FORCE_REBUILD=TRUE Rscript analysis/non_malignant_nmf/Auto_mp_cross_celltype_correlations.R
 ```
 
-### Interactive run with a custom UCell cutoff
+### Interactive run with a custom non-cancer UCell cutoff
 
 ```bash
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
@@ -507,43 +521,50 @@ AUTO_MPXCELL_FORCE_REBUILD=TRUE Rscript analysis/non_malignant_nmf/Auto_mp_cross
 /opt/pbs/bin/qsub -v AUTO_MPXCELL_FORCE_REBUILD=TRUE analysis/non_malignant_nmf/Auto_mp_cross_celltype_correlations.sh
 ```
 
-### PBS submission with a custom cutoff
+### PBS submission with a custom non-cancer UCell cutoff
 
 ```bash
 /opt/pbs/bin/qsub -v AUTO_MPXCELL_FORCE_REBUILD=TRUE,cutoff=0.20 analysis/non_malignant_nmf/Auto_mp_cross_celltype_correlations.sh
 ```
 
-## Expected outputs
+---
 
-All main outputs are written under:
+## 11. Output Layout
+
+All outputs are written under:
 
 - `ref_outs/non_malignant_mp_correlations/`
 
-Key files:
+Each of the four mode folders contains:
 
-- per-compartment adjusted-score CSVs
-- `Auto_cross_celltype_node_summary.csv`
-- `Auto_cross_celltype_cutoff_sensitivity.csv`
-- `Auto_cross_celltype_cutoff_sensitivity.pdf`
-- `Auto_cross_celltype_shared_sample_summary.csv`
-- `Auto_cross_celltype_correlations_all.csv`
-- `Auto_cross_celltype_correlations_positive.csv`
-- `Auto_cross_celltype_correlations_negative.csv`
-- `Auto_cross_celltype_correlation_bubble.pdf`
-- `Auto_cross_celltype_positive_network.pdf`
-- `Auto_cross_celltype_negative_network.pdf`
-- `Auto_cross_celltype_ligand_receptor_status.csv`
-- `Auto_cross_celltype_ligand_receptor_pairs.csv`
-- `Auto_cross_celltype_ligand_receptor_edge_summary.csv`
-- `Auto_cross_celltype_positive_edges_lr_annotated.csv`
-- `Auto_cross_celltype_positive_network_lr_annotated.pdf`
-- `Auto_cross_celltype_ligand_receptor_summary.pdf`
+- `Auto_adjusted_scores_<compartment>.csv`
+- `Auto_celltype_node_summary.csv`
+- `Auto_celltype_cutoff_sensitivity.csv`
+- `Auto_celltype_cutoff_sensitivity.pdf`
+- `Auto_celltype_shared_sample_summary.csv`
+- `Auto_celltype_correlations_all.csv`
+- `Auto_celltype_correlations_positive.csv`
+- `Auto_celltype_correlations_negative.csv`
+- `Auto_celltype_correlation_bubble.pdf`
+- `Auto_celltype_interaction_dotmap.pdf`
+- `Auto_celltype_interaction_dotmap_data.csv`
+- `Auto_celltype_positive_network.pdf`
+- `Auto_celltype_negative_network.pdf`
+- `Auto_celltype_ligand_receptor_status.csv`
+- `Auto_celltype_ligand_receptor_pairs.csv`
+- `Auto_celltype_ligand_receptor_edge_summary.csv`
+- `Auto_celltype_positive_edges_lr_annotated.csv`
+- `Auto_celltype_positive_network_lr_annotated.pdf`
+- `Auto_celltype_ligand_receptor_summary.pdf`
 - `Auto_cross_celltype_ligand_receptor_pairs_by_focal_celltype.xlsx`
+- `Auto_celltype_mode_summary.csv`
 
-## Reproducibility notes
+---
 
-- The analysis is sample-level, not cell-level, at the correlation stage.
-- Cancer is scored only in malignant epithelial cells, even though the full atlas is used for sample matching and expression extraction.
-- Non-malignant compartments are evaluated in their own matched celltype only.
-- LR annotation is a support layer on top of the positive correlation graph; it does not alter edge significance.
-- Old outputs should not be trusted after methodology changes unless the cache was rebuilt with the current `cache_version`.
+## 12. Reproducibility Notes
+
+- Correlations are computed at the sample level, not at the single-cell level.
+- Cancer-state positivity is assignment-based, not threshold-based.
+- Non-cancer compartments remain MP-based and use the active UCell cutoff.
+- LR support annotates positive edges but does not change the correlation statistics themselves.
+- If outputs look inconsistent with recent code changes, rebuild after updating `cache_version` or set `AUTO_MPXCELL_FORCE_REBUILD=TRUE`.

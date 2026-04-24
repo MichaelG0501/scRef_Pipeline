@@ -99,41 +99,49 @@ inspect <- function(tmdata_list) {
       legend.position = "none"
     )
     
+    ####################
+    meta_df <- tmdata_list[[name]]@meta.data
+    meta_df$orig.ident <- factor(meta_df$orig.ident)
+    
     # nFeature_RNA plot
-    x_features_plot[[name]] <- VlnPlot(tmdata_list[[name]], features = "nFeature_RNA", pt.size = 0, group.by = "orig.ident") +
+    x_features_plot[[name]] <- ggplot(meta_df, aes(x = orig.ident, y = nFeature_RNA, fill = orig.ident)) +
+      geom_violin(scale = "width", trim = TRUE) +
       base_theme +
       geom_hline(yintercept = mean_nFeature, linetype = "dashed", color = "blue", size = 0.5) +
       geom_hline(yintercept = median_nFeature, linetype = "solid", color = "red", size = 0.5) +
-      annotate("text", x = 1.5, y = mean_nFeature, label = paste("Mean:", round(mean_nFeature, 1)),
+      annotate("text", x = 1, y = mean_nFeature, label = paste("Mean:", round(mean_nFeature, 1)),
                hjust = 0.5, vjust = -1, size = 3, color = "blue") +
-      annotate("text", x = 1.5, y = median_nFeature, label = paste("Median:", round(median_nFeature, 1)),
+      annotate("text", x = 1, y = median_nFeature, label = paste("Median:", round(median_nFeature, 1)),
                hjust = 0.5, vjust = 1.5, size = 3, color = "red") +
       annotate("text", x = Inf, y = Inf, label = paste("NCells:", ncol(tmdata_list[[name]])),
                hjust = 1.1, vjust = 1.1, size = 3, color = "black")
     
     # nCount_RNA plot
-    x_count_plot[[name]] <- VlnPlot(tmdata_list[[name]], features = "nCount_RNA", pt.size = 0, group.by = "orig.ident") +
+    x_count_plot[[name]] <- ggplot(meta_df, aes(x = orig.ident, y = nCount_RNA, fill = orig.ident)) +
+      geom_violin(scale = "width", trim = TRUE) +
       base_theme +
       geom_hline(yintercept = mean_nCount, linetype = "dashed", color = "blue", size = 0.5) +
       geom_hline(yintercept = median_nCount, linetype = "solid", color = "red", size = 0.5) +
-      annotate("text", x = 1.5, y = mean_nCount, label = paste("Mean:", round(mean_nCount, 1)),
+      annotate("text", x = 1, y = mean_nCount, label = paste("Mean:", round(mean_nCount, 1)),
                hjust = 0.5, vjust = -1, size = 3, color = "blue") +
-      annotate("text", x = 1.5, y = median_nCount, label = paste("Median:", round(median_nCount, 1)),
+      annotate("text", x = 1, y = median_nCount, label = paste("Median:", round(median_nCount, 1)),
                hjust = 0.5, vjust = 1.5, size = 3, color = "red") +
       annotate("text", x = Inf, y = Inf, label = paste("NCells:", ncol(tmdata_list[[name]])),
                hjust = 1.1, vjust = 1.1, size = 3, color = "black")
     
     # percent.mt plot
-    x_mito_plot[[name]] <- VlnPlot(tmdata_list[[name]], features = "percent.mt", pt.size = 0, group.by = "orig.ident") +
+    x_mito_plot[[name]] <- ggplot(meta_df, aes(x = orig.ident, y = percent.mt, fill = orig.ident)) +
+      geom_violin(scale = "width", trim = TRUE) +
       base_theme +
       geom_hline(yintercept = mean_percent_mt, linetype = "dashed", color = "blue", size = 0.5) +
       geom_hline(yintercept = median_percent_mt, linetype = "solid", color = "red", size = 0.5) +
-      annotate("text", x = 1.5, y = mean_percent_mt, label = paste("Mean:", round(mean_percent_mt, 1)),
+      annotate("text", x = 1, y = mean_percent_mt, label = paste("Mean:", round(mean_percent_mt, 1)),
                hjust = 0.5, vjust = -1, size = 3, color = "blue") +
-      annotate("text", x = 1.5, y = median_percent_mt, label = paste("Median:", round(median_percent_mt, 1)),
+      annotate("text", x = 1, y = median_percent_mt, label = paste("Median:", round(median_percent_mt, 1)),
                hjust = 0.5, vjust = 1.5, size = 3, color = "red") +
       annotate("text", x = Inf, y = Inf, label = paste("NCells:", ncol(tmdata_list[[name]])),
                hjust = 1.1, vjust = 1.1, size = 3, color = "black")
+    ####################
   }
   
   plot_chunks <- function(plot_list) {
