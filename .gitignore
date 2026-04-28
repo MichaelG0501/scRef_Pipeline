@@ -3,6 +3,8 @@
 
 # Ignore job output and error files
 *.[oe]*
+__pycache__/
+*.pyc
 
 # LaTeX build artifacts
 *.pdf

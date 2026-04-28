@@ -706,3 +706,22 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - Adult oesophagus note: the source is a very large Matrix Market file (~393k cells), so the script samples up to `max_cells_per_type` cells per epithelial label before UCell scoring and caches the filtered subset under `ref_outs/Auto_external_epi_mp_ucell/Auto_cache/`.
   - Barretts note: row mapping uses `cell_type_secondary` so the output can retain the original fine categories (`Suprabasal_Dividing`, `Undifferentiated_Dividing`, `Endocrine_NEUROG3`, submucosal gland terms, etc.).
 ####################
+
+####################
+## 28 Apr 2026 State And MP Ordering Standard
+
+All new plots, heatmaps, summaries, and statistical tables that display finalized epithelial states or scATLAS MPs must use the biologically defined order below rather than alphabetical ordering.
+
+- Defined state order:
+  1. `Classic Proliferative`
+  2. `Basal to Intestinal Metaplasia`
+  3. `SMG-like Metaplasia`
+  4. `Stress-adaptive`
+  5. `Immune Infiltrating`
+  6. 3CA EMT / pan-cancer relabelled states, with `3CA_EMT_and_Protein_maturation` first when present
+- `Unresolved` and `Hybrid` are technical labels, not defined biological states. Only include them when the analysis explicitly needs them, and append them after the defined-state order.
+- MP order follows state order with cell-cycle MPs first. Within each block, use the `geneNMF.metaprograms$programs.tree$order` / `programs.clusters` tree order, after filtering out negative-silhouette MPs.
+- Cell-cycle MPs: `MP1`, `MP7`, `MP9`.
+- For top-MP assignment used as a state-like transcriptomic label, exclude cell-cycle MPs and assign the maximum from the z-normalised Approach-B noreg MP score matrix (`Auto_topmp_v2_noreg_mp_adj.rds`), matching the state-assignment score scale.
+- Reuse the established colours from `analysis/cell_states/sample_abundance.R` for MP and state labels whenever those labels are plotted across samples.
+####################

@@ -71,16 +71,16 @@ mp_descriptions <- c(
 state_groups <- list(
   "Classic Proliferative" = c("MP2"),
   "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive"       = c("MP13", "MP12"),
   "SMG-like Metaplasia"   = c("MP18", "MP16"),
+  "Stress-adaptive"       = c("MP13", "MP12"),
   "Immune Infiltrating"   = c("MP15")
 )
 
 group_cols <- c(
   "Classic Proliferative" = "#E41A1C",
   "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive"       = "#984EA3",
   "SMG-like Metaplasia"   = "#FF7F00",
+  "Stress-adaptive"       = "#984EA3",
   "Immune Infiltrating"   = "#377EB8",
   Unresolved = "grey80",
   Hybrid = "black"
@@ -340,10 +340,10 @@ study_order <- study_map %>%
 ####################
 # proportions for each type
 ####################
-# Define preferred MP order: defined state MPs first, then CC MPs, then any others
+# Define preferred MP order: CC MPs first, then defined state MPs, then any others.
 state_ordered_mps <- unname(unlist(state_groups))
 cc_mps_order <- c("MP1", "MP7", "MP9")
-preferred_mp_order <- c(state_ordered_mps, cc_mps_order)
+preferred_mp_order <- c(cc_mps_order, state_ordered_mps)
 # Ensure we include any retained MPs that might not be in the explicit lists
 preferred_mp_order <- c(preferred_mp_order, setdiff(retained_mps, preferred_mp_order))
 

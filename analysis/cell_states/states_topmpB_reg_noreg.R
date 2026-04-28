@@ -87,8 +87,8 @@ non_cc_mps <- setdiff(retained_mps, cc_mps)
 state_groups <- list(
   "Classic Proliferative" = c("MP2"),
   "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive"       = c("MP13", "MP12"),
   "SMG-like Metaplasia"   = c("MP18", "MP16"),
+  "Stress-adaptive"       = c("MP13", "MP12"),
   "Immune Infiltrating"   = c("MP15")
 )
 

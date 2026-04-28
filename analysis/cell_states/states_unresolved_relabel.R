@@ -61,16 +61,16 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 state_groups <- list(
   "Classic Proliferative" = c("MP2"),
   "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive"       = c("MP13", "MP12"),
   "SMG-like Metaplasia"   = c("MP18", "MP16"),
+  "Stress-adaptive"       = c("MP13", "MP12"),
   "Immune Infiltrating"   = c("MP15")
 )
 
 group_cols <- c(
   "Classic Proliferative" = "#E41A1C",
   "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive"       = "#984EA3",
   "SMG-like Metaplasia"   = "#FF7F00",
+  "Stress-adaptive"       = "#984EA3",
   "Immune Infiltrating"   = "#377EB8",
   "Unresolved"            = "grey80",
   "Hybrid"                = "black"
@@ -209,10 +209,19 @@ group_order_pos <- sapply(state_groups, function(mps) {
 })
 ordered_group_names <- names(sort(group_order_pos))
 
-meta_tcga <- readRDS("tcga_esca_meta.rds")
-tpm_df <- data.table::fread("cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
-tpm_mat <- as.matrix(tpm_df[, -1])
-rownames(tpm_mat) <- tpm_df$GeneSymbol
+tcga_meta_path <- "tcga_esca_meta.rds"
+tcga_tpm_path <- "cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt"
+has_tcga_inputs <- file.exists(tcga_meta_path) && file.exists(tcga_tpm_path)
+if (has_tcga_inputs) {
+  meta_tcga <- readRDS(tcga_meta_path)
+  tpm_df <- data.table::fread(tcga_tpm_path)
+  tpm_mat <- as.matrix(tpm_df[, -1])
+  rownames(tpm_mat) <- tpm_df$GeneSymbol
+} else {
+  meta_tcga <- NULL
+  tpm_mat <- NULL
+  message("TCGA survival inputs not found; unresolved relabeling will skip STEP 7 survival volcano.")
+}
 
 ####################
 # STEP 1: relabel unresolved cells by top 3CA MP
@@ -731,6 +740,7 @@ dev.off()
 ####################
 # STEP 7: survival volcano using GSVA
 ####################
+if (has_tcga_inputs) {
 set.seed(42)
 
 # 1. Extract original MP genes from geneNMF
@@ -827,6 +837,13 @@ if (length(p_list) > 0) {
 
 cox_res <- bind_rows(all_cox)
 write.csv(cox_res, file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_cox_results.csv")), row.names = FALSE)
+} else {
+  write.csv(
+    data.frame(),
+    file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_cox_results.csv")),
+    row.names = FALSE
+  )
+}
 
 summary_dir <- file.path(
   "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",

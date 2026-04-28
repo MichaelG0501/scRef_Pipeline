@@ -110,8 +110,8 @@ mp_descriptions <- c(
 state_groups <- list(
   "Classic Proliferative" = c("MP2"),
   "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive" = c("MP13", "MP12"),
   "SMG-like Metaplasia" = c("MP18", "MP16"),
+  "Stress-adaptive" = c("MP13", "MP12"),
   "Immune Infiltrating" = c("MP15"),
   "Cell Cycle" = c("MP1", "MP7", "MP9")
 )
@@ -119,8 +119,8 @@ state_groups <- list(
 state_axis_labels <- c(
   "Classic Proliferative" = "Classic\nProlif",
   "Basal to Intestinal Metaplasia" = "Basal to\nIntestinal\nMetaplasia",
-  "Stress-adaptive" = "Stress\nadaptive",
   "SMG-like Metaplasia" = "SMG-like\nMetaplasia",
+  "Stress-adaptive" = "Stress\nadaptive",
   "Immune Infiltrating" = "Immune\nInfiltrating",
   "3CA_EMT_and_Protein_maturation" = "3CA EMT +\nProtein\nmaturation",
   "Unresolved" = "Unresolved",
@@ -174,8 +174,8 @@ make_state_levels <- function(state_vec) {
   core_states <- c(
     "Classic Proliferative",
     "Basal to Intestinal Metaplasia",
-    "Stress-adaptive",
     "SMG-like Metaplasia",
+    "Stress-adaptive",
     "Immune Infiltrating"
   )
   preferred_extra_states <- c("3CA_EMT_and_Protein_maturation")
