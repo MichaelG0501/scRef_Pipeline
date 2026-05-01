@@ -13,7 +13,7 @@ suppressPackageStartupMessages({
 })
 
 
-merged_obj <- readRDS("/rds/general/project/spatialtranscriptomics/ephemeral/EAC_Ref_filtered.rds")
+merged_obj <- readRDS("EAC_Ref_merged.rds")
 
 library(infercna)
 library(dplyr)
@@ -51,11 +51,11 @@ ggsave("clustering_comparison_epithelial.png", plot = combined_plot, width = 14,
 
 data <- subset(
   merged_obj,
-  celltype_manual %in% c("epithelial") |
-    celltype_manual %in% c("macrophage", "b.cell")
+  celltype_update %in% c("epithelial") |
+    celltype_update %in% c("macrophage", "b.cell")
 )
 
-meta <- data@meta.data[, c("orig.ident", "celltype_manual")]
+meta <- data@meta.data[, c("orig.ident", "celltype_update")]
 
 matrix <- as.matrix(data@assays$RNA$CPM)
 

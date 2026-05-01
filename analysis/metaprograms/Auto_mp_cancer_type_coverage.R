@@ -33,12 +33,12 @@ cancer_type_coverage <- colSums(coverage_matrix)
 
 ####################
 # Apply categories based on breadth
-# general: >=15, shared: 10-14, specific: <10
+# general: >12, shared: 6-12, specific: <=5
 ####################
 mp_category <- case_when(
-  mp_breadth >= 15 ~ "General",
-  mp_breadth >= 10 & mp_breadth < 15 ~ "Shared",
-  mp_breadth < 10 ~ "Specific"
+  mp_breadth > 12 ~ "General",
+  mp_breadth > 5 ~ "Shared",
+  TRUE ~ "Specific"
 )
 names(mp_category) <- names(mp_breadth)
 
