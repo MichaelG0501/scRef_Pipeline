@@ -617,21 +617,43 @@ make_boxplot <- function(score_df, mp_test_df, sample_id) {
     )
 }
 
-make_distribution_plot <- function(meta_plot) {
-  df <- meta_plot %>%
-    count(.data$subclone, .data$top_mp_label, name = "n") %>%
-    group_by(.data$subclone) %>%
-    mutate(pct = 100 * .data$n / sum(.data$n)) %>%
-    ungroup()
-  topmp_cols <- mp_cols[names(mp_cols) %in% unique(as.character(df$top_mp_label))]
-  missing_topmp <- setdiff(unique(as.character(df$top_mp_label)), names(topmp_cols))
-  if (length(missing_topmp) > 0) topmp_cols <- c(topmp_cols, setNames(hue_pal()(length(missing_topmp)), missing_topmp))
-  ggplot(df, aes(.data$subclone, .data$pct, fill = .data$top_mp_label)) +
-    geom_col(color = "black", linewidth = 0.15) +
-    scale_fill_manual(values = topmp_cols, breaks = names(mp_cols), drop = FALSE) +
-    labs(title = "Top MP distribution (non-CC)", x = NULL, y = "% malignant level 1 cells", fill = "Top MP") +
-    theme_classic(base_size = 9) +
-    theme(axis.text.x = element_text(angle = 35, hjust = 1), legend.position = "right")
+make_qc_boxplot <- function(meta_plot, sample_id) {
+  top_subs <- meta_plot %>% count(subclone) %>% arrange(desc(n)) %>% head(2) %>% pull(subclone)
+  
+  if (length(top_subs) < 2) {
+    return(ggplot() + theme_void() + ggtitle("Only one subclone"))
+  }
+  
+  plot_data <- meta_plot %>%
+    filter(subclone %in% top_subs) %>%
+    select(subclone, nCount_RNA, nFeature_RNA, percent.mt, cc_score, cs_score) %>%
+    pivot_longer(cols = c("nCount_RNA", "nFeature_RNA", "percent.mt", "cc_score", "cs_score"), names_to = "QC_Metric", values_to = "Value") %>%
+    mutate(QC_Metric = factor(QC_Metric, levels = c("nCount_RNA", "nFeature_RNA", "percent.mt", "cc_score", "cs_score")))
+  
+  stats_df <- plot_data %>%
+    group_by(QC_Metric) %>%
+    summarise(
+      p_value = tryCatch({
+        sub1_vals <- Value[subclone == top_subs[1]]
+        sub2_vals <- Value[subclone == top_subs[2]]
+        if (length(na.omit(sub1_vals)) > 2 && length(na.omit(sub2_vals)) > 2) {
+          wilcox.test(sub1_vals, sub2_vals)$p.value
+        } else { NA_real_ }
+      }, error = function(e) NA_real_),
+      max_val = max(Value, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(label = ifelse(!is.na(p_value) & p_value < 0.05, sprintf("p=%.2e", p_value), "NS"))
+  
+  ggplot(plot_data, aes(x = subclone, y = Value, fill = subclone)) +
+    geom_boxplot(outlier.size = 0.5, alpha = 0.8, linewidth = 0.3) +
+    facet_wrap(~ QC_Metric, scales = "free_y", nrow = 2) +
+    geom_text(data = stats_df, aes(x = 1.5, y = max_val * 1.05, label = label), inherit.aes = FALSE, size = 2.5) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+    scale_fill_brewer(palette = "Set2") +
+    theme_classic(base_size = 8) +
+    labs(title = "QC Metrics (Top 2 Subclones)", x = NULL, y = "Value") +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = "bottom", strip.text = element_text(size = 7))
 }
 
 make_state_distribution_plot <- function(meta_plot, state_test_df = NULL) {
@@ -688,7 +710,10 @@ test_mps_by_subclone <- function(mp_z, subclone, sample_id) {
     group_by(.data$mp, .data$mp_label) %>%
     summarise(
       p_value = if (n_distinct(.data$subclone) >= 2) {
-        tryCatch(kruskal.test(score_z ~ subclone)$p.value, error = function(e) NA_real_)
+        ms <- tapply(.data$score_z, .data$subclone, mean, na.rm = TRUE)
+        hi_cl <- names(ms)[which.max(ms)]
+        lo_cl <- names(ms)[which.min(ms)]
+        tryCatch(wilcox.test(.data$score_z[.data$subclone == hi_cl], .data$score_z[.data$subclone == lo_cl])$p.value, error = function(e) NA_real_)
       } else {
         NA_real_
       },
@@ -753,6 +778,7 @@ sample_rows <- list()
 mp_tests_all <- list()
 sub_tests_all <- list()
 state_tests_all <- list()
+qc_tests_all <- list()
 
 sample_pdf <- file.path(out_dir, "Auto_malignant_subclone_mp_sample_pages.pdf")
 pdf(sample_pdf, width = 18, height = 12, useDingbats = FALSE)
@@ -838,6 +864,11 @@ for (sample_id in sample_dirs) {
     state_label = factor(state_label[keep_cells], levels = state_order),
     cna_signal = if ("cna_signal" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "cna_signal"]) else NA_real_,
     cna_cor = if ("cna_cor" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "cna_cor"]) else NA_real_,
+    nCount_RNA = if ("nCount_RNA" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "nCount_RNA"]) else NA_real_,
+    nFeature_RNA = if ("nFeature_RNA" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "nFeature_RNA"]) else NA_real_,
+    percent.mt = if ("percent.mt" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "percent.mt"]) else NA_real_,
+    cc_score = if ("cc_score" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "cc_score"]) else NA_real_,
+    cs_score = if ("cs_score" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "cs_score"]) else NA_real_,
     stringsAsFactors = FALSE,
     row.names = keep_cells
   )
@@ -863,6 +894,21 @@ for (sample_id in sample_dirs) {
   mp_tests_all[[sample_id]] <- test_res$tests
   sub_tests_all[[sample_id]] <- test_res$sub_tests
   state_tests_all[[sample_id]] <- state_test
+  
+  qc_metrics <- c("nCount_RNA", "nFeature_RNA", "percent.mt", "cc_score", "cs_score")
+  qc_test_rows <- list()
+  for (q in qc_metrics) {
+    if (q %in% colnames(meta_all) && n_distinct(meta_all$subclone) >= 2) {
+      ms <- tapply(meta_all[[q]], meta_all$subclone, mean, na.rm = TRUE)
+      hi_cl <- names(ms)[which.max(ms)]
+      lo_cl <- names(ms)[which.min(ms)]
+      p <- tryCatch(wilcox.test(meta_all[[q]][meta_all$subclone == hi_cl], 
+                                meta_all[[q]][meta_all$subclone == lo_cl])$p.value, 
+                    error = function(e) NA_real_)
+      qc_test_rows[[q]] <- data.frame(sample = sample_id, metric = q, p_value = p, stringsAsFactors = FALSE)
+    }
+  }
+  qc_tests_all[[sample_id]] <- bind_rows(qc_test_rows)
 
   score_df <- test_res$long %>%
     mutate(subclone = factor(.data$subclone, levels = subclone_order),
@@ -899,7 +945,7 @@ for (sample_id in sample_dirs) {
 
   print(make_boxplot(score_df, test_res$tests, sample_id), vp = viewport(layout.pos.row = 2, layout.pos.col = 1:2))
   print(make_state_distribution_plot(meta_all, state_test), vp = viewport(layout.pos.row = 2, layout.pos.col = 3))
-  print(make_distribution_plot(meta_all), vp = viewport(layout.pos.row = 2, layout.pos.col = 4))
+  print(make_qc_boxplot(meta_plot, sample_id), vp = viewport(layout.pos.row = 2, layout.pos.col = 4))
   popViewport()
 }
 
@@ -910,6 +956,10 @@ sample_df <- bind_rows(sample_rows)
 mp_tests_df <- bind_rows(mp_tests_all)
 sub_tests_df <- bind_rows(sub_tests_all)
 state_tests_df <- bind_rows(state_tests_all)
+qc_tests_df <- bind_rows(qc_tests_all)
+if (nrow(qc_tests_df) > 0) {
+  qc_tests_df <- qc_tests_df %>% mutate(p_adj = p.adjust(p_value, method = "BH"))
+}
 if (nrow(state_tests_df) > 0 && "p_value" %in% colnames(state_tests_df)) {
   state_tests_df <- state_tests_df %>%
     mutate(p_adj = p.adjust(.data$p_value, method = "BH"),
@@ -923,63 +973,262 @@ write.csv(sub_tests_df, file.path(out_dir, "Auto_malignant_subclone_mp_subclone_
 write.csv(state_tests_df, file.path(out_dir, "Auto_malignant_subclone_state_tests.csv"), row.names = FALSE)
 
 if (nrow(sub_tests_df) > 0) {
-  sig_counts <- sub_tests_df %>%
-    filter(.data$subclone != "Unresolved") %>%
-    group_by(.data$sample, .data$subclone) %>%
-    summarise(n_sig_mps = sum(.data$significant, na.rm = TRUE), .groups = "drop") %>%
+  multi_subclone_samples <- sample_df$sample[sample_df$n_subclones >= 2]
+  
+  sig_counts_sample <- mp_tests_df %>%
+    filter(sample %in% multi_subclone_samples) %>%
+    mutate(significant = !is.na(p_adj) & p_adj < 0.05) %>%
+    group_by(sample) %>%
+    summarise(n_sig_mps = sum(significant, na.rm = TRUE), .groups = "drop") %>%
     mutate(category = case_when(
-      .data$n_sig_mps == 0 ~ "None",
-      .data$n_sig_mps == 1 ~ "One sig. MP",
-      TRUE ~ "More than one sig. MP"
+      n_sig_mps == 0 ~ "None",
+      n_sig_mps == 1 ~ "One significant",
+      TRUE ~ "More than one"
     ))
 
-  p_counts <- sig_counts %>%
-    count(.data$category, name = "n") %>%
-    mutate(category = factor(.data$category, levels = c("None", "One sig. MP", "More than one sig. MP")),
-           pct = 100 * .data$n / sum(.data$n)) %>%
-    ggplot(aes(.data$category, .data$pct, fill = .data$category)) +
+  p_counts <- sig_counts_sample %>%
+    count(category, name = "n") %>%
+    mutate(category = factor(category, levels = c("None", "One significant", "More than one")),
+           pct = 100 * n / sum(n)) %>%
+    ggplot(aes(category, pct, fill = category)) +
     geom_col(color = "black", linewidth = 0.3) +
-    geom_text(aes(label = paste0(round(.data$pct, 1), "%")), vjust = -0.3, size = 4) +
-    scale_fill_manual(values = c("None" = "grey70", "One sig. MP" = "#FDB863", "More than one sig. MP" = "#B2182B")) +
-    labs(title = "Significant MP differences per CNA subclone", x = NULL, y = "% subclones") +
+    geom_text(aes(label = paste0(round(pct, 1), "%")), vjust = -0.3, size = 4) +
+    scale_fill_manual(values = c("None" = "grey70", "One significant" = "#FDB863", "More than one" = "#B2182B")) +
+    scale_y_continuous(limits = c(0, 100)) +
+    labs(title = "Significant MP differences per sample", x = NULL, y = "Percentage of samples") +
     theme_classic(base_size = 12) +
     theme(legend.position = "none")
 
-  mp_summary <- sub_tests_df %>%
-    filter(.data$subclone != "Unresolved") %>%
-    group_by(.data$mp, .data$mp_label) %>%
-    summarise(
-      n_subclones = n(),
-      pct_significant = 100 * mean(.data$significant, na.rm = TRUE),
-      mean_frac_large_effect = mean(.data$frac_large_effect[.data$significant], na.rm = TRUE),
-      .groups = "drop"
-    )
-  all_row <- data.frame(
-    mp = "ALL",
-    mp_label = "ALL",
-    n_subclones = sum(mp_summary$n_subclones),
-    pct_significant = mean(mp_summary$pct_significant, na.rm = TRUE),
-    mean_frac_large_effect = mean(mp_summary$mean_frac_large_effect, na.rm = TRUE)
-  )
-  mp_plot_df <- bind_rows(mp_summary, all_row) %>%
-    mutate(mean_frac_large_effect = ifelse(is.nan(.data$mean_frac_large_effect), NA_real_, .data$mean_frac_large_effect))
+  target_mps <- c("MP1", "MP7", "MP9", "MP2", "MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16", "MP13", "MP12", "MP15")
+  # Filter to those present in mp_labels
+  target_mps <- target_mps[target_mps %in% names(mp_labels)]
+  
+  mp_plot_df <- mp_tests_df %>%
+    filter(sample %in% multi_subclone_samples, mp %in% target_mps) %>%
+    mutate(mp_label = factor(mp_label, levels = mp_labels[target_mps]),
+           val = -log10(p_adj))
+  
+  mp_pcts <- mp_plot_df %>%
+    group_by(mp_label) %>%
+    summarise(pct = 100 * mean(p_adj < 0.05, na.rm = TRUE), .groups = "drop")
+  
+  p_mp <- ggplot(mp_plot_df, aes(mp_label, val, fill = mp_label)) +
+    geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+    geom_jitter(width = 0.2, size = 1, alpha = 0.6) +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red") +
+    geom_text(data = mp_pcts, aes(x = mp_label, y = max(mp_plot_df$val, na.rm = TRUE) * 1.15, label = sprintf("%.1f%%", pct)), inherit.aes = FALSE, size = 3) +
+    scale_y_log10(expand = expansion(mult = c(0.1, 0.3))) +
+    scale_fill_manual(values = mp_cols[mp_labels[target_mps]]) +
+    labs(title = NULL, x = NULL, y = "-log10(p_adj)") +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
 
-  p_mp <- ggplot(mp_plot_df, aes(.data$pct_significant, .data$mean_frac_large_effect)) +
-    geom_point(data = filter(mp_plot_df, .data$mp != "ALL"), size = 2.3, alpha = 0.8, color = "#2166AC") +
-    geom_point(data = filter(mp_plot_df, .data$mp == "ALL"), size = 3.5, color = "#B2182B") +
-    labs(title = "MPs different between CNA subclones", x = "% subclones with significant MP difference", y = "Mean fraction with |z| > 1 among significant subclones") +
-    theme_classic(base_size = 12)
-  if (requireNamespace("ggrepel", quietly = TRUE)) {
-    p_mp <- p_mp + ggrepel::geom_text_repel(aes(label = .data$mp), size = 3, max.overlaps = 50)
-  } else {
-    p_mp <- p_mp + geom_text(aes(label = .data$mp), size = 2.6, vjust = -0.6, check_overlap = TRUE)
+  # Page 2: QC Summary across the cohort
+  qc_summary_rows <- list()
+  qc_metrics <- c("nCount_RNA", "nFeature_RNA", "percent.mt", "cc_score", "cs_score")
+  
+  for (samp in multi_subclone_samples) {
+    samp_df <- cell_df %>% filter(sample == samp, subclone != "Unresolved")
+    top_subs <- samp_df %>% count(subclone) %>% arrange(desc(n)) %>% head(2) %>% pull(subclone)
+    if (length(top_subs) < 2) next
+    
+    row_data <- data.frame(sample = samp, clone1 = top_subs[1], clone2 = top_subs[2])
+    for (q in qc_metrics) {
+      if (q %in% colnames(samp_df)) {
+        cl_means <- samp_df %>% group_by(subclone) %>% summarise(m = mean(.data[[q]], na.rm = TRUE), .groups = "drop")
+        v1 <- max(cl_means$m, na.rm = TRUE)
+        v2 <- min(cl_means$m, na.rm = TRUE)
+        row_data[[paste0("X_", q)]] <- v1
+        row_data[[paste0("Y_", q)]] <- v2
+      }
+    }
+    qc_summary_rows[[length(qc_summary_rows) + 1]] <- row_data
+  }
+  qc_summary_df <- bind_rows(qc_summary_rows)
+
+  plot_list_qc <- list()
+  for (q in qc_metrics) {
+    if (paste0("X_", q) %in% colnames(qc_summary_df)) {
+      x_col <- paste0("X_", q)
+      y_col <- paste0("Y_", q)
+      wt <- tryCatch(wilcox.test(qc_summary_df[[x_col]], qc_summary_df[[y_col]], paired = TRUE), error = function(e) list(p.value = NA_real_))
+      p_val <- wt$p.value
+      diff_stat <- mean(qc_summary_df[[x_col]] - qc_summary_df[[y_col]], na.rm = TRUE)
+      
+      p_val_display <- if (is.na(p_val)) "NA" else if (p_val < 0.001) sprintf("%.2e", p_val) else sprintf("%.3f", p_val)
+      subtitle <- sprintf("p = %s | Diff = %.3f", p_val_display, diff_stat)
+      
+      qc_all_vals <- unlist(qc_summary_df[, c(x_col, y_col)])
+      qc_lims <- quantile(qc_all_vals, probs = c(0.01, 0.99), na.rm = TRUE)
+      
+      p <- ggplot(qc_summary_df, aes(.data[[x_col]], .data[[y_col]])) +
+        geom_point(alpha = 0.5, size = 1.2, color = "black") +
+        geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+        coord_cartesian(xlim = qc_lims, ylim = qc_lims) +
+        labs(title = q, subtitle = subtitle, x = "Highest subclone", y = "Lowest subclone") +
+        theme_classic(base_size = 9) +
+        theme(plot.title = element_text(size = 8, face = "bold"),
+              plot.subtitle = element_text(size = 7.5))
+      plot_list_qc[[q]] <- p
+    }
+  }
+  
+  if (nrow(qc_tests_df) > 0) {
+    qc_plot_df <- qc_tests_df %>% 
+      filter(sample %in% multi_subclone_samples) %>%
+      mutate(val = -log10(p_adj))
+    qc_pcts <- qc_plot_df %>% group_by(metric) %>% summarise(pct = 100 * mean(p_adj < 0.05, na.rm = TRUE), .groups = "drop")
+    p_qc_sig <- ggplot(qc_plot_df, aes(metric, val, fill = metric)) +
+      geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+      geom_jitter(width = 0.2, size = 1, alpha = 0.6) +
+      geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red") +
+      geom_text(data = qc_pcts, aes(x = metric, y = max(qc_plot_df$val, na.rm = TRUE) * 1.15, label = sprintf("%.1f%%", pct)), inherit.aes = FALSE, size = 2.5) +
+      scale_y_log10(expand = expansion(mult = c(0.1, 0.3))) +
+      labs(title = "QC Significance", x = NULL, y = "-log10(p_adj)") +
+      theme_classic(base_size = 9) + 
+      theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none", plot.title = element_text(size = 8, face = "bold"))
+    plot_list_qc[["Sig"]] <- p_qc_sig
   }
 
-  write.csv(sig_counts, file.path(out_dir, "Auto_malignant_subclone_sig_count_summary.csv"), row.names = FALSE)
-  write.csv(mp_summary, file.path(out_dir, "Auto_malignant_subclone_mp_cohort_summary.csv"), row.names = FALSE)
+  valid_cells <- intersect(cell_df$cell, rownames(mp_score_mat))
+  cell_df_valid <- cell_df[match(valid_cells, cell_df$cell), ]
+  mp_scores_valid <- mp_score_mat[valid_cells, target_mps, drop = FALSE]
+  
+  subclone_means <- cell_df_valid %>%
+    select(cell, sample, subclone) %>%
+    bind_cols(as.data.frame(mp_scores_valid)) %>%
+    filter(sample %in% multi_subclone_samples, subclone != "Unresolved") %>%
+    group_by(sample, subclone) %>%
+    summarise(across(all_of(target_mps), ~ mean(.x, na.rm = TRUE)), .groups = "drop")
+    
+  pair_rows <- list()
+  for (samp in unique(subclone_means$sample)) {
+    samp_df <- subclone_means %>% filter(sample == samp) %>% arrange(subclone)
+    if (nrow(samp_df) >= 2) {
+      combos <- combn(nrow(samp_df), 2)
+      for (i in 1:ncol(combos)) {
+        idx1 <- combos[1, i]
+        idx2 <- combos[2, i]
+        row_data <- data.frame(
+          sample = samp,
+          clone1 = samp_df$subclone[idx1],
+          clone2 = samp_df$subclone[idx2]
+        )
+        for (mp in target_mps) {
+          val1 <- samp_df[[mp]][idx1]
+          val2 <- samp_df[[mp]][idx2]
+          row_data[[paste0("X_", mp)]] <- max(val1, val2, na.rm = TRUE)
+          row_data[[paste0("Y_", mp)]] <- min(val1, val2, na.rm = TRUE)
+        }
+        pair_rows[[length(pair_rows) + 1]] <- row_data
+      }
+    }
+  }
+  pairs_df <- bind_rows(pair_rows)
+  
+  mp_x_cols <- paste0("X_", target_mps)
+  mp_y_cols <- paste0("Y_", target_mps)
+  mp_all_vals <- unlist(pairs_df[, c(mp_x_cols, mp_y_cols)])
+  mp_global_lims <- quantile(mp_all_vals, probs = c(0.01, 0.99), na.rm = TRUE)
+  
+  plot_list_mp <- list()
+  for (mp in target_mps) {
+    x_col <- paste0("X_", mp)
+    y_col <- paste0("Y_", mp)
+    wt <- tryCatch(wilcox.test(pairs_df[[x_col]], pairs_df[[y_col]], paired = TRUE), error = function(e) list(p.value = NA_real_))
+    p_val <- wt$p.value
+    diff_stat <- mean(pairs_df[[x_col]] - pairs_df[[y_col]], na.rm = TRUE)
+    
+    title_label <- mp_labels[mp]
+    p_val_display <- if (is.na(p_val)) "NA" else if (p_val < 0.001) sprintf("%.2e", p_val) else sprintf("%.3f", p_val)
+    subtitle <- sprintf("p = %s | Diff = %.3f", p_val_display, diff_stat)
+    
+    p <- ggplot(pairs_df, aes(.data[[x_col]], .data[[y_col]])) +
+      geom_point(alpha = 0.5, color = mp_cols[mp_labels[mp]], size = 1.2) +
+      geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") +
+      labs(title = title_label, subtitle = subtitle, x = "Higher-expressed clone", y = "Lower-expressed clone") +
+      coord_cartesian(xlim = mp_global_lims, ylim = mp_global_lims) +
+      theme_classic(base_size = 9) +
+      theme(plot.title = element_text(size = 8, face = "bold"),
+            plot.subtitle = element_text(size = 7.5))
+    plot_list_mp[[mp]] <- p
+  }
 
-  pdf(file.path(out_dir, "Auto_malignant_subclone_mp_cohort_summary.pdf"), width = 13, height = 6, useDingbats = FALSE)
-  grid.arrange(p_counts, p_mp, ncol = 2)
+  state_counts <- cell_df %>%
+    filter(sample %in% multi_subclone_samples, subclone != "Unresolved") %>%
+    count(sample, subclone, state_label) %>%
+    group_by(sample, subclone) %>%
+    mutate(prop = n / sum(n)) %>%
+    ungroup()
+  
+  target_states <- c("Classic Proliferative", "Basal to Intestinal Metaplasia", "SMG-like Metaplasia", "Stress-adaptive", "Immune Infiltrating", "3CA_EMT_and_Protein_maturation", "Unresolved", "Hybrid")
+  
+  pair_rows_state <- list()
+  for (samp in unique(state_counts$sample)) {
+    samp_df_st <- state_counts %>% filter(sample == samp)
+    subs <- sort(unique(samp_df_st$subclone))
+    if (length(subs) >= 2) {
+      combos <- combn(length(subs), 2)
+      for (i in 1:ncol(combos)) {
+        sub1 <- subs[combos[1, i]]
+        sub2 <- subs[combos[2, i]]
+        row_data <- data.frame(sample = samp, clone1 = sub1, clone2 = sub2)
+        for (st in target_states) {
+          p1 <- samp_df_st$prop[samp_df_st$subclone == sub1 & samp_df_st$state_label == st]
+          p2 <- samp_df_st$prop[samp_df_st$subclone == sub2 & samp_df_st$state_label == st]
+          val1 <- if (length(p1) > 0) p1[1] else 0
+          val2 <- if (length(p2) > 0) p2[1] else 0
+          row_data[[paste0("X_", st)]] <- max(val1, val2, na.rm = TRUE)
+          row_data[[paste0("Y_", st)]] <- min(val1, val2, na.rm = TRUE)
+        }
+        pair_rows_state[[length(pair_rows_state) + 1]] <- row_data
+      }
+    }
+  }
+  pairs_state_df <- bind_rows(pair_rows_state)
+
+  state_x_cols <- paste0("X_", target_states)
+  state_y_cols <- paste0("Y_", target_states)
+  state_all_vals <- unlist(pairs_state_df[, c(state_x_cols, state_y_cols)])
+  state_global_lims <- quantile(state_all_vals, probs = c(0.01, 0.99), na.rm = TRUE)
+
+  plot_list_state <- list()
+  for (st in target_states) {
+    x_col <- paste0("X_", st)
+    y_col <- paste0("Y_", st)
+    wt <- tryCatch(wilcox.test(pairs_state_df[[x_col]], pairs_state_df[[y_col]], paired = TRUE), error = function(e) list(p.value = NA_real_))
+    p_val <- wt$p.value
+    diff_stat <- mean(pairs_state_df[[x_col]] - pairs_state_df[[y_col]], na.rm = TRUE)
+    
+    st_col <- if (st %in% names(state_cols)) state_cols[[st]] else "grey50"
+    p_val_display <- if (is.na(p_val)) "NA" else if (p_val < 0.001) sprintf("%.2e", p_val) else sprintf("%.3f", p_val)
+    subtitle <- sprintf("p = %s | Diff = %.3f", p_val_display, diff_stat)
+    
+    p <- ggplot(pairs_state_df, aes(.data[[x_col]], .data[[y_col]])) +
+      geom_point(alpha = 0.5, color = st_col, size = 1.2) +
+      geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") +
+      labs(title = st, subtitle = subtitle, x = "Higher-abundance clone", y = "Lower-abundance clone") +
+      coord_cartesian(xlim = state_global_lims, ylim = state_global_lims) +
+      scale_x_continuous(labels = scales::percent) +
+      scale_y_continuous(labels = scales::percent) +
+      theme_classic(base_size = 9) +
+      theme(plot.title = element_text(size = 8, face = "bold"),
+            plot.subtitle = element_text(size = 7.5))
+    plot_list_state[[st]] <- p
+  }
+
+  write.csv(sig_counts_sample, file.path(out_dir, "Auto_malignant_subclone_sig_count_summary.csv"), row.names = FALSE)
+  write.csv(mp_summary_sample, file.path(out_dir, "Auto_malignant_subclone_mp_cohort_summary.csv"), row.names = FALSE)
+
+  pdf(file.path(out_dir, "Auto_malignant_subclone_mp_cohort_summary.pdf"), width = 15, height = 9, useDingbats = FALSE)
+  # Page 1
+  grid.arrange(p_counts, p_mp, ncol = 2, widths = c(1, 2))
+  # Page 2: QC Summary
+  grid.arrange(grobs = plot_list_qc, ncol = 3)
+  # Page 3
+  grid.arrange(grobs = plot_list_mp, ncol = 4)
+  # Page 4
+  grid.arrange(grobs = plot_list_state, ncol = 4)
   dev.off()
 }
 
