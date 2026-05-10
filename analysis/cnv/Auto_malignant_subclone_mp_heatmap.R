@@ -39,12 +39,24 @@ args <- commandArgs(trailingOnly = TRUE)
 sample_arg <- if (length(args) >= 1 && nzchar(args[1])) args[1] else "all"
 min_cells <- if (length(args) >= 2 && nzchar(args[2])) as.integer(args[2]) else 40L
 min_subclone_cells <- if (length(args) >= 3 && nzchar(args[3])) as.integer(args[3]) else 20L
-min_subclone_frac <- if (length(args) >= 4 && nzchar(args[4])) as.numeric(args[4]) else 0.15
+min_subclone_frac <- if (length(args) >= 4 && nzchar(args[4])) as.numeric(args[4]) else 0.05
 max_plot_cells <- if (length(args) >= 5 && nzchar(args[5])) as.integer(args[5]) else 1200L
 max_subclones <- 6L
 min_distinct_arm_delta <- 0.03
 min_subclone_silhouette <- 0.12
+####################
+louvain_k <- 15L
+arm_call_threshold <- 0.10
+strong_arm_delta <- 0.08
+moderate_arm_delta <- 0.08
+min_distinct_arms <- 2L
+merge_max_arm_delta <- 0.06
+same_pattern_cor <- 0.80
+same_pattern_mean_delta <- 0.015
+####################
 mp_score_limit <- 2
+cna_colour_limit <- 0.15
+mp_mean_colour_limit <- 0.75
 
 out_dir <- "Auto_malignant_subclone_mp"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -107,6 +119,17 @@ state_cols <- c(
   "Unresolved" = "grey80",
   "Hybrid" = "black"
 )
+
+####################
+subclone_palette <- c(
+  "Subclone A" = "#D73027",
+  "Subclone B" = "#4575B4",
+  "Subclone C" = "#1A9850",
+  "Subclone D" = "#984EA3",
+  "Subclone E" = "#FF7F00",
+  "Subclone F" = "#A65628"
+)
+####################
 
 mp_cols <- c(
   "MP1_G2M Cell Cycle" = "#B0B0B0",
@@ -262,6 +285,12 @@ assert_named_palette <- function(cols, label) {
   cols
 }
 
+####################
+subclone_colours <- function(values) {
+  assert_named_palette(complete_palette(subclone_palette, values, "Set2"), "Subclone")
+}
+####################
+
 get_epi_path <- function(sample_id) {
   epi_f <- file.path("by_samples", sample_id, paste0(sample_id, "_epi_f.rds"))
   epi <- file.path("by_samples", sample_id, paste0(sample_id, "_epi.rds"))
@@ -316,36 +345,63 @@ compute_arm_means <- function(cna_mat, cluster, arm_labels) {
     })
     vals[arm_levels]
   }))
+  out <- as.matrix(out)
   rownames(out) <- cl_levels
   out[is.na(out)] <- 0
   out
 }
 
-merge_small_clusters <- function(cluster, pcs) {
-  cluster_names <- names(cluster)
-  cluster <- as.character(cluster)
-  names(cluster) <- cluster_names
-  repeat {
-    counts <- table(cluster)
-    valid <- names(counts)[counts >= min_subclone_cells & as.numeric(counts) / length(cluster) >= min_subclone_frac]
-    small <- setdiff(names(counts), valid)
-    if (length(small) == 0) break
-    if (length(valid) == 0) {
-      cluster[] <- "1"
-      break
-    }
-    centroids <- t(vapply(names(counts), function(cl) {
-      colMeans(pcs[names(cluster)[cluster == cl], , drop = FALSE], na.rm = TRUE)
-    }, numeric(ncol(pcs))))
-    for (cl in small) {
-      d <- vapply(valid, function(valid_cl) {
-        sum((centroids[valid_cl, ] - centroids[cl, ])^2, na.rm = TRUE)
-      }, numeric(1))
-      if (length(d) == 0) next
-      cluster[cluster == cl] <- valid[which.min(d)]
-    }
-  }
-  cluster
+####################
+call_arm_cna <- function(arm_mean) {
+  arm_call <- matrix(0L, nrow = nrow(arm_mean), ncol = ncol(arm_mean), dimnames = dimnames(arm_mean))
+  arm_call[arm_mean > arm_call_threshold] <- 1L
+  arm_call[arm_mean < -arm_call_threshold] <- -1L
+  arm_call
+}
+
+louvain_cna_clusters <- function(cna_mat) {
+  n_cells <- ncol(cna_mat)
+  if (n_cells <= 2L) return(setNames(rep("1", n_cells), colnames(cna_mat)))
+  k_use <- min(louvain_k, n_cells - 1L)
+  cell_mat <- t(cna_mat)
+  nn <- RANN::nn2(data = cell_mat, query = cell_mat, k = k_use + 1L)$nn.idx[, -1, drop = FALSE]
+  edges <- cbind(rep(seq_len(n_cells), each = k_use), as.vector(t(nn)))
+  graph <- igraph::graph_from_edgelist(edges, directed = FALSE)
+  graph <- igraph::simplify(graph, remove.multiple = TRUE, remove.loops = TRUE)
+  membership <- igraph::membership(igraph::cluster_louvain(graph))
+  out <- as.character(membership)
+  names(out) <- colnames(cna_mat)
+  out
+}
+
+minimum_subclone_cells <- function(n_cells) {
+  max(min_subclone_cells, ceiling(min_subclone_frac * n_cells))
+}
+
+drop_small_clusters <- function(cluster, n_cells) {
+  min_keep <- minimum_subclone_cells(n_cells)
+  counts <- table(cluster)
+  keep_levels <- names(counts)[counts >= min_keep]
+  if (length(keep_levels) == 0) keep_levels <- names(which.max(counts))
+  cluster[cluster %in% keep_levels]
+}
+
+has_distinct_arm_evidence <- function(mean_a, mean_b, call_a, call_b) {
+  delta <- abs(mean_a - mean_b)
+  call_diff <- call_a != call_b
+  any(call_diff & delta >= strong_arm_delta, na.rm = TRUE) ||
+    sum(delta >= moderate_arm_delta, na.rm = TRUE) >= min_distinct_arms
+}
+
+has_same_scaled_pattern <- function(mean_a, mean_b) {
+  centered_a <- mean_a - mean(mean_a, na.rm = TRUE)
+  centered_b <- mean_b - mean(mean_b, na.rm = TRUE)
+  profile_cor <- suppressWarnings(cor(centered_a, centered_b, use = "pairwise.complete.obs"))
+  mean_delta <- mean(abs(mean_a - mean_b), na.rm = TRUE)
+  is.finite(profile_cor) &&
+    profile_cor >= same_pattern_cor &&
+    is.finite(mean_delta) &&
+    mean_delta <= same_pattern_mean_delta
 }
 
 merge_indistinct_clusters <- function(cna_mat, cluster, arm_labels) {
@@ -356,22 +412,29 @@ merge_indistinct_clusters <- function(cna_mat, cluster, arm_labels) {
     cl_levels <- sort(unique(cluster))
     if (length(cl_levels) <= 1) break
     arm_mean <- compute_arm_means(cna_mat, cluster, arm_labels)
-    arm_call <- matrix(0L, nrow = nrow(arm_mean), ncol = ncol(arm_mean), dimnames = dimnames(arm_mean))
-    arm_call[arm_mean > 0.15] <- 1L
-    arm_call[arm_mean < -0.15] <- -1L
+    arm_call <- call_arm_cna(arm_mean)
 
     merge_pair <- NULL
     merge_score <- Inf
     for (i in seq_len(length(cl_levels) - 1L)) {
       for (j in seq.int(i + 1L, length(cl_levels))) {
-        same_calls <- identical(unname(arm_call[cl_levels[i], ]), unname(arm_call[cl_levels[j], ]))
         max_delta <- max(abs(arm_mean[cl_levels[i], ] - arm_mean[cl_levels[j], ]), na.rm = TRUE)
-        rms_delta <- sqrt(mean((arm_mean[cl_levels[i], ] - arm_mean[cl_levels[j], ])^2, na.rm = TRUE))
-        if (same_calls && is.finite(max_delta) && max_delta < min_distinct_arm_delta && rms_delta < 0.03) {
-          if (max_delta < merge_score) {
-            merge_pair <- c(cl_levels[i], cl_levels[j])
-            merge_score <- max_delta
-          }
+        distinct_evidence <- has_distinct_arm_evidence(
+          arm_mean[cl_levels[i], ],
+          arm_mean[cl_levels[j], ],
+          arm_call[cl_levels[i], ],
+          arm_call[cl_levels[j], ]
+        )
+        same_scaled_pattern <- has_same_scaled_pattern(
+          arm_mean[cl_levels[i], ],
+          arm_mean[cl_levels[j], ]
+        )
+        indistinct <- same_scaled_pattern ||
+          !distinct_evidence ||
+          (is.finite(max_delta) && max_delta < merge_max_arm_delta)
+        if (indistinct && max_delta < merge_score) {
+          merge_pair <- c(cl_levels[i], cl_levels[j])
+          merge_score <- max_delta
         }
       }
     }
@@ -386,49 +449,34 @@ merge_indistinct_clusters <- function(cna_mat, cluster, arm_labels) {
 infer_cna_subclones <- function(cna_mat, go) {
   n_cells <- ncol(cna_mat)
   if (n_cells < min_cells) {
-    return(setNames(rep("Subclone A", n_cells), colnames(cna_mat)))
+    out <- setNames(rep("Subclone A", n_cells), colnames(cna_mat))
+    attr(out, "silhouette") <- NA_real_
+    return(out)
   }
-  binned <- make_binned_cna(cna_mat, go, bin_size = 100L)$mat
-  pc_n <- min(20L, n_cells - 1L, nrow(binned))
-  pca <- prcomp(t(binned), center = TRUE, scale. = FALSE, rank. = pc_n)
-  pcs <- pca$x[, seq_len(pc_n), drop = FALSE]
-  hc <- hclust(dist(pcs), method = "ward.D2")
   arm_labels <- make_arm_labels(go)
-
-  best <- list(cluster = setNames(rep("1", n_cells), colnames(cna_mat)), k = 1L, silhouette = NA_real_)
-  d_pcs <- dist(pcs)
-  for (k in seq.int(2L, min(max_subclones, n_cells - 1L))) {
-    cluster <- cutree(hc, k = k)
-    names(cluster) <- rownames(pcs)
-    cluster <- merge_small_clusters(cluster, pcs)
-    cluster <- merge_indistinct_clusters(cna_mat, cluster, arm_labels)
-    counts <- table(cluster)
-    valid <- all(counts >= min_subclone_cells & as.numeric(counts) / length(cluster) >= min_subclone_frac)
-    if (!valid || length(counts) < 2) next
-    sil <- if (requireNamespace("cluster", quietly = TRUE)) {
-      mean(cluster::silhouette(as.integer(factor(cluster)), d_pcs)[, 3], na.rm = TRUE)
-    } else {
-      length(counts)
-    }
-    if (is.na(sil) || sil < min_subclone_silhouette) next
-    if (is.na(best$silhouette) || sil > best$silhouette + 0.02 ||
-        (abs(sil - best$silhouette) <= 0.02 && length(counts) < best$k)) {
-      best <- list(cluster = cluster, k = length(counts), silhouette = sil)
-    }
+  initial_cluster <- louvain_cna_clusters(cna_mat)
+  initial_cluster <- drop_small_clusters(initial_cluster, n_cells)
+  if (length(initial_cluster) < min_cells) {
+    out <- setNames(rep("Subclone A", length(initial_cluster)), names(initial_cluster))
+    attr(out, "silhouette") <- NA_real_
+    return(out)
   }
+  cna_mat <- cna_mat[, names(initial_cluster), drop = FALSE]
+  merged_cluster <- merge_indistinct_clusters(cna_mat, initial_cluster, arm_labels)
 
-  counts <- sort(table(best$cluster), decreasing = TRUE)
+  counts <- sort(table(merged_cluster), decreasing = TRUE)
   message("  inferred CNA clusters: ",
           paste(paste0(names(counts), "=", as.integer(counts)), collapse = "; "),
-          "; silhouette=", ifelse(is.na(best$silhouette), "NA", round(best$silhouette, 3)))
+          "; louvain_k=", louvain_k)
   clone_letters <- LETTERS[seq_along(counts)]
   names(clone_letters) <- names(counts)
-  out <- paste0("Subclone ", clone_letters[best$cluster])
-  names(out) <- names(best$cluster)
+  out <- paste0("Subclone ", clone_letters[merged_cluster])
+  names(out) <- names(merged_cluster)
   out <- out[colnames(cna_mat)]
-  attr(out, "silhouette") <- best$silhouette
+  attr(out, "silhouette") <- NA_real_
   out
 }
+####################
 
 prepare_cna_matrix <- function(outs, cells) {
   cells <- intersect(cells, colnames(outs))
@@ -484,7 +532,7 @@ make_cna_heatmap <- function(binned, meta_plot, sample_id) {
   mat <- binned$mat[, ord, drop = FALSE]
   row_chr <- factor(binned$chr, levels = unique(binned$chr))
   chr_cols <- setNames(rep(c("#E6E6E6", "#BDBDBD"), length.out = length(levels(row_chr))), levels(row_chr))
-  subclone_cols <- complete_palette(make_palette(meta_plot$subclone, "Set2"), meta_plot$subclone, "Set2")
+  subclone_cols <- subclone_colours(meta_plot$subclone)
   topmp_cols <- mp_cols[names(mp_cols) %in% unique(as.character(meta_plot$top_mp_label))]
   local_state_cols <- state_cols[names(state_cols) %in% unique(as.character(meta_plot$state_label))]
   missing_states <- setdiff(unique(meta_plot$state_label), names(local_state_cols))
@@ -521,7 +569,7 @@ make_cna_heatmap <- function(binned, meta_plot, sample_id) {
   Heatmap(
     mat,
     name = "CNA",
-    col = colorRamp2(c(-0.5, 0, 0.5), c("#2166AC", "white", "#B2182B")),
+    col = colorRamp2(c(-cna_colour_limit, 0, cna_colour_limit), c("#2166AC", "white", "#B2182B")),
     top_annotation = top_ha,
     left_annotation = left_ha,
     row_split = row_chr,
@@ -547,10 +595,21 @@ make_mean_mp_heatmap <- function(mp_z, subclone) {
   if (is.null(dim(mean_mat))) mean_mat <- matrix(mean_mat, ncol = 1, dimnames = list(colnames(mp_z), unique(subclone)))
   mean_mat <- mean_mat[intersect(mp_names, rownames(mean_mat)), , drop = FALSE]
   rownames(mean_mat) <- mp_labels[rownames(mean_mat)]
+  subclone_cols <- subclone_colours(colnames(mean_mat))
+  top_ha <- HeatmapAnnotation(
+    Subclone = factor(colnames(mean_mat), levels = colnames(mean_mat)),
+    col = list(Subclone = subclone_cols),
+    show_annotation_name = TRUE,
+    annotation_name_side = "left",
+    simple_anno_size = unit(3, "mm")
+  )
   Heatmap(
     mean_mat,
     name = "Mean MP z",
-    col = colorRamp2(c(-mp_score_limit, 0, mp_score_limit), c("#2166AC", "white", "#B2182B")),
+    col = colorRamp2(c(-mp_mean_colour_limit, 0, mp_mean_colour_limit), c("#2166AC", "white", "#B2182B")),
+    top_annotation = top_ha,
+    width = unit(max(30, 18 * ncol(mean_mat)), "mm"),
+    height = unit(max(50, 5.5 * nrow(mean_mat)), "mm"),
     cluster_rows = FALSE,
     cluster_columns = FALSE,
     row_names_gp = gpar(fontsize = 7),
@@ -608,6 +667,7 @@ make_boxplot <- function(score_df, mp_test_df, sample_id) {
     geom_jitter(data = point_df, width = 0.12, size = 0.15, alpha = 0.15) +
     geom_text(data = y_pos, aes(x = 1, y = .data$y, label = .data$sig_label), inherit.aes = FALSE, size = 2.4) +
     facet_wrap(~mp_label, scales = "free_y", ncol = 4) +
+    scale_fill_manual(values = subclone_colours(score_df$subclone), drop = FALSE) +
     labs(title = paste0(sample_id, ": MP scores by CNA subclone"), x = NULL, y = "MP score z") +
     theme_classic(base_size = 8) +
     theme(
@@ -650,7 +710,7 @@ make_qc_boxplot <- function(meta_plot, sample_id) {
     facet_wrap(~ QC_Metric, scales = "free_y", nrow = 2) +
     geom_text(data = stats_df, aes(x = 1.5, y = max_val * 1.05, label = label), inherit.aes = FALSE, size = 2.5) +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
-    scale_fill_brewer(palette = "Set2") +
+    scale_fill_manual(values = subclone_colours(plot_data$subclone), drop = FALSE) +
     theme_classic(base_size = 8) +
     labs(title = "QC Metrics (Top 2 Subclones)", x = NULL, y = "Value") +
     theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = "bottom", strip.text = element_text(size = 7))
@@ -985,6 +1045,17 @@ if (nrow(sub_tests_df) > 0) {
       n_sig_mps == 1 ~ "One significant",
       TRUE ~ "More than one"
     ))
+
+  mp_summary_sample <- sub_tests_df %>%
+    group_by(.data$mp, .data$mp_label) %>%
+    summarise(
+      n_subclone_tests = n(),
+      n_significant_subclone_tests = sum(.data$significant, na.rm = TRUE),
+      pct_significant_subclone_tests = 100 * mean(.data$significant, na.rm = TRUE),
+      median_abs_delta = median(abs(.data$delta_mean), na.rm = TRUE),
+      max_abs_delta = max(abs(.data$delta_mean), na.rm = TRUE),
+      .groups = "drop"
+    )
 
   p_counts <- sig_counts_sample %>%
     count(category, name = "n") %>%

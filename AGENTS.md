@@ -248,8 +248,11 @@ Documents 4 canonical patterns used across 3+ scripts each. Not sourced by any s
 | `cnv_profiling.R` | Run infercna to infer CNV profiles on epithelial subsets | per-sample `_epi.rds` files | CNV profiles |
 | `cnv_subsetting.R` | Subset cells by CNA score, ComplexHeatmap CNA visualisation | CNV profile outputs | CNA heatmaps, filtered RDS |
 | `cnv_plotting.R` | Publication-ready CNV heatmaps with circlize colour scales | CNV matrices | CNV plot PDFs |
+| `Auto_malignant_subclone_mp_heatmap.R` | CNA subclone versus malignant metaprogram/state heterogeneity; uses fixed subclone colours and chromosome-arm distinctness checks for subclone division | per-sample InferCNA outputs, epithelial RDS, MP UCell scores, state vectors | sample-page and cohort-summary PDFs plus subclone/statistical CSVs |
 
 Note: all 3 CNV scripts share identical library set: `data.table, dplyr, ComplexHeatmap, circlize, RColorBrewer, Seurat, infercna`.
+
+Note: `Auto_malignant_subclone_mp_heatmap.R` now uses a label-stable subclone palette and the published Nature-paper subclone division style: top CNA-signal genes, Louvain kNN clustering with `k=15`, chromosome-arm CNA calls at ±0.10, dropping provisional clusters below 20 cells or 5% sample fraction, merging same-shape strength-scaled profiles, and otherwise retaining robust arm-level pattern shifts. There is no silhouette-based subclone selection.
 
 ### `analysis/cell_states/` — Cell Type & State Assignment
 | File | Purpose | Key Inputs | Key Outputs |
@@ -285,7 +288,7 @@ Note: all 3 CNV scripts share identical library set: `data.table, dplyr, Complex
 | `Auto_overall_state_proportions.R` | Overall stacked barplot of cell state proportions for the 5 states + Unresolved + Hybrid | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds` | `Auto_overall_state_proportions.pdf` |
 | `Auto_final_percell_heatmap.R` | High-resolution heatmap of finalized states across 8,000 cells (all cells, sampled per state) | `EAC_Ref_epi.rds`, `Auto_final_states.rds`, `UCell_nMP19_filtered.rds` | `Auto_final_percell_heatmap.pdf` |
 | `Auto_pseudotime_batch_correction.R` | Pseudotime analysis with Harmony and scVI batch correction | `EAC_Ref_epi.rds`, `Auto_final_states.rds` | `Auto_partA_Harmony_pseudotime.pdf`, `Auto_partA_scVI_pseudotime.pdf` |
-
+| `Auto_basal_smg_mp_signature_heatmap.R` | Basal vs SMG-like state heatmap grouped by top state-defining MP; scores 8 gene signatures (Squamous, Gastric Columnar, Intestinal Metaplasia, SMG-like Secretory, IFNα, IFNγ, Cell-cycle, Buffa Hypoxia A) with UCell; outputs 6-page PDF: per-cell normalized heatmap, aggregated normalized heatmap, **normalized bubble plot**, per-cell raw heatmap, aggregated raw heatmap, **raw bubble plot**; bubble plots show detection rate (size) and mean score (color) per MP group following nature-figure style | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds`, `geneNMF_metaprograms_nMP_19.rds`, `Cell_Cycle_Genes.csv` | `ref_outs/Auto_basal_smg_mp_signature_heatmap/Auto_basal_smg_mp_signature_heatmap.pdf`, `Auto_basal_smg_bubble_normalized.svg`, `Auto_basal_smg_bubble_raw.svg`, summary CSV, data RDS |
 
 
 ### `analysis/plotting/` — Publication Figures
@@ -724,4 +727,44 @@ All new plots, heatmaps, summaries, and statistical tables that display finalize
 - Cell-cycle MPs: `MP1`, `MP7`, `MP9`.
 - For top-MP assignment used as a state-like transcriptomic label, exclude cell-cycle MPs and assign the maximum from the z-normalised Approach-B noreg MP score matrix (`Auto_topmp_v2_noreg_mp_adj.rds`), matching the state-assignment score scale.
 - Reuse the established colours from `analysis/cell_states/sample_abundance.R` for MP and state labels whenever those labels are plotted across samples.
+####################
+
+####################
+## Nature-Figure Publication Skill (Selective Application)
+
+A `nature-figure` skill is installed at `/rds/general/user/sg3723/home/nature-skills/nature-figure/`. It enforces Nature-journal visual standards. **Agents must exercise judgment to apply this skill primarily to scripts producing final, sharable results.**
+
+### When to Apply (Clever Selection)
+
+Do **not** apply this to every R script. Focus on scripts that synthesize data across samples or produce "Final" visualizations. Prioritize:
+- Final cohort-level summary plots (abundance, survival, clinical associations)
+- Cross-dataset comparison figures
+- Any `Auto_` script producing figures explicitly intended for manuscript inclusion or presentation slides
+
+### How to Apply (R Backend — PDF Priority)
+
+1. **Figure contract**: Define the claim and evidence hierarchy first.
+2. **Typography**: Use 6.5pt Arial (Nature standard) via `theme_nature_contract()`.
+3. **Export policy (PDF Priority)**: **PDF is the preferred format.** SVG is not required unless requested. Use `grDevices::cairo_pdf()` to ensure font embedding.
+   ```r
+   save_pub_pdf <- function(plot, filename, width_mm = 183, height_mm = 120) {
+     w <- width_mm / 25.4; h <- height_mm / 25.4
+     grDevices::cairo_pdf(paste0(filename, ".pdf"), width = w, height = h, family = "Arial")
+     if (inherits(plot, "Heatmap") || inherits(plot, "HeatmapList")) {
+       ComplexHeatmap::draw(plot, merge_legend = TRUE)
+     } else {
+       print(plot)
+     }
+     dev.off()
+   }
+   ```
+4. **Color & IA**: Use restrained palettes and follow the **overview → deviation → relationship** information architecture.
+
+### Reference Files
+- `~/nature-skills/nature-figure/SKILL.md` — full skill specification
+- `~/nature-skills/nature-figure/references/r-workflow.md` — R-specific patterns
+
+### Exceptions
+- **Diagnostic/QC scripts**: Step 1-6 pipeline outputs, internal QC heatmaps, and debugging plots should use standard Seurat/ggplot2 defaults to save time.
+- **Development/Test scripts**: `delete_*.R` scripts.
 ####################

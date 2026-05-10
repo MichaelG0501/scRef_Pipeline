@@ -434,6 +434,127 @@ for (s in splits) {
   }
 }
 
+####################
+# Bubble plot helper function — nature-figure style (UPGRADED)
+# Shows mean signature score (color) and detection rate (size) per MP group
+# Each signature now has its own relative color scale for maximum clarity
+####################
+generate_bubble_plot <- function(score_mat, plot_meta, target_mp_order, mp_cols, mp_descriptions, is_norm = TRUE) {
+  library(ggplot2)
+  library(dplyr)
+  
+  score_df <- as.data.frame(t(score_mat))
+  score_df$top_mp <- plot_meta$top_mp
+  
+  sig_names <- rownames(score_mat)
+  
+  # Compute mean score and detection rate per MP group
+  bubble_data <- do.call(rbind, lapply(sig_names, function(sig) {
+    do.call(rbind, lapply(target_mp_order, function(mp) {
+      mp_lab <- paste0(mp, " ", mp_descriptions[mp])
+      idx <- which(as.character(score_df$top_mp) == mp)
+      if (length(idx) == 0) return(NULL)
+      vals <- score_df[idx, sig]
+      
+      if (is_norm) {
+        # For z-scored data, detection = fraction of cells with |z| > 0.5
+        det_rate <- mean(abs(vals) > 0.5, na.rm = TRUE)
+      } else {
+        # For raw data, detection = fraction of cells with score > 0
+        det_rate <- mean(vals > 0, na.rm = TRUE)
+      }
+      
+      data.frame(
+        signature = sig,
+        mp_group = mp_lab,
+        mp_id = mp,
+        mean_score = mean(vals, na.rm = TRUE),
+        detection_rate = det_rate,
+        stringsAsFactors = FALSE
+      )
+    }))
+  }))
+  
+  # Perform per-signature normalization of mean_score for the color mapping
+  # This makes each row have its own relative scale, highlighting differences within the signature
+  bubble_data <- bubble_data %>%
+    group_by(signature) %>%
+    mutate(
+      mean_score_scaled = if(is_norm) {
+        # Scale to [-1, 1] based on max absolute value within signature
+        mx <- max(abs(mean_score), na.rm = TRUE)
+        if(mx > 1e-6) mean_score / mx else 0
+      } else {
+        # Scale to [0, 1]
+        mn <- min(mean_score, na.rm = TRUE)
+        mx <- max(mean_score, na.rm = TRUE)
+        if(mx > mn + 1e-6) (mean_score - mn) / (mx - mn) else 0
+      }
+    ) %>%
+    ungroup()
+  
+  # Factor ordering
+  mp_order_labels <- paste0(target_mp_order, " ", mp_descriptions[target_mp_order])
+  bubble_data$mp_group <- factor(bubble_data$mp_group, levels = mp_order_labels)
+  bubble_data$signature <- factor(bubble_data$signature, levels = rev(sig_names))
+  
+  # Color scale — using the SCALED score
+  if (is_norm) {
+    fill_scale <- scale_color_gradient2(
+      low = "navy", mid = "white", high = "firebrick3",
+      midpoint = 0, limits = c(-1, 1),
+      name = "Relative\nZ-score"
+    )
+  } else {
+    fill_scale <- scale_color_gradient(
+      low = "grey95", high = "firebrick3",
+      limits = c(0, 1),
+      name = "Relative\nScore"
+    )
+  }
+  
+  p <- ggplot(bubble_data, aes(x = mp_group, y = signature)) +
+    geom_point(aes(size = detection_rate, color = mean_score_scaled), stroke = 0.5) +
+    fill_scale +
+    scale_size_continuous(
+      range = c(2, 16), # Larger dots
+      limits = c(0, 1),
+      breaks = c(0.25, 0.50, 0.75, 1.00),
+      labels = c("25%", "50%", "75%", "100%"),
+      name = "Detection\nRate"
+    ) +
+    # Basal vs SMG separator
+    geom_vline(xintercept = 5.5, linetype = "dashed", color = "grey40", linewidth = 0.6) +
+    annotate("text", x = 3, y = length(sig_names) + 0.8, label = "Basal to Intestinal Metaplasia",
+             hjust = 0.5, size = 5.5, fontface = "bold", color = "#4DAF4A") +
+    annotate("text", x = 6.5, y = length(sig_names) + 0.8, label = "SMG-like Metaplasia",
+             hjust = 0.5, size = 5.5, fontface = "bold", color = "#FF7F00") +
+    coord_cartesian(clip = "off") +
+    labs(
+      x = NULL,
+      y = NULL
+    ) +
+    theme_classic(base_size = 14) + # Larger base font
+    theme(
+      axis.line = element_line(linewidth = 0.5, colour = "black"),
+      axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 12, face = "bold", color = "black"),
+      axis.text.y = element_text(size = 14, face = "bold", color = "black"),
+      legend.title = element_text(size = 12, face = "bold"),
+      legend.text = element_text(size = 11),
+      legend.position = "right",
+      legend.margin = margin(l = 10),
+      panel.grid = element_blank(),
+      plot.margin = margin(t = 40, r = 20, b = 20, l = 20, unit = "pt")
+    ) +
+    guides(
+      size = guide_legend(order = 1),
+      color = guide_colorbar(order = 2, barwidth = 1.2, barheight = 6)
+    )
+  
+  p
+}
+
 pdf(file.path(out_dir, "Auto_basal_smg_mp_signature_heatmap.pdf"), width = 18, height = 12, useDingbats = FALSE)
 
 # Page 1: Per-cell Heatmap (Normalized within sample)
@@ -464,6 +585,13 @@ ht_agg_norm <- generate_agg_heatmap_list(agg_mat_norm, target_mp_order, is_norm 
 draw(ht_agg_norm, merge_legend = TRUE, heatmap_legend_side = "bottom", ht_gap = unit(3, "mm"),
      padding = unit(c(20, 2, 2, 2), "mm"))
 
+####################
+# Page 2b: Bubble plot (Normalized) — combined signature expression per MP group
+####################
+message("Generating Page 2b: Bubble Plot (Normalized)...")
+p_bubble_norm <- generate_bubble_plot(score_norm, plot_meta, target_mp_order, mp_cols, mp_descriptions, is_norm = TRUE)
+print(p_bubble_norm)
+
 # Page 3: Per-cell Heatmap (Raw scores)
 message("Generating Page 3: Per-cell Raw Heatmap...")
 ht_list_raw <- generate_heatmap_list(score_raw, plot_meta, top_ann, column_split, final_column_order, is_norm = FALSE)
@@ -484,7 +612,33 @@ ht_agg_raw <- generate_agg_heatmap_list(agg_mat_raw, target_mp_order, is_norm = 
 draw(ht_agg_raw, merge_legend = TRUE, heatmap_legend_side = "bottom", ht_gap = unit(3, "mm"),
      padding = unit(c(20, 2, 2, 2), "mm"))
 
+####################
+# Page 4b: Bubble plot (Raw) — combined signature expression per MP group
+####################
+message("Generating Page 4b: Bubble Plot (Raw)...")
+p_bubble_raw <- generate_bubble_plot(score_raw, plot_meta, target_mp_order, mp_cols, mp_descriptions, is_norm = FALSE)
+print(p_bubble_raw)
+
 dev.off()
+
+####################
+# SVG export of bubble plots (nature-figure primary vector format)
+####################
+message("Exporting bubble plot SVGs...")
+tryCatch({
+  if (requireNamespace("svglite", quietly = TRUE)) {
+    # Using more compact aspect ratio (8x6) for SVGs to make fonts relatively larger
+    svglite::svglite(file.path(out_dir, "Auto_basal_smg_bubble_normalized.svg"), width = 8, height = 6)
+    print(p_bubble_norm)
+    dev.off()
+    svglite::svglite(file.path(out_dir, "Auto_basal_smg_bubble_raw.svg"), width = 8, height = 6)
+    print(p_bubble_raw)
+    dev.off()
+    message("SVG exports saved.")
+  } else {
+    message("svglite not available, skipping SVG export.")
+  }
+}, error = function(e) message("SVG export skipped: ", e$message))
 
 score_long <- as.data.frame(t(score_norm), check.names = FALSE)
 score_long$cell <- rownames(score_long)
