@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/enrichment/enrichment_analysis.R
+#   Methodology: analysis/methodology/enrichment/enrichment_external_reference_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Moved from: analysis/terms_overlap.R
 # Reorganized as part of analysis/ restructuring
 ####################

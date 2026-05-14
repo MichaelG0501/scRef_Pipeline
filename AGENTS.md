@@ -59,7 +59,7 @@ These rules are **mandatory** for any agent operating in this repo:
 3. **Interactive first**: Tasks under 8 cores / 64 GB → write only the `.R` script, no `.sh` wrapper. User runs interactively.
 4. **PBS required**: Heavy tasks → must create PBS `.sh` script with `#PBS` resource headers.
 5. **Live Logging**: Always use live streaming log file mode by adding `#PBS -koed` to the submission script. This ensures standard out and standard error are written to their final destination as the job is running, allowing for real-time monitoring from login nodes.
-6. **File naming**: New persistent files MUST be prefixed with `Auto_` (e.g., `Auto_analysis.R`).
+6. **Output file naming**: New persistent generated outputs should keep the historical `Auto_` prefix when useful for provenance. New analysis script filenames should instead be descriptive and follow the `analysis/ANALYSIS_MAP.md` naming rules.
 7. **Modifying existing files**: New code MUST be wrapped in 20-hash comment blocks:
    ```r
    ####################
@@ -174,177 +174,81 @@ Lowercase with dots: `t.cell`, `b.cell`, `nk.cell`, `macrophage`, `fibroblast`, 
 
 ## Downstream Analysis
 
-Analysis scripts are organised into themed subfolders under `analysis/`. Outputs go to `ref_outs/`. All scripts are self-contained (zero `source()` dependencies between scripts).
+Analysis scripts are organised into themed subfolders under `analysis/`. The authoritative script inventory, dependency map, run order, terminal-figure list, legacy/delete-candidate list, and untracked-file notes live in `analysis/ANALYSIS_MAP.md`. Future agents must update that map whenever scripts are added, renamed, moved, superseded, or given new downstream outputs.
 
-### Key Shared Data Objects
-All paths are relative to the project root unless absolute paths are specified.
+### Required Analysis Script Standards
 
-| Object | Absolute Path | Description |
+Every active analysis script must start with a registry/header block that states:
+- script status: `active`, `terminal`, `legacy`, or `delete-candidate`
+- short description
+- methodology file path under `analysis/methodology/`
+- exact inputs, including absolute external files or download requirements
+- exact outputs, grouped as `intermediate/`, `tables/`, `figures/`, `logs/`, or `reports/` for new long-running scripts
+- cache/replot behavior for expensive workflows
+- run command and conda environment
+
+New script filenames should be descriptive and should not use `Auto_` as the script prefix. Use `legacy_` for retained comparison/historical scripts and `delete_` for scripts recommended for manual deletion. Do not delete scripts directly unless the user explicitly asks. Existing output files may keep their historical `Auto_` prefixes when downstream scripts already depend on them.
+
+### Shared Configuration And Helpers
+
+Shared constants live in `analysis/shared/scRef_config.R`. Shared helper functions live in `analysis/shared/scRef_helpers.R`. New scripts should reuse or copy from these files for:
+- preferred state definition: Approach B, noreg
+- common input paths and output directories
+- state/MP order and colors
+- plot dimensions and presentation-readable typography defaults
+- metadata column names
+- common thresholds
+- output-tier helpers
+- lightweight run-summary logging
+
+Scripts may source these helper files when the dependency is documented in the script header. For fully self-contained HPC scripts, copying a small stable helper block is acceptable, but avoid copy-paste drift for shared constants.
+
+### Current Key Data Objects
+
+| Object | Path | Notes |
 | :--- | :--- | :--- |
-| Main epithelial Seurat | `ref_outs/EAC_Ref_epi.rds` | 75,348 OAC epithelial cells: merged studies |
-| MP UCell scores (default) | `ref_outs/UCell_default.rds` | 75348 x 9 MP scores |
-| MP UCell scores (filtered) | `ref_outs/UCell_default_filtered.rds` | Silhouette-filtered MPs |
-| NMF metaprograms nMP=19 | `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds` | Primary working MP object |
-| Enrichment results | `ref_outs/cluster_enrich.rds` | MP x database enrichment results |
-| Sample metadata (epi) | `ref_outs/meta_full_epi.rds` | Per-cell metadata with clinical variables |
-| State assignments | `ref_outs/state_temp.rds` | Named vector: barcode to manual_states |
-| 3CA MP UCell scores | `ref_outs/UCell_3CA_MPs.rds` | 3CA reference MP scores |
-| PDO UCell scores | `ref_outs/UCell_pdos.rds` | PDO metaprogram scores: external project |
-| Ref term UCell scores | `ref_outs/UCell_ref_terms.rds` | UCell scores for reference database terms |
-| All sample metadata | `ref_outs/all_meta.rds` | Merged metadata for all cell types |
-| NMF geneNMF outs | `ref_outs/geneNMF_outs.rds` | Raw geneNMF output object |
-| NMF MP outs default | `ref_outs/MP_outs_default.rds` | Processed MP outputs |
-| DEG cache | `ref_outs/states_degs.rds` | FindAllMarkers result for 4 cell states |
-| **State RDS (reg)** | `ref_outs/Auto_topmp_v2_reg_states_B.rds` | Approach B states (CC-regressed) |
-| **State RDS (noreg)** | `ref_outs/Auto_topmp_v2_noreg_states_B.rds` | Approach B states (No CC regression) |
-| **Final State RDS** | `ref_outs/Auto_final_states.rds` | Final merged states (Approach B + 3CA relabeled + specific merges) |
-| Final MP SCENIC dir | `ref_outs/final_mp_scenic/` | Final-MP SCENIC selected-cell tables, regulon activity outputs, and network plots |
-| Barretts metadata | `ref_outs/meta_barretts.rds` | Specifically for the new Barretts dataset |
-| External epithelial MP UCell dir | `ref_outs/Auto_external_epi_mp_ucell/` | Mean MP UCell heatmaps and per-cell-type summaries for adult oesophagus, adult stomach, and Barretts references |
+| Main epithelial Seurat | `ref_outs/EAC_Ref_epi.rds` | merged OAC epithelial reference |
+| MP object nMP=19 | `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds` | primary MP gene set object |
+| Filtered MP UCell | `ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds` | silhouette-filtered MP scores |
+| 3CA MP UCell | `ref_outs/UCell_3CA_MPs.rds` | pan-cancer MP scores |
+| Epithelial metadata | `ref_outs/meta_full_epi.rds` | per-cell clinical/sample metadata |
+| Approach B noreg states | `ref_outs/Auto_topmp_v2_noreg_states_B.rds` | preferred upstream state definition |
+| Approach B noreg MP matrix | `ref_outs/Auto_topmp_v2_noreg_mp_adj.rds` | z-normalised state-definition MP matrix |
+| Final state vector | `ref_outs/Auto_final_states.rds` | preferred downstream state object |
+| Enrichment results | `ref_outs/cluster_enrich.rds` | MP x database enrichment object |
+| Final MP SCENIC directory | `ref_outs/final_mp_scenic/` | selected cells, regulons, networks |
 
-### `analysis/utils.R` — Reference Patterns (NOT sourced)
-Documents 4 canonical patterns used across 3+ scripts each. Not sourced by any script — reference only.
-- `filter_silhouette(mp_genes, sil_scores)` — remove MPs with silhouette < 0
-- `score_ucell(seurat_obj, gene_lists)` — UCell scoring wrapper
-- `load_epi_data(path)` — load EAC_Ref_epi.rds
-- `plot_correlation_heatmap(cor_matrix)` — ComplexHeatmap correlation wrapper
+Do not use `ref_outs/state_temp.rds`, `ref_outs/Auto_topmp_states.rds`, `ref_outs/Auto_cluster_states.rds`, or `ref_outs/Auto_topmp_v2_states_B.rds` for new downstream work.
 
-### `analysis/metaprograms/` — Metaprogram Analysis
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `mp_correlation_sc.R` | SC MP UCell scores, k-means states, per-study Spearman correlation, ComplexHeatmap | `EAC_Ref_epi.rds`, `UCell_default.rds` | heatmap PDFs, `state_temp.rds` |
-| `mp_correlation_pdo.R` | PDO MP UCell scores, k-means states, per-PDO Spearman correlation | PDO-specific RDS | heatmap PDFs |
-| `mp_correlation_crossdata.R` | Compare PDO vs SC MPs via Jaccard similarity and UCell correlation | `UCell_pdos.rds`, `UCell_default.rds` | cross-dataset comparison PDFs |
-| `mp_ucell_scoring.R` | Score nMP=19 MPs on all epi cells, silhouette filtering, Jaccard self-similarity | `geneNMF_metaprograms_nMP_19.rds`, `EAC_Ref_epi.rds` | `UCell_nMP19_filtered.rds`, heatmap PDFs |
-| `mp_database_correlation.R` | UCell-score database reference terms, per-sample Spearman correlation vs MPs | `cluster_enrich.rds`, `EAC_Ref_epi.rds` | `UCell_ref_terms_v2_MP19.rds`, correlation PDFs |
-| `mp_external_scoring.R` | Score cells against external 3CA MP gene sets with η² signal filter | `EAC_Ref_epi.rds`, 3CA gene lists | `UCell_3CA_MPs.rds` |
-| `robust_nmf.R` | PDO NMF programs, Jaccard similarity vs 3CA MPs, GO/Hallmark enrichment | PDO NMF RDS | enrichment heatmaps |
-| `mp_database_correlation.sh` | PBS wrapper for `mp_database_correlation.R` (ncpus=8, mem=128gb, walltime=4h, dmtcp env) | — | submits R job |
+### Current Run Order
 
-**Run:** `qsub analysis/metaprograms/mp_database_correlation.sh`
+1. Score MPs: `analysis/metaprograms/mp_ucell_scoring.R` and `analysis/metaprograms/mp_3ca_ucell_scoring.R`
+2. Define states: `analysis/cell_states/state_definition_approach_b_reg_noreg.R`
+3. Create final states: `analysis/cell_states/final_state_unresolved_relabel.R`
+4. Generate state/MP figures: `state_mp_sample_abundance.R`, `final_state_overall_proportions.R`, `top_diverse_sample_state_umap.R`, `basal_smg_mp_signature_heatmap.R`, `final_state_marker_discovery.R`, `final_mp_scenic.R`
+5. Run pseudotime/hybrid workflows as needed: `pseudotime_top_diverse_samples.R`, `pseudotime_state_distance_matrix.R`, `hybrid_pairwise_percell_heatmap.R`, `hybrid_pairwise_distance_nodeplot.R`, `pseudotime_trajectory_report_partA.R`
+6. Run clinical/bulk workflows: `tcga_mp_state_survival_reg_noreg.R`, `geo_survival_data_prep.R`, `geo_survival_mp_state_survival.R`, `bulk_tcga_geo_qc.R`, `bulk_tcga_geo_integrated_survival.R`, `tcga_mp_state_survival_qc_filtered.R`, `clinical_association_final_boxplots.R`
+7. Run CNV/subclone workflows: `cnv_profiling.R`, `cnv_subsetting.R`, `cnv_plotting.R`, `cnv_malignant_subclone_mp_heatmap.R`
+8. Optional external/reference workflows: developmental, enrichment, non-malignant NMF, and spatial scripts documented in `analysis/ANALYSIS_MAP.md`
 
-### `analysis/enrichment/` — Gene Overlap Enrichment
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `enrichment_analysis.R` | Compute gene overlap enrichment (TERM2GENE) across all databases | geneNMF MP gene lists | `cluster_enrich.rds` |
-| `enrichment_annotation.R` | MP annotation via enrichment against Hallmarks, GO, 3CA, Pan-Cancer, developmental databases | `geneNMF_metaprograms_nMP_19.rds`, `cluster_enrich.rds` | enrichment heatmap PNGs |
-| `enrichment_plotting.R` | `enrich_heatmap()` v1 and v2 functions, `list_to_df()`, `mk_sheet()` — shared plotting utilities for enrichment results | enrichment data frames | heatmap plots, Excel sheets |
-| `nmf_enrichment.R` | NMF-specific enrichment, Jaccard heatmap, writexl export | NMF result RDS, gene databases | enrichment heatmaps, `.xlsx` |
-| `wnt_pathway.R` | WNT pathway-specific analysis (WNT_CM, WNT_Canonical custom gene sets, Jaccard overlap) | `cluster_enrich.rds` | WNT enrichment plots |
-| `Auto_reference_epi_mp_ucell_heatmap.R` | Enrichment-facing entry point for scoring filtered scATLAS MPs with UCell in adult oesophagus, adult stomach, and Barretts epithelial references, then plotting mean MP activity with the developmental row order | `geneNMF_metaprograms_nMP_19.rds`, `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/`, `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Stomach/data_9_9_annotated_seurat_all_ut.rds`, `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Barretts/alldatahighquality.rds` | `ref_outs/Auto_external_epi_mp_ucell/` (adult/Barretts/combined heatmaps, summary CSV/RDS, cached oesophagus subset RDS) |
+### Output Tiers, Caches, And Logs
 
-### `analysis/clinical/` — Survival & Clinical Analysis
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `tcga_data_prep.R` | Download/process TCGA-ESCA data, merge GDC + cBioPortal clinical, Ensembl→Symbol conversion, CIBERSORTx signature prep | GDC/cBioPortal APIs | `tcga_esca_meta.rds`, TPM matrix |
-| `survival_cibersort.R` | KM survival analysis (median/quartile/optimal splits), Cox PH, forest plots using DEG GSVA, MP GSVA, CIBERSORTx deconvolution | `meta_full_epi.rds`, `state_temp.rds`, `states_degs.rds` | 6 survival PDFs in `ref_outs/` |
-| `survival_clinical_mps.R` | Compare Pre vs Post treatment MPs, TCGA Cox survival using UCell/3CA MP scores + cell-cycle regression | `UCell_3CA_MPs.rds`, TCGA data | survival comparison PDFs |
+New long-running scripts should write outputs into clear tiers beneath their analysis output directory:
+- `intermediate/`: cacheable RDS/model/matrix objects used for replotting
+- `tables/`: final CSV/TSV/XLSX outputs
+- `figures/`: final PDF/PNG/SVG figures
+- `logs/`: run summaries and session information
+- `reports/`: multi-page narrative PDFs or report bundles
 
-**Critical:** Always filter `states_degs.rds` with `group_by(cluster) %>% slice_max(n=100, order_by=avg_log2FC)` before use.
+Plot-only changes should be reproducible from `intermediate/` without rerunning heavy computation. Support `SCREF_FORCE_REBUILD=TRUE` to ignore caches and `SCREF_REPLOT_ONLY=TRUE` where practical. Long-running scripts should save a lightweight run summary with start/end time, input files, output files, parameters, cache reuse status, and session/package versions when relevant.
 
-### `analysis/cnv/` — Copy Number Variation
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `cnv_profiling.R` | Run infercna to infer CNV profiles on epithelial subsets | per-sample `_epi.rds` files | CNV profiles |
-| `cnv_subsetting.R` | Subset cells by CNA score, ComplexHeatmap CNA visualisation | CNV profile outputs | CNA heatmaps, filtered RDS |
-| `cnv_plotting.R` | Publication-ready CNV heatmaps with circlize colour scales | CNV matrices | CNV plot PDFs |
-| `Auto_malignant_subclone_mp_heatmap.R` | CNA subclone versus malignant metaprogram/state heterogeneity; uses fixed subclone colours and chromosome-arm distinctness checks for subclone division | per-sample InferCNA outputs, epithelial RDS, MP UCell scores, state vectors | sample-page and cohort-summary PDFs plus subclone/statistical CSVs |
+### Plot Readability
 
-Note: all 3 CNV scripts share identical library set: `data.table, dplyr, ComplexHeatmap, circlize, RColorBrewer, Seurat, infercna`.
+All final figures must be readable on PowerPoint slides. Increase figure size or split pages rather than shrinking labels to unreadable sizes. Explicitly tune font size, legend text, legend title, row/column names, point size, line width, and heatmap legend sizes relative to the output dimensions.
 
-Note: `Auto_malignant_subclone_mp_heatmap.R` now uses a label-stable subclone palette and the published Nature-paper subclone division style: top CNA-signal genes, Louvain kNN clustering with `k=15`, chromosome-arm CNA calls at ±0.10, dropping provisional clusters below 20 cells or 5% sample fraction, merging same-shape strength-scaled profiles, and otherwise retaining robust arm-level pattern shifts. There is no silhouette-based subclone selection.
+### Methodology Documentation
 
-### `analysis/cell_states/` — Cell Type & State Assignment
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `cell_annotation.R` | Automated cell type annotation using marker gene scoring | per-sample annotated RDS | updated `celltype` metadata |
-| `cell_typing.R` | Manual cell type assignment via `classify_one_ident()` and `combine_marker_scores()` | annotated RDS, marker lists | updated cell type calls |
-| `state_assignment.R` | MP z-score residual computation (regress out cell-cycle MPs), cosine-similarity state assignment (SC: 5 MPs → 4 states; PDO: 4 MPs → 6 states), ComplexHeatmap visualisations | `EAC_Ref_epi.rds`, MP UCell scores | state assignment vectors, heatmaps |
-| `states_qc.R` | QC comparison of Defined vs Unresolved cells across 8 continuous + categorical features (merged from 2 original scripts) | `EAC_Ref_epi.rds`, state assignments | `states_status_quality_comparison.pdf` |
-| `states_umap.R` | UMAP embedding coloured by manual states | `EAC_Ref_epi.rds`, state assignments | UMAP PDFs |
-| `cancer_summary.R` | Summary statistics of cancer/malignant cell counts per sample | per-sample `_epi_f.rds` files | summary CSV/plots |
-| `Auto_states_cluster.R` | Louvain clustering on CC-regressed, Z-normed MP scores (PCA → FindNeighbors → FindClusters at res 0.5/0.8/1.0), UMAP, 5 visualisations | `EAC_Ref_epi.rds`, `geneNMF_metaprograms_nMP_19.rds`, `UCell_nMP19_filtered.rds` | `Auto_cluster_states.rds`, `Auto_cluster_umap_embeddings.rds`, `Auto_cluster_mp_adj.rds`, cluster PDFs |
-| `Auto_states_topmp.R` | Assign cells to dominant non-CC MP (max Z-score, threshold 0.5 → Unresolved), 4 visualisations | `EAC_Ref_epi.rds`, `geneNMF_metaprograms_nMP_19.rds`, `UCell_nMP19_filtered.rds` | `Auto_topmp_states.rds`, `Auto_topmp_mp_adj.rds`, topmp PDFs |
-| `Auto_states_comparison.R` | Compare cluster vs top-MP states: confusion matrix, ARI/NMI, side-by-side UMAP, bootstrap stability (100×80%), Cramér's V study-bias, DEG + fgsea Hallmark coherence | `Auto_cluster_states.rds`, `Auto_topmp_states.rds`, `Auto_cluster_umap_embeddings.rds`, `Auto_cluster_mp_adj.rds`, `Auto_topmp_mp_adj.rds` | `Auto_comparison_summary.csv`, comparison PDFs |
-| `Auto_states_cluster.sh` | PBS wrapper for `Auto_states_cluster.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
-| `Auto_states_topmp.sh` | PBS wrapper for `Auto_states_topmp.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
-| `Auto_states_comparison.sh` | PBS wrapper for `Auto_states_comparison.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
-| `Auto_states_topmpB_reg_noreg.R` | Unified Approach B state assignment with `reg/noreg` parameter; runs both modes and writes paired heatmap/proportion/CC-score figures in shared PDFs | `EAC_Ref_epi.rds`, `geneNMF_metaprograms_nMP_19.rds`, `UCell_nMP19_filtered.rds`, `meta_full_epi.rds`, `Cell_Cycle_Genes.csv` | `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds`, reg+noreg comparison PDFs, combined summary CSV |
-| `Auto_states_hybrid_pairwise_nodeplot.R` | Pairwise hybrid network plot (real-state nodes + pairwise hybrid edges), excludes >2-class hybrids from edges | `Auto_topmp_v2_states_B.rds`, `Auto_topmp_v2_mp_adj.rds` | `Auto_topmp_v2_hybrid_pairwise_nodeplot.pdf`, pairwise summary CSV |
-| `Auto_states_unresolved_pan_cancer_reg_noreg.R` | Unified unresolved-cell pan-cancer subclassification with `reg/noreg` parameter; outputs per-mode subclass calls and paired heatmaps (with CNA + CC annotations) | `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `UCell_3CA_MPs.rds`, `meta_full_epi.rds` | `Auto_topmp_v2_reg_noreg_unresolved_pan_cancer_heatmap.pdf`, per-mode unresolved CSV/RDS, combined summary CSV |
-| `Auto_sample_abundance.R` | Per-sample abundance/proportion plots for MPs (excl. CC, incl. CC) and states; sorted by diversity and by study; 6 stacked-bar panels in one PDF | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds` | `ref_outs/sample_abundance/Auto_sample_abundance.pdf` |
-| `Auto_sample_abundance.sh` | PBS wrapper for `Auto_sample_abundance.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
-| `Auto_pseudotime_states.R` | Monocle3 pseudotime: Part A — top 12 samples by diversity with 5 state labels (root=Classic_Proliferative); Part B — 3 state subsets (Barretts/EMT/Intestinal) with MP labels, per-sample trajectory (root MPs: MP17/MP13/MP18) | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds` | `ref_outs/pseudotime/partA/`, `ref_outs/pseudotime/partB/`, summary CSV |
-| `Auto_pseudotime_states.sh` | PBS wrapper for `Auto_pseudotime_states.R` (ncpus=8, mem=128gb, walltime=8h, dmtcp env) | — | submits R job |
-| `Auto_unresolved_relabel.R` | Unresolved cell relabelling via pan-cancer topMP; selects top 3 abundant MPs by sample+study coverage, creates expanded 8-state labels, re-plots proportion/heatmap, TCGA survival volcano | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `UCell_3CA_MPs.rds`, `meta_full_epi.rds`, TCGA data | `ref_outs/unresolved_states/` (states RDS, heatmap/proportion/volcano PDFs, coverage CSV) |
-| `Auto_unresolved_relabel.sh` | PBS wrapper for `Auto_unresolved_relabel.R` (ncpus=8, mem=96gb, walltime=4h, dmtcp env) | — | submits R job |
-| `Auto_final_mp_scenic.R` | Final-MP-focused SCENIC workflow; assigns cells to curated final MPs (including MP1/7/9 and the 3 retained 3CA MPs), runs SCENIC on balanced high-confidence cells, and visualises regulon specificity/network structure using full `MP# + description` labels | `EAC_Ref_epi.rds`, `Auto_final_states.rds`, `UCell_nMP19_filtered.rds`, `UCell_3CA_MPs.rds`, `geneNMF_metaprograms_nMP_19.rds`, `task4_unresolved_states/Auto_task4_unresolved_relabel_mp_coverage.csv`, 3CA gene list CSV, cisTarget feather DBs | `ref_outs/final_mp_scenic/` (selected-cell CSV/PDF, gene sets, regulon AUC/RSS RDS, regulon heatmap PDF, network PDF/CSV, regulon target CSV) |
-| `Auto_final_mp_scenic.sh` | PBS wrapper for `Auto_final_mp_scenic.R` (ncpus=12, mem=160gb, walltime=16h, dmtcp env; requires `SCENIC_DB_DIR` or default DB path under `ref_outs/final_mp_scenic/cistarget_databases`) | — | submits R job |
-| `Auto_hybrid_pairwise_v2.R` | Pairwise hybrid classification using top-2 MP groups (no multi-class concept); network nodeplot with state nodes + pairwise hybrid edges | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds`, `Auto_topmp_v2_noreg_group_max.rds` | `ref_outs/hybrid_v2/Auto_hybrid_pairwise_v2_nodeplot.pdf`, `Auto_hybrid_pairwise_v2_subtypes.rds` |
-| `Auto_hybrid_pairwise_v2.sh` | PBS wrapper for `Auto_hybrid_pairwise_v2.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
-| `Auto_task6_hybrid_pairwise_percell_heatmap.R` | Pairwise-only hybrid heatmap and subdivision (Approach B style rewrite); output includes per-cell heatmap, pairwise matrix, and UMAPs | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `UCell_nMP19_filtered.rds` | `Auto_task6_hybrid_heatmap.pdf`, `Auto_task6_hybrid_pairwise_heatmap.pdf`, `Auto_task6_hybrid_umap_top12.pdf` |
-| `Auto_task6_hybrid_pairwise_percell_heatmap.sh` | PBS wrapper for `Auto_task6_hybrid_pairwise_percell_heatmap.R` (ncpus=4, mem=64gb, walltime=2h, dmtcp env) | — | submits R job |
-| `Auto_top1_sample_umap_all_states.R` | Plot UMAP for the top-1 most diverse sample, including Unresolved and Hybrid states, using provided group colors | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds` | `Auto_top1_sample_umap_all_states.pdf` |
-| `Auto_overall_state_proportions.R` | Overall stacked barplot of cell state proportions for the 5 states + Unresolved + Hybrid | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds` | `Auto_overall_state_proportions.pdf` |
-| `Auto_final_percell_heatmap.R` | High-resolution heatmap of finalized states across 8,000 cells (all cells, sampled per state) | `EAC_Ref_epi.rds`, `Auto_final_states.rds`, `UCell_nMP19_filtered.rds` | `Auto_final_percell_heatmap.pdf` |
-| `Auto_pseudotime_batch_correction.R` | Pseudotime analysis with Harmony and scVI batch correction | `EAC_Ref_epi.rds`, `Auto_final_states.rds` | `Auto_partA_Harmony_pseudotime.pdf`, `Auto_partA_scVI_pseudotime.pdf` |
-| `Auto_basal_smg_mp_signature_heatmap.R` | Basal vs SMG-like state heatmap grouped by top state-defining MP; scores 8 gene signatures (Squamous, Gastric Columnar, Intestinal Metaplasia, SMG-like Secretory, IFNα, IFNγ, Cell-cycle, Buffa Hypoxia A) with UCell; outputs 6-page PDF: per-cell normalized heatmap, aggregated normalized heatmap, **normalized bubble plot**, per-cell raw heatmap, aggregated raw heatmap, **raw bubble plot**; bubble plots show detection rate (size) and mean score (color) per MP group following nature-figure style | `EAC_Ref_epi.rds`, `Auto_topmp_v2_noreg_states_B.rds`, `Auto_topmp_v2_noreg_mp_adj.rds`, `geneNMF_metaprograms_nMP_19.rds`, `Cell_Cycle_Genes.csv` | `ref_outs/Auto_basal_smg_mp_signature_heatmap/Auto_basal_smg_mp_signature_heatmap.pdf`, `Auto_basal_smg_bubble_normalized.svg`, `Auto_basal_smg_bubble_raw.svg`, summary CSV, data RDS |
-
-
-### `analysis/plotting/` — Publication Figures
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `publication_umap.R` | Publication-ready UMAP figures (DimPlot, FeaturePlot) with polished themes | `EAC_Ref_epi.rds`, state metadata | UMAP PDFs |
-| `gene_expression_heatmap.R` | Gene expression heatmap using ComplexHeatmap (averaged by state/cluster) | `EAC_Ref_epi.rds`, gene lists | expression heatmap PDFs |
-| `clinical_variable_plots.R` | Boxplots and violin plots of clinical variables (treatment, stage) by cell state | `meta_full_epi.rds`, state assignments | clinical variable PDFs |
-| `Auto_clinical_variable_plots_topmp_v2B_reg_noreg.R` | Unified clinical association workflow with `reg/noreg` parameter; full variable coverage and paired outputs in one combined PDF | `meta_full_epi.rds`, `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds`, concise clinical xlsx | `Auto_clinical_assoc_topmp_v2B_reg_noreg_combined.pdf`, combined summary CSV |
-| `Auto_clinical_assoc_boxplots_final.R` | Alternative clinical association workflow: one page per clinical variable with thin sample-level boxplots across MPs or finalized states, plus per-feature Wilcoxon/Kruskal statistics | `meta_full_epi.rds`, `Auto_final_states.rds`, `UCell_nMP19_filtered.rds`, concise clinical xlsx | `Auto_clinical_assoc_mp_boxplots_final.pdf`, `Auto_clinical_assoc_state_boxplots_final.pdf`, MP/state stats CSVs |
-| `qc_heatmap.R` | QC metric heatmap via `plot_heatmap()` — unique function not in main pipeline | per-sample RDS, QC metadata | QC heatmap PDFs |
-
-### `analysis/clinical/` — Survival & Clinical Analysis
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `Auto_survival_clinical_mps_v2_reg_noreg.R` | Unified TCGA state survival workflow with `reg/noreg` parameter; separate state volcano panels and KM panels per histology in shared PDFs | `geneNMF_metaprograms_nMP_19.rds`, TCGA meta+TPM inputs, `Auto_topmp_v2_reg_states_B.rds`, `Auto_topmp_v2_noreg_states_B.rds` | `Auto_survival_tcga_state_volcano_reg_noreg.pdf`, `Auto_survival_tcga_state_km_reg_noreg.pdf`, combined state Cox CSV, summary CSV |
-| `Auto_cibersortx_reference.R` | Generate CIBERSORTx S-mode reference from full scATLAS (`EAC_Ref_merged_strict.rds`) covering all cell types (proportional downsampling to ~3000 cells); outputs SC reference matrix, cell labels, and copies TCGA mixture file | `EAC_Ref_merged_strict.rds` (column `celltype_update`) | `ref_outs/cibersortx/CIBERSORTx_sc_reference.txt`, `CIBERSORTx_cell_labels.csv`, `TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt` |
-| `Auto_cibersortx_reference.sh` | PBS wrapper for `Auto_cibersortx_reference.R` (ncpus=4, mem=96gb, walltime=2h, dmtcp env) | — | submits R job |
-
-### `analysis/summary/` — Cross-Sample Summary
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `cross_sample_summary.R` | Summary statistics (cell counts, QC metrics, composition) across all samples | `ref_outs/by_samples/` per-sample RDS files | summary tables and plots |
-
-**Run interactively:** `Rscript analysis/summary/cross_sample_summary.R`
-
-### `analysis/developmental/` — Developmental Gene Reference
-| File | Purpose | Key Inputs | Key Outputs |
-| :--- | :--- | :--- | :--- |
-| `developmental.R` | Build developmental gene reference from 4 external xlsx files (Early Embryogenesis, Organogenesis, Normal Development, Adult Epithelium) | xlsx files in spatialtranscriptomics project | `enrich_dev.rds`, per-stage RDS files |
-| `Auto_external_epi_mp_ucell_heatmap.R` | Score filtered scATLAS MPs with UCell in adult oesophagus, adult stomach, and Barretts epithelial references; aggregate mean scores by matched reference cell type using the same adult/barretts row order as `developmental.R` | `geneNMF_metaprograms_nMP_19.rds`, `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/`, `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Stomach/data_9_9_annotated_seurat_all_ut.rds`, `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Barretts/alldatahighquality.rds` | `ref_outs/Auto_external_epi_mp_ucell/` (adult/Barretts/combined heatmaps, summary CSV/RDS, cached oesophagus subset RDS) |
-
-**Output path:** `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/enrich_dev.rds`
-This path is also used by `enrichment/enrichment_plotting.R`.
-
-### `analysis/non_malignant_nmf/` — Non-Malignant Cell NMF
-Runs GeneNMF on non-malignant cell types (macrophage, fibroblast, endothelial, nk.cell, plasma, cd4, cd8).
-
-| File | Purpose |
-| :--- | :--- |
-| `Auto_geneNMF_celltype.R` | GeneNMF analysis per cell type (receives `celltype` arg) |
-| `Auto_anno_celltype.R` | Annotate NMF programs per cell type (receives `celltype` arg) |
-| `run_geneNMF.sh` | Parameterised PBS job runner for geneNMF (ncpus=8, mem=72gb, walltime=8h, gnmf env) |
-| `run_annotation.sh` | Parameterised PBS job runner for annotation (ncpus=2, mem=16gb, walltime=3h, dmtcp env) |
-| `submit_geneNMF_all.sh` | Master: submits geneNMF jobs for all 7 cell types (throttled ≤46 concurrent) |
-| `submit_annotation_all.sh` | Master: submits annotation jobs for all 7 cell types (checks RDS existence first) |
-
-**Run:** `qsub analysis/non_malignant_nmf/submit_geneNMF_all.sh`  
-Or per cell type: `qsub -v celltype=macrophage analysis/non_malignant_nmf/run_geneNMF.sh`
-
-**Note:** geneNMF R uses `nk.cell` as celltype key; annotation R uses `nk` as ct_map key. Submit scripts pass the correct key for each.
-
-### `analysis/legacy/` — Archived Code
-| File | Purpose |
-| :--- | :--- |
-| `ref_pipeline_archive.R` | Archive of original monolithic pipeline draft (1166L). Contains unique functions: `write_count_matrix()`, `manual_celltyping()`, `plot_coexpression()`. Not intended for execution. |
+Methodology files live under `analysis/methodology/` with subfolders matching the corresponding `analysis/` script folder. Folder-level methodology is acceptable for related scripts; complex workflows should also get script-specific methodology files. The methodology should document the implemented logic in operational detail, including external downloads or absolute reference files.
 
 ### Critical Recurring Patterns
 
@@ -375,11 +279,11 @@ Evaluate the impact of cell-cycle (CC) regression on state assignments and downs
 - **noreg**: Z-score MP scores directly.
 Required for establishing the robustness of state-linked clinical findings.
 
-**Final decision: noreg + Approach B.** All new scripts (Auto_sample_abundance, Auto_pseudotime_states, Auto_unresolved_relabel, Auto_hybrid_pairwise_v2, Auto_cibersortx_reference) use **noreg Approach B only** — no reg/noreg parameterisation.
+**Final decision: noreg + Approach B.** All new scripts (state_mp_sample_abundance, pseudotime_top_diverse_samples, final_state_unresolved_relabel, hybrid_pairwise_percell_heatmap, cibersortx_sc_reference_export) use **noreg Approach B only** — no reg/noreg parameterisation.
 
 **Final MP SCENIC panel.** The curated final-MP regulatory workflow uses 14 scATLAS MPs (`MP1/7/9/2/17/14/5/10/8/13/12/18/16/15`) plus the 3 retained 3CA MPs from unresolved relabeling (coverage thresholds: `n_samples >= 50`, `n_studies >= 6`, `pct_cells >= 1`). All exported plots should label columns/states as full `MP# + description` strings rather than short aliases.
 
-**SCENIC databases.** `Auto_final_mp_scenic.R` expects human cisTarget `.feather` databases via `SCENIC_DB_DIR` (or the default `ref_outs/final_mp_scenic/cistarget_databases`). The script supports `prepare_only=true` to validate cell selection and final-MP gene sets when SCENIC packages or databases are not yet installed.
+**SCENIC databases.** `final_mp_scenic.R` expects human cisTarget `.feather` databases via `SCENIC_DB_DIR` (or the default `ref_outs/final_mp_scenic/cistarget_databases`). The script supports `prepare_only=true` to validate cell selection and final-MP gene sets when SCENIC packages or databases are not yet installed.
 
 **SCENIC compatibility note (25 Mar 2026).** The files in `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/cistarget_databases/` with names like `hg38_*full_tx_v10_clust*.feather` are not compatible with the R `SCENIC`/`RcisTarget` workflow here because they lack the required `features` index column. A verified RcisTarget-compatible replacement directory is `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/cistarget_databases_rcistarget_mc9nr/`, containing:
 - `hg38__refseq-r80__500bp_up_and_100bp_down_tss.mc9nr.feather`
@@ -387,7 +291,7 @@ Required for establishing the robustness of state-linked clinical findings.
 On this cluster, `SCENIC` also needs two small runtime compatibility patches:
 - fallback from `motifAnnotations_hgnc` to `motifAnnotations_hgnc_v9`
 - sparse-aware `geneFiltering()` because the package-level base `rowSums()` call fails on `dgCMatrix`
-`Auto_final_mp_scenic.R` now patches both automatically before calling the SCENIC workflow.
+`final_mp_scenic.R` now patches both automatically before calling the SCENIC workflow.
 
 **Final-state downstream plotting**
 - Prefer `Auto_final_states.rds` for downstream clinical/state association plots when it exists. This object includes the unresolved relabel updates and the current 8-state naming (`Immune Infiltrating`, `Basal to Intestinal Metaplasia`, `3CA_EMT_and_Protein_maturation`).
@@ -413,7 +317,7 @@ Future agents must update this file when they:
 - Find a new analysis script and define its purpose.
 - Locate new input or output file paths.
 - Spot a recurring pattern or technical hurdle.
-- Create a new `Auto_` script.
+- Create a new analysis script.
 
 Append new findings to the appropriate section. Don't rewrite existing documentation unless fixing an error.
 
@@ -514,14 +418,14 @@ The `.md` companion doc retains full technical detail.
 **Directory structure:** Each update cycle gets its own subfolder:
 `updates/DDmon/` containing `figures/`, `summaries/`, `.tex`, `.md`, and `_plan.md`.
 
-**Machine-readable summaries (convention for all future `Auto_` scripts):**
+**Machine-readable summaries (convention for all future analysis scripts):**
 Every script that produces plots must also save a small (< 100 KB) `.csv` or `.txt`
 summary of key metrics directly into `updates/new_updates/summaries/` so AI agents
 can read results on the login node without loading heavy `.rds` files, create folder if not exist.
 
 ## 25 Mar 2026 Pseudotime State-Distance Scripts
 
-- `analysis/cell_states/Auto_pseudotime_state_distance_matrix.R`
+- `analysis/cell_states/pseudotime_state_distance_matrix.R`
   - Purpose: Part A only, all-sample Monocle3 state-distance workflow for the 5 primary `noreg` Approach B states.
   - Inputs: `ref_outs/EAC_Ref_epi.rds`, `ref_outs/Auto_topmp_v2_noreg_states_B.rds`
   - Sample inclusion defaults: root state `>= 20` cells, at least one second state `>= 20` cells, total primary-state cells `>= 80`, and at least 2 represented states over threshold.
@@ -533,17 +437,17 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - Additional plotting output: also orders each valid sample with `Basal to Intestinal Metaplasia` as the root and saves a state-only trajectory page into `ref_outs/state_distance_pseudotime/Auto_state_pseudotime_all_valid_samples.pdf`, plus per-sample pseudotime vectors in `ref_outs/state_distance_pseudotime/sample_state_trajectories/`.
   - Outputs: `ref_outs/state_distance_pseudotime/` containing per-sample CSVs, final matrix CSV/RDS files, the all-sample basal-root trajectory PDF, per-sample pseudotime `.rds` files, and a comparison heatmap PDF.
 
-- `analysis/cell_states/Auto_states_hybrid_pairwise_nodeplot_distance.R`
+- `analysis/cell_states/hybrid_pairwise_distance_nodeplot.R`
   - Purpose: hybrid pairwise node plot with state positions derived from a chosen biological distance matrix instead of fixed circular spacing.
   - Inputs: `ref_outs/Auto_topmp_v2_noreg_states_B.rds`, `ref_outs/Auto_topmp_v2_noreg_group_max.rds`, `ref_outs/state_distance_pseudotime/Auto_state_distance_matrices.rds`
   - Layout: compares classical MDS (`cmdscale`) and non-metric MDS (`isoMDS`), then keeps the 2D fit with the fewest nearest-neighbor mismatches and lowest residual distance error after a single global scale factor.
   - Outputs: `ref_outs/task6_hybrid_pairwise_distance/` with per-method nodeplot/heatmap PDFs, edge CSVs, layout CSVs, fit-diagnostic CSVs (`Auto_task6_hybrid_pairwise_fit_pairs_<method>.csv`, `Auto_task6_hybrid_pairwise_fit_nearest_<method>.csv`), plus combined all-method PDFs: `Auto_task6_hybrid_pairwise_nodeplot_all_methods.pdf` and `Auto_task6_hybrid_pairwise_distance_heatmap_all_methods.pdf`
 
-- `analysis/cell_states/Auto_pseudotime_state_distance_matrix.sh`
-  - PBS wrapper for `Auto_pseudotime_state_distance_matrix.R` (`ncpus=8`, `mem=128gb`, `walltime=12h`, `dmtcp` env)
+- `analysis/cell_states/pseudotime_state_distance_matrix.sh`
+  - PBS wrapper for `pseudotime_state_distance_matrix.R` (`ncpus=8`, `mem=128gb`, `walltime=12h`, `dmtcp` env)
 
-- `analysis/cell_states/Auto_states_hybrid_pairwise_nodeplot_distance.sh`
-  - PBS wrapper for `Auto_states_hybrid_pairwise_nodeplot_distance.R` (`ncpus=4`, `mem=32gb`, `walltime=2h`, `dmtcp` env)
+- `analysis/cell_states/hybrid_pairwise_distance_nodeplot.sh`
+  - PBS wrapper for `hybrid_pairwise_distance_nodeplot.R` (`ncpus=4`, `mem=32gb`, `walltime=2h`, `dmtcp` env)
 
 - `analysis/cell_states/Auto_submit_state_distance_and_nodeplot.sh`
   - Convenience submitter: submits the distance job first, then submits the nodeplot job with `afterok` dependency and optional `distance_method` argument.
@@ -561,7 +465,7 @@ can read results on the login node without loading heavy `.rds` files, create fo
 ####################
 ## 25 Mar 2026 Non-Malignant MP Cross-Celltype Correlation Script
 
-- `analysis/non_malignant_nmf/Auto_mp_cross_celltype_correlations.R`
+- `analysis/non_malignant_nmf/mp_cross_celltype_correlations.R`
   - Purpose: build a full cross-celltype MP co-occurrence network across the available compartments (`cancer`, `macrophage`, `fibroblast`, `endothelial`, `nk`, `plasma`, `cd4`, `cd8`) using the complete `EAC_Ref_merged_strict.rds` atlas, then visualise positive and negative associations in a Fig. 5a-style network layout.
   - MP filtering: applies the standard silhouette filter to every compartment, then keeps MPs with positive-sample coverage `> 5` at the active cutoff before pairwise correlation testing.
   - Adjusted-score rule: a cell is MP-positive when `UCell > cutoff`; default cutoff is `0.25` (not `0.5`), because `0.5` is overly sparse for the current UCell score ranges. The script writes a cutoff-sensitivity CSV/PDF so this can be re-tuned.
@@ -574,15 +478,15 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - Outputs: `ref_outs/non_malignant_mp_correlations/` containing per-compartment adjusted-score CSVs, `Auto_cross_celltype_node_summary.csv`, `Auto_cross_celltype_cutoff_sensitivity.csv/pdf`, shared-sample summaries, all/positive/negative correlation CSVs, a focal-celltype-paged bubble PDF, network PDFs, LR pair tables, `Auto_cross_celltype_positive_edges_lr_annotated.csv`, an LR-annotated positive network PDF, and one formatted focal-celltype workbook (`Auto_cross_celltype_ligand_receptor_pairs_by_focal_celltype.xlsx`).
   - Summary output: `updates/new_updates/summaries/Auto_mp_cross_celltype_correlations_summary.csv`
   - Ligand-receptor note: prioritises `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx`; if unavailable, the script falls back to local candidate files or `RAMILOWSKI_LR_PATH`, and otherwise writes `Auto_cross_celltype_ligand_receptor_status.csv` with `missing`.
-  - Methodology: `analysis/methodology/Auto_mp_cross_celltype_correlations_methodology.md`
+  - Methodology: `analysis/methodology/non_malignant_nmf/mp_cross_celltype_correlations_methodology.md`
 
-- `analysis/non_malignant_nmf/Auto_mp_cross_celltype_correlations.sh`
-  - PBS wrapper for `Auto_mp_cross_celltype_correlations.R` (`ncpus=8`, `mem=128gb`, `walltime=8h`, `dmtcp` env) for the direct `EAC_Ref_merged_strict.rds` run; optional PBS variable `cutoff` is forwarded as the first R argument (for example `qsub -v cutoff=0.2 analysis/non_malignant_nmf/Auto_mp_cross_celltype_correlations.sh`).
+- `analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh`
+  - PBS wrapper for `mp_cross_celltype_correlations.R` (`ncpus=8`, `mem=128gb`, `walltime=8h`, `dmtcp` env) for the direct `EAC_Ref_merged_strict.rds` run; optional PBS variable `cutoff` is forwarded as the first R argument (for example `qsub -v cutoff=0.2 analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh`).
 ####################
 ####################
 ## 25 Mar 2026 GEO Bulk Survival Update
 
-- `analysis/clinical/Auto_geo_survival_data_prep.R`
+- `analysis/clinical/geo_survival_data_prep.R`
   - Purpose: download and prepare external GEO bulk-expression cohorts for MP/state survival analysis.
   - Current datasets:
     - `GSE19417` (public GEO survival metadata available)
@@ -591,8 +495,8 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - Probe-level series matrices are collapsed to gene-symbol matrices using GEO platform annotation (`Gene symbol`) and a highest-variance probe-per-gene rule.
   - Outputs: `ref_outs/geo_survival/Auto_geo_survival_dataset_manifest.csv/.rds`, per-dataset metadata RDS/CSV, gene-level expression RDS, and probe-map CSVs.
 
-- `analysis/clinical/Auto_geo_survival_clinical_mps_v2_reg_noreg.R`
-  - Purpose: run GEO bulk MP/state survival analysis using the `survival_clinical_mps_v2_reg_noreg.R` structure adapted for GEO bulk input.
+- `analysis/clinical/geo_survival_mp_state_survival.R`
+  - Purpose: run GEO bulk MP/state survival analysis using the `tcga_mp_state_survival_reg_noreg.R` structure adapted for GEO bulk input.
   - Shared loops retained:
     - DGE vs reference overlap plots
     - `split_method` loop: `continuous`, `median`, `q1q4`
@@ -608,8 +512,8 @@ can read results on the login node without loading heavy `.rds` files, create fo
     - one page per split method
     - each page is side-by-side: left = `eac_only_reference`, right = `eac_only_dge`
   - Summary CSV: `updates/new_updates/summaries/Auto_geo_survival_clinical_mps_v2_reg_noreg_summary.csv`
-- `analysis/clinical/Auto_geo_survival_clinical_mps_v2_reg_noreg.sh`
-  - PBS wrapper for `Auto_geo_survival_clinical_mps_v2_reg_noreg.R`
+- `analysis/clinical/geo_survival_mp_state_survival.sh`
+  - PBS wrapper for `geo_survival_mp_state_survival.R`
   - Resources: `ncpus=8`, `mem=96gb`, `walltime=06:00:00`, env `dmtcp`
 
 - GEO dataset-specific notes:
@@ -626,7 +530,7 @@ can read results on the login node without loading heavy `.rds` files, create fo
 ####################
 ## 30 Mar 2026 Cross-platform Bulk QC + Integrated Survival
 
-- `analysis/clinical/Auto_bulk_tcga_geo_qc.R`
+- `analysis/clinical/bulk_tcga_geo_qc.R`
   - Purpose: harmonize TCGA whole-bulk RNA-seq and GEO `GSE19417` bulk microarray for cross-platform QC before pooled survival analysis.
   - Harmonization rules:
     - shared genes only (`TCGA ∩ GEO`)
@@ -641,7 +545,7 @@ can read results on the login node without loading heavy `.rds` files, create fo
     - automatic removal is moderately stringent: low-expression outliers are removed directly, and histology mismatches are removed when also inconsistent in local/global PCA structure
   - Outputs: `ref_outs/bulk_crossplatform/` with `Auto_bulk_crossplatform_qc_review.pdf`, before/after PCA PDFs, full sample QC table, removed/retained CSVs, preprocessing summary CSV, QC objects RDS, and summary CSV `updates/new_updates/summaries/Auto_bulk_tcga_geo_qc_summary.csv`
 
-- `analysis/clinical/Auto_bulk_tcga_geo_integrated_survival.R`
+- `analysis/clinical/bulk_tcga_geo_integrated_survival.R`
   - Purpose: rerun MP/state survival after QC on a harmonized TCGA + GEO bulk matrix, rather than reusing platform-specific scores.
   - Scoring rules:
     - recompute scores directly from harmonized expression using gene-set mean expression
@@ -661,11 +565,11 @@ can read results on the login node without loading heavy `.rds` files, create fo
     - each page is side-by-side: left = `eac_only_reference`, right = `eac_only_dge`
   - Output directory: `ref_outs/bulk_crossplatform/survival/`
   - Key outputs: `Auto_bulk_crossplatform_survival_results.csv`, `Auto_bulk_crossplatform_direction_summary.csv`, `Auto_bulk_crossplatform_interaction_results.csv`, `Auto_bulk_crossplatform_survival_volcano_eac_only.pdf`, MP score distribution PDF, and summary CSV `updates/new_updates/summaries/Auto_bulk_tcga_geo_integrated_survival_summary.csv`
-- `analysis/clinical/Auto_bulk_tcga_geo_integrated_survival.sh`
-  - PBS wrapper for `Auto_bulk_tcga_geo_integrated_survival.R`
+- `analysis/clinical/bulk_tcga_geo_integrated_survival.sh`
+  - PBS wrapper for `bulk_tcga_geo_integrated_survival.R`
   - Resources: `ncpus=8`, `mem=96gb`, `walltime=06:00:00`, env `dmtcp`
 
-- `analysis/clinical/Auto_survival_clinical_mps_v2_reg_noreg_filtered.R`
+- `analysis/clinical/tcga_mp_state_survival_qc_filtered.R`
   - Purpose: rerun the TCGA whole-bulk survival volcano workflow on the QC-retained TCGA samples only.
   - Input filter: keeps `dataset == "TCGA"` and `integration_keep == TRUE` from `ref_outs/bulk_crossplatform/Auto_bulk_crossplatform_qc_sample_table.csv`
   - Methods retained:
@@ -678,17 +582,17 @@ can read results on the login node without loading heavy `.rds` files, create fo
     - one page per split method
     - 2 x 2 layout: malignant reference, malignant DGE, whole-bulk reference, whole-bulk DGE
   - Outputs: `ref_outs/task2_filtered_survival/Auto_task2_filtered_survival_volcano_methods_reg_noreg.pdf`, filtered Cox CSV, and summary CSV `updates/new_updates/summaries/Auto_survival_clinical_mps_v2_reg_noreg_filtered_summary.csv`
-- `analysis/clinical/Auto_survival_clinical_mps_v2_reg_noreg_filtered.sh`
-  - PBS wrapper for `Auto_survival_clinical_mps_v2_reg_noreg_filtered.R`
+- `analysis/clinical/tcga_mp_state_survival_qc_filtered.sh`
+  - PBS wrapper for `tcga_mp_state_survival_qc_filtered.R`
   - Resources: `ncpus=8`, `mem=128gb`, `walltime=08:00:00`, env `dmtcp`
-- `analysis/clinical/Auto_survival_clinical_mps_v2_reg_noreg.sh`
-  - PBS wrapper for `survival_clinical_mps_v2_reg_noreg.R`
+- `analysis/clinical/tcga_mp_state_survival_reg_noreg.sh`
+  - PBS wrapper for `tcga_mp_state_survival_reg_noreg.R`
   - Resources: `ncpus=8`, `mem=128gb`, `walltime=08:00:00`, env `dmtcp`
 ####################
 ####################
 ## 25 Mar 2026 External Epithelial MP UCell Heatmap
 
-- `analysis/developmental/Auto_external_epi_mp_ucell_heatmap.R`
+- `analysis/developmental/external_epi_mp_ucell_heatmap.R`
   - Purpose: score the filtered scATLAS nMP=19 metaprograms with UCell in three external epithelial datasets, then summarise mean MP activity per matched epithelial cell type using the same adult-epithelium / Barretts row structure as the developmental enrichment workflow.
   - Environment: `gnmf` (uses `UCell`)
   - Inputs:
@@ -726,7 +630,7 @@ All new plots, heatmaps, summaries, and statistical tables that display finalize
 - MP order follows state order with cell-cycle MPs first. Within each block, use the `geneNMF.metaprograms$programs.tree$order` / `programs.clusters` tree order, after filtering out negative-silhouette MPs.
 - Cell-cycle MPs: `MP1`, `MP7`, `MP9`.
 - For top-MP assignment used as a state-like transcriptomic label, exclude cell-cycle MPs and assign the maximum from the z-normalised Approach-B noreg MP score matrix (`Auto_topmp_v2_noreg_mp_adj.rds`), matching the state-assignment score scale.
-- Reuse the established colours from `analysis/cell_states/sample_abundance.R` for MP and state labels whenever those labels are plotted across samples.
+- Reuse the established colours from `analysis/cell_states/state_mp_sample_abundance.R` for MP and state labels whenever those labels are plotted across samples.
 ####################
 
 ####################
@@ -739,7 +643,7 @@ A `nature-figure` skill is installed at `/rds/general/user/sg3723/home/nature-sk
 Do **not** apply this to every R script. Focus on scripts that synthesize data across samples or produce "Final" visualizations. Prioritize:
 - Final cohort-level summary plots (abundance, survival, clinical associations)
 - Cross-dataset comparison figures
-- Any `Auto_` script producing figures explicitly intended for manuscript inclusion or presentation slides
+- Any active terminal script producing figures explicitly intended for manuscript inclusion or presentation slides
 
 ### How to Apply (R Backend — PDF Priority)
 

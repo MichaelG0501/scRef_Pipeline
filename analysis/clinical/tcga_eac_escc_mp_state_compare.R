@@ -1,3 +1,12 @@
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/clinical/tcga_eac_escc_mp_state_compare.R
+#   Methodology: analysis/methodology/clinical/clinical_bulk_and_association_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
 library(data.table)
 library(dplyr)
 library(tidyr)

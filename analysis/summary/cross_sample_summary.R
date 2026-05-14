@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/summary/cross_sample_summary.R
+#   Methodology: analysis/methodology/summary/summary_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Moved from: analysis/summary.R
 # Reorganized as part of analysis/ restructuring
 ####################

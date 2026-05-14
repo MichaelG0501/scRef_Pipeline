@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/metaprograms/mp_ucell_scoring.R
+#   Methodology: analysis/methodology/metaprograms/metaprogram_scoring_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Moved from: analysis/Auto_MP19_analysis.R
 # Reorganized as part of analysis/ restructuring
 ####################

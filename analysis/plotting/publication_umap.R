@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/plotting/publication_umap.R
+#   Methodology: analysis/methodology/plotting/publication_plotting_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Moved from: analysis/beaut_umap.R
 # Reorganized as part of analysis/ restructuring
 ####################

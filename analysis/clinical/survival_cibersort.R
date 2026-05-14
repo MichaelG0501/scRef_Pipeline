@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/clinical/survival_cibersort.R
+#   Methodology: analysis/methodology/clinical/clinical_bulk_and_association_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Moved from: analysis/cibersort_result.R
 # Reorganized as part of analysis/ restructuring
 ####################

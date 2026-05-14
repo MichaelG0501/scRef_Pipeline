@@ -1,4 +1,13 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/non_malignant_nmf/run_geneNMF.sh
+#   Methodology: analysis/methodology/non_malignant_nmf/non_malignant_nmf_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
 #PBS -l select=1:ncpus=8:mem=72gb
 #PBS -l walltime=08:00:00
 #PBS -N nmf_${celltype}
@@ -14,6 +23,6 @@ source activate /rds/general/user/sg3723/home/anaconda3/envs/gnmf
 WD=/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
 cd $WD
 
-Rscript analysis/non_malignant_nmf/Auto_geneNMF_celltype.R ${celltype}
+Rscript analysis/non_malignant_nmf/nmf_celltype_geneNMF.R ${celltype}
 
 echo "End: $(date +%T)"

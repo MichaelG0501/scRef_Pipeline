@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/plotting/gene_expression_heatmap.R
+#   Methodology: analysis/methodology/plotting/publication_plotting_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Moved from: analysis/gene_expr_compare.R
 # Reorganized as part of analysis/ restructuring
 ####################

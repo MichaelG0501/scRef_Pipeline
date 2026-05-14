@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cnv/cnv_subsetting.R
+#   Methodology: analysis/methodology/cnv/cnv_workflows_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Moved from: analysis/cnv_subset.R
 # Reorganized as part of analysis/ restructuring
 ####################

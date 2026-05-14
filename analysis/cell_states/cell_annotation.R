@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cell_states/cell_annotation.R
+#   Methodology: analysis/methodology/cell_states/state_workflows_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Moved from: analysis/annotation.R
 # Reorganized as part of analysis/ restructuring
 ####################

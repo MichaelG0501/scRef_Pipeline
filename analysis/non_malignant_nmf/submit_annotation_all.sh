@@ -1,4 +1,13 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/non_malignant_nmf/submit_annotation_all.sh
+#   Methodology: analysis/methodology/non_malignant_nmf/non_malignant_nmf_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
 # Submit annotation jobs for non-malignant cell types (only if NMF output exists)
 # Usage: bash analysis/non_malignant_nmf/submit_annotation_all.sh
 

@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cell_states/pseudotime_batch_correction.R
+#   Methodology: analysis/methodology/cell_states/state_workflows_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # Auto_pseudotime_batch_correction.R
 # Monocle3 pseudotime analysis for the noreg Approach B cell states,
 # incorporating scVI and Harmony batch correction across ALL cells.

@@ -1,4 +1,13 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/developmental/developmental.R
+#   Methodology: analysis/methodology/developmental/developmental_reference_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#   Inputs/outputs: documented in this header below and in the analysis map.
+####################
+
+####################
 # developmental.R
 # Builds developmental gene reference from 4 external xlsx files:
 # Early Embryogenesis, Organogenesis, Normal Development, Adult Epithelium.
