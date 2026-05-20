@@ -122,6 +122,7 @@ Slides are **results-focused** — straight to figures, with an optional brief o
   - If self-explanatory (e.g. "State proportions"): Omit the footnote completely. Use figure height `0.92\textheight` or `0.94\textheight` and no `\vspace`.
   - If requires context (e.g. noting a biological finding or methodological detail): Provide a short, direct footnote. No fancy AI words. Use figure height `0.88\textheight` and add `\vspace{-3mm}` before the footnote.
   - For side-by-side or mutli-panel comparisons where a footnote is used, use `\vspace{1mm}` or `\vspace{2mm}` to ensure enough separation from the columns.
+- **Cropping**: When placing multiple figures on one slide, crop white space from the source PDFs/PNGs so plots fill the available space for presentation.
 - **Layouts**: 
   - **Single figure**: full width/height.
   - **Side-by-side**: Use `\begin{columns}` with `0.5\textwidth` each for direct comparisons (e.g., Correlation vs Jaccard, PDO vs scAtlas, reg vs noreg). Use `0.8\textheight` for figure height inside columns.

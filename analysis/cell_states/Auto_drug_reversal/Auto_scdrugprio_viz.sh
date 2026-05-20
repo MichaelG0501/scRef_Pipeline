@@ -1,0 +1,18 @@
+#!/bin/bash
+#PBS -l select=1:ncpus=4:mem=32gb
+#PBS -l walltime=01:00:00
+#PBS -N Auto_scdrugprio_viz
+#PBS -koed
+
+echo $(date +%T)
+module purge
+module load tools/dev
+eval "$(~/miniforge3/bin/conda shell.bash hook)"
+source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
+
+WD=/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+cd $WD
+
+Rscript analysis/cell_states/Auto_drug_reversal/Auto_drug_reversal_scdrugprio_visuals.R
+
+echo $(date +%T)

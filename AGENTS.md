@@ -228,7 +228,7 @@ Do not use `ref_outs/state_temp.rds`, `ref_outs/Auto_topmp_states.rds`, `ref_out
 4. Generate state/MP figures: `state_mp_sample_abundance.R`, `final_state_overall_proportions.R`, `top_diverse_sample_state_umap.R`, `basal_smg_mp_signature_heatmap.R`, `final_state_marker_discovery.R`, `final_mp_scenic.R`
 5. Run pseudotime/hybrid workflows as needed: `pseudotime_top_diverse_samples.R`, `pseudotime_state_distance_matrix.R`, `hybrid_pairwise_percell_heatmap.R`, `hybrid_pairwise_distance_nodeplot.R`, `pseudotime_trajectory_report_partA.R`
 6. Run clinical/bulk workflows: `tcga_mp_state_survival_reg_noreg.R`, `geo_survival_data_prep.R`, `geo_survival_mp_state_survival.R`, `bulk_tcga_geo_qc.R`, `bulk_tcga_geo_integrated_survival.R`, `tcga_mp_state_survival_qc_filtered.R`, `clinical_association_final_boxplots.R`
-7. Run CNV/subclone workflows: `cnv_profiling.R`, `cnv_subsetting.R`, `cnv_plotting.R`, `cnv_malignant_subclone_mp_heatmap.R`
+7. Run CNV/subclone workflows: `cnv_profiling.R`, `cnv_subsetting.R`, `cnv_plotting.R`, `cnv_malignant_subclone_mp_heatmap.R`, `cna_subclone_expression_correlation.R`
 8. Optional external/reference workflows: developmental, enrichment, non-malignant NMF, and spatial scripts documented in `analysis/ANALYSIS_MAP.md`
 
 ### Output Tiers, Caches, And Logs
@@ -671,4 +671,49 @@ Do **not** apply this to every R script. Focus on scripts that synthesize data a
 ### Exceptions
 - **Diagnostic/QC scripts**: Step 1-6 pipeline outputs, internal QC heatmaps, and debugging plots should use standard Seurat/ggplot2 defaults to save time.
 - **Development/Test scripts**: `delete_*.R` scripts.
+####################
+
+####################
+## 15 May 2026 TCGA Reconstruction And Gender Validation Workflow
+
+- `analysis/TCGA/tcga_esca_reconstruct_data.R`
+  - Purpose: reconstruct the deleted TCGA-ESCA bulk RNA-seq input set without using the old spatial TCGA directory. The script queries the current public GDC API for open `TCGA-ESCA` RNA-seq `STAR - Counts` files, downloads each file under `ref_outs/TCGA/esca_gdc_reconstruction/raw/gdc_files/`, verifies file size and MD5 checksum, pulls cBioPortal `esca_tcga_gdc` patient/sample clinical attributes, and builds a gene-symbol TPM matrix.
+  - Outputs: `ref_outs/TCGA/esca_gdc_reconstruction/` with `raw/`, `intermediate/`, `tables/`, and `logs/`; compatibility copies at `ref_outs/tcga_esca_meta.rds` and `ref_outs/cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt`.
+  - PBS wrapper: `analysis/TCGA/tcga_esca_reconstruct_data.sh` (`ncpus=2`, `mem=32gb`, `walltime=12h`, `#PBS -koed`, `dmtcp` env).
+  - Reuse controls: verified files are reused; `SCREF_TCGA_SKIP_DOWNLOAD=TRUE` processes existing downloads only; `SCREF_TCGA_OVERWRITE_BAD=TRUE` is required to replace a checksum-failed generated file.
+
+- `analysis/TCGA/tcga_gender_state_mp_validation.R`
+  - Purpose: validate scRef Female-vs-Male MP and final-state associations in TCGA EAC primary bulk RNA-seq. It computes scRef sample-level MP mean UCell/state proportions, TCGA log2(TPM+1) GSVA MP/state scores, Wilcoxon tests, Cliff's delta, and direction concordance.
+  - Outputs: `ref_outs/TCGA/gender_validation/` with cached GSVA scores, feature statistics, concordance tables, and `Auto_tcga_gender_scRef_concordance.pdf/png`; compact AI-readable summary at `updates/new_updates/summaries/Auto_tcga_gender_scRef_concordance_summary.csv`.
+  - PBS wrapper: `analysis/TCGA/tcga_gender_state_mp_validation.sh` (`ncpus=4`, `mem=64gb`, `walltime=4h`, `#PBS -koed`, `dmtcp` env).
+
+- Methodology: `analysis/methodology/TCGA/tcga_reconstruction_and_gender_validation_methodology.md`
+####################
+
+####################
+## 19 May 2026 CNA Subclone Expression Correlation (Merged)
+
+- `analysis/cnv/cna_subclone_expression_correlation.R`
+  - Purpose: single self-contained script for arm-level CNA profiling, dominant clone analysis, pairwise CNA-expression distances, consensus CNA clustering, OAC/OCCAMS/TCGA annotation, recurrent event testing, and presentation-quality visualisations. Merged from the previous v1 computation + v2 visualisation split.
+  - Inputs: `ref_outs/Auto_malignant_subclone_mp/` CSVs, per-sample `_outs.rds` inferCNA matrices, `OAC_CNV.xlsx`, `41588_2018_331_MOESM3_ESM.xlsx`.
+  - Outputs: `ref_outs/Auto_cna_subclone_expression/` with `figures/`, `tables/`, and `rds/Auto_cna_subclone_expression_results.rds`.
+  - Compact summary: `updates/new_updates/summaries/Auto_cna_subclone_expression_summary.csv`.
+  - Cache: saves intermediate RDS after computation; supports `SCREF_REPLOT_ONLY=TRUE` to skip computation and replot from cache.
+  - Key plotting decisions: consensus heatmap hides row names and cluster row labels; recurrent CNA event summaries use recurrent + next ranked events split into MPs, six states (excluding Hybrid/Unresolved), and QC/CNA metrics; significance with group-level BH FDR point size and stars; largest-subclone standardized boxplots; chr8q/MYC 3-group comparison; pairwise CNA-distance sample-centered Spearman.
+  - Supersedes: `analysis/cnv/legacy_cna_subclone_expression_visuals_v2.R` (retained as legacy reference).
+  - Methodology: `analysis/methodology/cnv/cna_subclone_expression_correlation_methodology.md`.
+####################
+
+####################
+## 15 May 2026 MP Database Correlation Barretts Update
+
+- `analysis/metaprograms/mp_database_correlation.R`
+  - Purpose update: regenerate MP-vs-reference UCell correlation heatmaps using the same retained-MP tree order as `analysis/enrichment/enrichment_annotation.R`.
+  - New reference included: `Barretts_Oesophagus` from `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/per_stage/enrich_dev_Barretts_Oesophagus.rds`.
+  - Self-contained enrichment behavior: if `ref_outs/cluster_enrich.rds` is missing or does not contain all requested databases, the script rebuilds it using the same GO/Hallmark/3CA/custom enrichment setup as `enrichment_annotation.R`.
+  - UCell behavior: large Barretts signatures require `maxRank >= 5000`; the script now sets this automatically and saves `ref_outs/UCell_ref_terms_v2_MP19.rds` after each scoring batch.
+  - Outputs: `ref_outs/cluster_enrich.rds`, `ref_outs/UCell_ref_terms_v2_MP19.rds`, `ref_outs/Auto_MP_correlation_heatmaps_v2_MP19.pdf`, `ref_outs/Auto_MP_correlation_results_v2_MP19.rds`, and `ref_outs/Auto_MP_database_reference_gene_lists_Adult_Epithelium_Barretts_Oesophagus.xlsx`.
+
+- `analysis/metaprograms/mp_database_correlation.sh`
+  - PBS wrapper for the regeneration (`ncpus=4`, `mem=128gb`, `walltime=8h`, `#PBS -koed`, `dmtcp` env).
 ####################

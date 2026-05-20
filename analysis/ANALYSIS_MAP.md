@@ -57,6 +57,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
    - `analysis/cnv/cnv_subsetting.R`
    - `analysis/cnv/cnv_plotting.R`
    - `analysis/cnv/cnv_malignant_subclone_mp_heatmap.R`
+   - `analysis/cnv/cna_subclone_expression_correlation.R`
 
 8. Optional external references, enrichment, spatial, and non-malignant NMF
    - See folder-specific tables below.
@@ -72,7 +73,8 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `metaprograms/mp_3ca_ucell_scoring.R` | active upstream | `EAC_Ref_epi.rds`, 3CA `New_NMFs.csv` | `UCell_3CA_MPs.rds` | unresolved relabel, SCENIC |
 | `metaprograms/delete_mp_external_scoring_superseded.R` | delete candidate | old 3CA workflow | old diagnostics | superseded by `mp_3ca_ucell_scoring.R` |
 | `metaprograms/final_mp_correlation.R` | terminal figure | MP genes, UCell scores, final states if present | final MP correlation/Jaccard PDFs | terminal |
-| `metaprograms/mp_database_correlation.R` | active upstream/terminal | `cluster_enrich.rds`, `EAC_Ref_epi.rds` | ref-term UCell/correlation PDFs | enrichment interpretation |
+| `metaprograms/mp_database_correlation.R` | active upstream/terminal | `cluster_enrich.rds`, `EAC_Ref_epi.rds`, developmental per-stage references including `Adult_Epithelium` and `Barretts_Oesophagus` | ref-term UCell/correlation PDFs/RDS, Adult/Barretts reference gene-list XLSX | enrichment interpretation |
+| `metaprograms/mp_database_correlation.sh` | PBS wrapper | `metaprograms/mp_database_correlation.R` | live PBS log/output for MP database correlation regeneration | run wrapper |
 | `metaprograms/mp_pdo_sc_crossdataset_correlation.R` | terminal comparison | PDO UCell, scRef UCell | cross-dataset MP comparison PDFs | terminal |
 | `metaprograms/mp_pancancer_correlation.R` | terminal comparison | scRef MPs, pan-cancer MP scores | pan-cancer correlation plots | terminal |
 | `metaprograms/mp_cancer_type_coverage.R` | terminal figure | pan-cancer MP annotations | cancer-type coverage figures | terminal |
@@ -114,7 +116,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `clinical/survival_cibersort.R` | legacy/terminal | `state_temp.rds`, DEG cache, CIBERSORTx | old survival PDFs | no new state downstream use |
 | `clinical/legacy_*` | legacy | varies | old comparison or superseded clinical outputs | no new downstream use |
 | `cnv/cnv_malignant_subclone_mp_heatmap.R` | active terminal | per-sample InferCNA, epithelial RDS, UCell, state vectors | subclone MP/state PDFs and CSVs | terminal |
-| `cnv/cna_subclone_expression_correlation.R` | untracked active | CNA/subclone outputs and expression refs | CNA-expression correlation outputs | terminal; currently unstaged |
+| `cnv/cna_subclone_expression_correlation.R` | active terminal | CNA/subclone outputs, inferCNA per-sample matrices, OAC/OCCAMS xlsx | `ref_outs/Auto_cna_subclone_expression/` with arm CNA, consensus heatmap, recurrent event associations, largest-subclone, pairwise distance figures/tables/RDS | terminal; merged from previous v1+v2 split |
 | `cnv/mp_chromosomal_mapping.R` | untracked terminal | MP gene positions | MP chromosomal mapping figures | terminal; currently unstaged |
 | `cnv/cnv_profiling.R` | core CNV | epithelial per-sample RDS | inferCNA profiles | CNV subsetting/plotting |
 | `cnv/cnv_subsetting.R` | core CNV | inferCNA profiles | filtered CNA matrices | CNV plotting |
@@ -189,8 +191,28 @@ The following files or folders are intentionally not staged by agents unless the
 - `analysis/clinical/run_clinical_association_final_stacked.sh`
 - `analysis/cnv/cna_subclone_expression_correlation.R`
 - `analysis/cnv/cna_subclone_expression_correlation.sh`
+- `analysis/cnv/legacy_cna_subclone_expression_visuals_v2.R`
 - `analysis/cnv/cnv_malignant_subclone_mp_heatmap.sh`
 - `analysis/cnv/mp_chromosomal_mapping.R`
-- `analysis/methodology/cnv/cna_subclone_expression_correlation_methodology.md`
 - `analysis/spatial/map_scatlas_states_xenium.py`
 - `analysis/spatial/map_scatlas_states_xenium.sh`
+
+####################
+## 15 May 2026 TCGA Reconstruction And Gender Validation
+
+- `analysis/TCGA/tcga_esca_reconstruct_data.R`
+  - Status: active upstream.
+  - Purpose: rebuild the deleted TCGA-ESCA bulk RNA-seq input set by querying current GDC STAR-count file metadata, downloading verified open-access STAR-count TSVs, pulling cBioPortal `esca_tcga_gdc` patient/sample clinical attributes, and producing a gene-symbol TPM matrix plus harmonized metadata.
+  - Inputs: GDC API TCGA-ESCA RNA-seq `STAR - Counts`; cBioPortal API study `esca_tcga_gdc`.
+  - Outputs: `ref_outs/TCGA/esca_gdc_reconstruction/` with raw manifests/clinical tables/downloads, processed metadata and TPM matrix intermediates, final `TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt`, run logs, and compatibility copies at `ref_outs/tcga_esca_meta.rds` and `ref_outs/cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt`.
+  - PBS wrapper: `analysis/TCGA/tcga_esca_reconstruct_data.sh` (`ncpus=2`, `mem=32gb`, `walltime=12h`, `dmtcp`, live logging).
+  - Methodology: `analysis/methodology/TCGA/tcga_reconstruction_and_gender_validation_methodology.md`.
+
+- `analysis/TCGA/tcga_gender_state_mp_validation.R`
+  - Status: active terminal.
+  - Purpose: validate scRef sex-associated MP and final-state signals in reconstructed TCGA EAC bulk RNA-seq by comparing Female-vs-Male effect directions between scRef sample-level UCell/state proportions and TCGA GSVA scores.
+  - Inputs: reconstructed TCGA TPM/meta, `meta_full_epi.rds`, `Auto_final_states.rds`, filtered nMP19 UCell, optional 3CA UCell, nMP19 geneNMF object, and `Concise_Summary_EAC_Ref.xlsx`.
+  - Outputs: `ref_outs/TCGA/gender_validation/` with cached GSVA scores, scRef/TCGA feature stats, concordance tables, and `Auto_tcga_gender_scRef_concordance.pdf/png`; compact summary at `updates/new_updates/summaries/Auto_tcga_gender_scRef_concordance_summary.csv`.
+  - PBS wrapper: `analysis/TCGA/tcga_gender_state_mp_validation.sh` (`ncpus=4`, `mem=64gb`, `walltime=4h`, `dmtcp`, live logging).
+  - Methodology: `analysis/methodology/TCGA/tcga_reconstruction_and_gender_validation_methodology.md`.
+####################

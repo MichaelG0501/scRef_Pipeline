@@ -39,6 +39,10 @@ library(ComplexHeatmap)
 library(circlize)
 library(dplyr)
 library(tidyr)
+library(openxlsx)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(msigdbr)
 
 setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
 
@@ -46,7 +50,8 @@ setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_ou
 # 0. Load data
 # ══════════════════════════════════════════════════════════════════════════════
 cat("Loading data...\n")
-cluster_enrich <- readRDS("cluster_enrich.rds")
+cluster_enrich_path <- "cluster_enrich.rds"
+cluster_enrich <- if (file.exists(cluster_enrich_path)) readRDS(cluster_enrich_path) else NULL
 mp_ucell       <- readRDS("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds")       # 75348 cells x 9 MPs
 tmdata_all     <- readRDS("EAC_Ref_epi.rds")
 
@@ -62,6 +67,18 @@ cat(sprintf("Filtering out %d MPs with silhouette < 0: %s\n", length(bad_mp_name
 # Filter mp_names
 mp_names <- mp_names[!mp_names %in% bad_mp_names]
 cat(sprintf("Remaining MPs: %s\n", paste(mp_names, collapse = ", ")))
+
+####################
+# Match the MP ordering used by analysis/enrichment/enrichment_annotation.R.
+####################
+valid_cluster_ids <- as.numeric(gsub("\\D", "", mp_names))
+tree_order <- mp_outs$programs.tree$order
+ordered_clusters <- mp_outs$programs.clusters[tree_order]
+mp_tree_order <- unique(ordered_clusters)
+mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
+ordered_mps <- paste0("MP", mp_tree_order)
+mp_names <- ordered_mps[ordered_mps %in% mp_names]
+cat(sprintf("MP tree order: %s\n", paste(mp_names, collapse = ", ")))
 
 # Filter cluster_enrich (keep only MPs with valid silhouette)
 cluster_enrich <- cluster_enrich[names(cluster_enrich) %in% mp_names]
@@ -95,13 +112,195 @@ cat(sprintf("Loaded %d custom reference databases\n", length(custom_refs)))
 databases <- c("Hallmark", "GO", "MPs_3CA",
                "Adult_Epithelium", "Early_Embryogenesis",
                "Normal_Development_long", "Normal_Development_short",
-               "Organogenesis_major", "Organogenesis_sub")
+               "Organogenesis_major", "Organogenesis_sub",
+               "Barretts_Oesophagus")
 
 # Which databases are "custom" (developmental) vs standard
 custom_dbs <- c("Adult_Epithelium", "Early_Embryogenesis",
                 "Normal_Development_long", "Normal_Development_short",
-                "Organogenesis_major", "Organogenesis_sub")
+                "Organogenesis_major", "Organogenesis_sub",
+                "Barretts_Oesophagus")
 standard_dbs <- c("Hallmark", "GO", "MPs_3CA")
+
+####################
+# Export custom reference gene lists requested for review.
+####################
+safe_sheet_name <- function(x) {
+  x <- gsub("[^A-Za-z0-9_]+", "_", x)
+  substr(x, 1, 31)
+}
+
+build_reference_gene_table <- function(ref_name, custom_ref) {
+  term2gene <- as.data.frame(custom_ref$TERM2GENE, stringsAsFactors = FALSE)
+  term2name <- as.data.frame(custom_ref$TERM2NAME, stringsAsFactors = FALSE)
+  colnames(term2gene)[1:2] <- c("term", "gene")
+  colnames(term2name)[1:2] <- c("term", "name")
+
+  term2gene %>%
+    dplyr::filter(!is.na(term), !is.na(gene), term != "", gene != "") %>%
+    dplyr::left_join(term2name, by = "term") %>%
+    dplyr::group_by(term) %>%
+    dplyr::mutate(rank = dplyr::row_number()) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(reference = ref_name) %>%
+    dplyr::select(reference, term, name, rank, gene)
+}
+
+build_reference_gene_wide <- function(gene_table) {
+  split_genes <- split(gene_table$gene, gene_table$term)
+  if (length(split_genes) == 0) {
+    return(data.frame())
+  }
+  max_len <- max(lengths(split_genes))
+  out <- lapply(split_genes, function(genes) c(genes, rep(NA_character_, max_len - length(genes))))
+  as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE)
+}
+
+write_reference_gene_xlsx <- function(custom_refs, refs_to_export, output_path) {
+  refs_to_export <- refs_to_export[refs_to_export %in% names(custom_refs)]
+  if (length(refs_to_export) == 0) {
+    warning("No requested custom references found for XLSX export.")
+    return(invisible(NULL))
+  }
+
+  wb <- openxlsx::createWorkbook()
+  header_style <- openxlsx::createStyle(textDecoration = "bold", fgFill = "#D3D3D3")
+  title_style <- openxlsx::createStyle(fontSize = 14, textDecoration = "bold", fgFill = "#FFC000")
+
+  for (ref_name in refs_to_export) {
+    gene_table <- build_reference_gene_table(ref_name, custom_refs[[ref_name]])
+    wide_table <- build_reference_gene_wide(gene_table)
+
+    long_sheet <- safe_sheet_name(paste0(ref_name, "_long"))
+    wide_sheet <- safe_sheet_name(paste0(ref_name, "_wide"))
+
+    openxlsx::addWorksheet(wb, long_sheet)
+    openxlsx::writeData(wb, long_sheet, gene_table)
+    openxlsx::addStyle(wb, long_sheet, header_style, rows = 1, cols = seq_len(ncol(gene_table)), gridExpand = TRUE)
+    openxlsx::freezePane(wb, long_sheet, firstRow = TRUE)
+    openxlsx::setColWidths(wb, long_sheet, cols = seq_len(ncol(gene_table)), widths = "auto")
+
+    openxlsx::addWorksheet(wb, wide_sheet)
+    openxlsx::writeData(wb, wide_sheet, ref_name, startRow = 1, startCol = 1, colNames = FALSE)
+    openxlsx::writeData(wb, wide_sheet, wide_table, startRow = 2, startCol = 1)
+    if (ncol(wide_table) > 0) {
+      openxlsx::addStyle(wb, wide_sheet, title_style, rows = 1, cols = 1, gridExpand = TRUE)
+      openxlsx::addStyle(wb, wide_sheet, header_style, rows = 2, cols = seq_len(ncol(wide_table)), gridExpand = TRUE)
+      openxlsx::freezePane(wb, wide_sheet, firstActiveRow = 3)
+      openxlsx::setColWidths(wb, wide_sheet, cols = seq_len(ncol(wide_table)), widths = 24)
+    }
+  }
+
+  openxlsx::saveWorkbook(wb, output_path, overwrite = TRUE)
+  cat(sprintf("Saved reference gene-list workbook: %s\n", output_path))
+}
+
+write_reference_gene_xlsx(
+  custom_refs,
+  refs_to_export = c("Adult_Epithelium", "Barretts_Oesophagus"),
+  output_path = "Auto_MP_database_reference_gene_lists_Adult_Epithelium_Barretts_Oesophagus.xlsx"
+)
+
+####################
+# Rebuild the enrichment object when missing or when a requested database is absent.
+####################
+safe_enrich <- function(expr) {
+  tryCatch(expr, error = function(e) {
+    warning(conditionMessage(e))
+    NULL
+  })
+}
+
+cluster_enrich_has_databases <- function(cluster_enrich, databases) {
+  if (is.null(cluster_enrich) || length(cluster_enrich) == 0) {
+    return(FALSE)
+  }
+  all(vapply(databases, function(db) {
+    any(vapply(cluster_enrich, function(x) db %in% names(x), logical(1)))
+  }, logical(1)))
+}
+
+build_cluster_enrich <- function(mp_outs, custom_refs) {
+  hallmark_sets <- msigdbr::msigdbr(species = "Homo sapiens", category = "H")
+  hallmark_term2gene <- hallmark_sets[, c("gs_name", "gene_symbol")]
+  hallmark_term2name <- hallmark_sets[, c("gs_name", "gs_name")]
+
+  mp_csv <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
+  mp_list <- read.csv(mp_csv, check.names = FALSE, stringsAsFactors = FALSE)
+  mp_list <- as.list(mp_list)
+  mp_list <- lapply(mp_list, function(x) unique(x[x != "" & !is.na(x)]))
+  mp_term2gene <- data.frame(
+    term = rep(names(mp_list), lengths(mp_list)),
+    gene = unlist(mp_list, use.names = FALSE),
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+  mp_term2gene$term <- sub("^MP", "3CA_mp", mp_term2gene$term)
+  mp_term2name <- data.frame(
+    term = unique(mp_term2gene$term),
+    name = unique(mp_term2gene$term),
+    stringsAsFactors = FALSE
+  )
+
+  mp_gene_lists <- mp_outs$metaprograms.genes
+  mp_assignments <- mp_outs$programs.clusters
+  valid_cluster_ids <- as.numeric(gsub("\\D", "", names(mp_gene_lists)))
+  mp_assignments <- mp_assignments[mp_assignments %in% valid_cluster_ids & !is.na(mp_assignments)]
+
+  out <- lapply(names(mp_gene_lists), function(mp_name) {
+    genes <- unique(mp_gene_lists[[mp_name]])
+    mp_id <- as.numeric(gsub("\\D", "", mp_name))
+    members <- names(mp_assignments)[mp_assignments == mp_id]
+    message("Processing enrichment for ", mp_name)
+
+    res_GO <- safe_enrich(clusterProfiler::enrichGO(
+      gene = genes,
+      OrgDb = org.Hs.eg.db::org.Hs.eg.db,
+      keyType = "SYMBOL",
+      ont = "BP",
+      qvalueCutoff = 0.05,
+      readable = TRUE
+    ))
+    res_H <- safe_enrich(clusterProfiler::enricher(
+      gene = genes,
+      TERM2GENE = hallmark_term2gene,
+      TERM2NAME = hallmark_term2name,
+      qvalueCutoff = 0.05
+    ))
+    res_M <- safe_enrich(clusterProfiler::enricher(
+      gene = genes,
+      TERM2GENE = mp_term2gene,
+      TERM2NAME = mp_term2name,
+      qvalueCutoff = 0.05
+    ))
+
+    res_custom_list <- lapply(names(custom_refs), function(ref_name) {
+      message("  -> Running custom enrichment: ", ref_name)
+      safe_enrich(clusterProfiler::enricher(
+        gene = genes,
+        TERM2GENE = custom_refs[[ref_name]]$TERM2GENE,
+        TERM2NAME = custom_refs[[ref_name]]$TERM2NAME,
+        pAdjustMethod = "BH",
+        qvalueCutoff = 0.05
+      ))
+    })
+    names(res_custom_list) <- names(custom_refs)
+
+    c(
+      list(rep_prog = mp_name, members = members, genes = genes, GO = res_GO, Hallmark = res_H, MPs_3CA = res_M),
+      res_custom_list
+    )
+  })
+  names(out) <- names(mp_gene_lists)
+  out
+}
+
+if (!cluster_enrich_has_databases(cluster_enrich, databases)) {
+  cat("cluster_enrich.rds is missing or incomplete; rebuilding enrichment object.\n")
+  cluster_enrich <- build_cluster_enrich(mp_outs, custom_refs)
+  saveRDS(cluster_enrich, cluster_enrich_path)
+  cat(sprintf("Saved rebuilt enrichment object: %s\n", cluster_enrich_path))
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. Extract ALL terms per database (matching example_anno.R term selection)
@@ -289,17 +488,22 @@ cat("Preparing gene lists for UCell scoring...\n")
 # Flatten all gene lists with database prefix to avoid name collisions
 all_gene_lists <- list()
 term_to_db <- character(0)
+safe_name_to_term <- character(0)
 
 for (db in names(db_gene_lists)) {
   for (term in names(db_gene_lists[[db]])) {
     # Create safe name: db__term (double underscore separator)
-    safe_name <- paste0(db, "__", make.names(term))
+    safe_name_base <- paste0(db, "__", make.names(term))
+    safe_name <- tail(make.unique(c(names(all_gene_lists), safe_name_base), sep = "_dup"), 1)
     all_gene_lists[[safe_name]] <- db_gene_lists[[db]][[term]]
     term_to_db[safe_name] <- db
+    safe_name_to_term[safe_name] <- term
   }
 }
 
 cat(sprintf("Total gene sets to score: %d\n", length(all_gene_lists)))
+ucell_max_rank <- max(5000, max(lengths(all_gene_lists)) + 100)
+cat(sprintf("Using UCell maxRank: %d\n", ucell_max_rank))
 
 # UCell scoring in batches to manage memory
 cat("Running UCell scoring (this may take a while)...\n")
@@ -308,18 +512,36 @@ batch_size <- 50
 safe_names <- names(all_gene_lists)
 n_batches  <- ceiling(length(safe_names) / batch_size)
 
-ref_scores <- data.frame(row.names = common_cells)
+ref_scores_path <- "UCell_ref_terms_v2_MP19.rds"
+force_rebuild <- identical(Sys.getenv("SCREF_FORCE_REBUILD"), "TRUE")
+if (file.exists(ref_scores_path) && !force_rebuild) {
+  cat(sprintf("Loading cached reference scores: %s\n", ref_scores_path))
+  ref_scores <- readRDS(ref_scores_path)
+  ref_scores <- ref_scores[common_cells, intersect(colnames(ref_scores), safe_names), drop = FALSE]
+} else {
+  ref_scores <- data.frame(row.names = common_cells)
+}
+
+missing_safe_names <- setdiff(safe_names, colnames(ref_scores))
+
+if (length(missing_safe_names) == 0) {
+  cat("All requested reference terms are already present in the UCell cache.\n")
+} else {
+  n_batches <- ceiling(length(missing_safe_names) / batch_size)
+}
 
 for (b in seq_len(n_batches)) {
+  if (length(missing_safe_names) == 0) break
   idx_start <- (b - 1) * batch_size + 1
-  idx_end   <- min(b * batch_size, length(safe_names))
-  batch_names <- safe_names[idx_start:idx_end]
+  idx_end   <- min(b * batch_size, length(missing_safe_names))
+  batch_names <- missing_safe_names[idx_start:idx_end]
   batch_lists <- all_gene_lists[batch_names]
 
   cat(sprintf("  Batch %d/%d: scoring %d gene sets...\n", b, n_batches, length(batch_lists)))
 
   tmdata_all <- AddModuleScore_UCell(tmdata_all, features = batch_lists,
-                                     ncores = 4, name = "")
+                                     ncores = 4, name = "",
+                                     maxRank = ucell_max_rank)
 
   # Extract scores from meta.data
   score_cols <- intersect(batch_names, colnames(tmdata_all@meta.data))
@@ -329,15 +551,17 @@ for (b in seq_len(n_batches)) {
     # Clean up meta.data to save memory
     tmdata_all@meta.data <- tmdata_all@meta.data[,
       !(colnames(tmdata_all@meta.data) %in% score_cols), drop = FALSE]
+    saveRDS(ref_scores, file = ref_scores_path)
   }
 }
 
+ref_scores <- ref_scores[, safe_names[safe_names %in% colnames(ref_scores)], drop = FALSE]
 cat(sprintf("UCell scoring complete: %d cells x %d reference terms\n",
             nrow(ref_scores), ncol(ref_scores)))
 
 # Save reference UCell scores for reuse
-saveRDS(ref_scores, file = "UCell_ref_terms_v2_MP19.rds")
-cat("Saved UCell_ref_terms_v2.rds\n")
+saveRDS(ref_scores, file = ref_scores_path)
+cat(sprintf("Saved %s\n", ref_scores_path))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4. Per-sample Spearman cross-correlation
@@ -352,6 +576,7 @@ cat("Computing per-sample cross-correlations...\n")
 
 # Transpose to [features x cells] as in compare_pdos_sc.R
 mod_mat <- t(as.matrix(mp_ucell))   # [MPs x cells]
+mod_mat <- mod_mat[mp_names[mp_names %in% rownames(mod_mat)], , drop = FALSE]
 
 # Sample IDs from Seurat metadata
 sample_ids <- as.character(tmdata_all$orig.ident[colnames(mod_mat)])
@@ -413,7 +638,28 @@ col_fun <- colorRamp2(c(-0.5, 0, 0.5), c("blue", "white", "red"))
 
 all_results <- list()
 
-pdf("Auto_MP_correlation_heatmaps_v2_MP19.pdf", width = 14, height = 10)
+order_correlation_rows <- function(mat, db_name) {
+  if (nrow(mat) <= 1) {
+    return(list(mat = mat, row_split = NULL))
+  }
+
+  if (db_name %in% custom_dbs) {
+    term_order <- names(db_gene_lists[[db_name]])
+    row_order <- c(intersect(term_order, rownames(mat)), setdiff(rownames(mat), term_order))
+    return(list(mat = mat[row_order, , drop = FALSE], row_split = NULL))
+  }
+
+  best_mp <- colnames(mat)[max.col(mat, ties.method = "first")]
+  row_order <- order(match(best_mp, colnames(mat)), -rowSums(mat, na.rm = TRUE))
+  mat <- mat[row_order, , drop = FALSE]
+  row_split <- factor(best_mp[row_order], levels = colnames(mat))
+  list(mat = mat, row_split = row_split)
+}
+
+####################
+# Set PDF dimensions to fit half PowerPoint slide beautifully (width=11, height=13)
+pdf("Auto_MP_correlation_heatmaps_v2_MP19.pdf", width = 11, height = 13)
+####################
 for (db in names(db_gene_lists)) {
   cat(sprintf("\n--- Processing database: %s ---\n", db))
 
@@ -430,13 +676,7 @@ for (db in names(db_gene_lists)) {
   ref_mat <- t(as.matrix(ref_scores[, db_cols, drop = FALSE]))
 
   # Clean up row names: remove db prefix, restore original term name
-  # The safe_name was db__make.names(term), so strip the prefix
-  clean_names <- sub(paste0("^", gsub("([.])", "\\\\\\1", db_prefix)), "",
-                     rownames(ref_mat))
-  # Undo make.names: replace ".." with " | " and "." with " "
-  clean_names <- gsub("\\.\\.", " | ", clean_names)
-  clean_names <- gsub("\\.", " ", clean_names)
-  rownames(ref_mat) <- clean_names
+  rownames(ref_mat) <- unname(safe_name_to_term[rownames(ref_mat)])
 
   cat(sprintf("  %d terms x %d cells\n", nrow(ref_mat), ncol(ref_mat)))
 
@@ -448,30 +688,75 @@ for (db in names(db_gene_lists)) {
                  nrow = nrow(result$p_vals),
                  dimnames = dimnames(result$p_vals))
 
+  ordered <- order_correlation_rows(result$mean_rho, db)
+  result$mean_rho <- ordered$mat
+  result$p_vals <- result$p_vals[rownames(result$mean_rho), colnames(result$mean_rho), drop = FALSE]
+  padj <- padj[rownames(result$mean_rho), colnames(result$mean_rho), drop = FALSE]
+
   # Store results for RDS export
   all_results[[db]] <- list(mean_rho = result$mean_rho,
                             p_vals   = result$p_vals,
                             padj     = padj)
 
-  # Dynamic font sizing based on number of rows
+  ####################
+  # Increased font sizes and customized layout for PowerPoint slide presentation.
+  # Dynamic row and cell font sizes are scaled to prevent overlaps and narrow heatmaps while remaining highly visible.
   n_rows <- nrow(result$mean_rho)
-  row_fontsize <- max(4, min(9, 200 / n_rows))
-  cell_fontsize <- max(4, min(8, 150 / n_rows))
+  row_fontsize <- max(6.5, min(9.5, 380 / n_rows))
+  cell_fontsize <- max(5.5, min(8.5, 280 / n_rows))
+
+  # Authoritative MP descriptions matching the latest version in Auto_cna_subclone_expression_visuals_v2.R
+  mp_descriptions <- c(
+    "MP1"  = "G2M Cell Cycle",
+    "MP7"  = "DNA Damage Repair",
+    "MP9"  = "G1S Cell Cycle",
+    "MP2"  = "MYC-related Proliferation",
+    "MP17" = "Basal-like Transition",
+    "MP14" = "Hypoxia Adapted Epi.",
+    "MP5"  = "Epithelial IFN Resp.",
+    "MP10" = "Columnar Diff.",
+    "MP8"  = "Intestinal Diff.",
+    "MP18" = "Secretory Diff. (Intest.)",
+    "MP16" = "Secretory Diff. (Gastric)",
+    "MP13" = "Hypoxic Inflam. Epi.",
+    "MP12" = "Neuro-responsive Epi",
+    "MP15" = "Immune Infiltration"
+  )
+
+  # Construct column labels with MP number + description + cell counts
+  mp_sizes <- sapply(colnames(result$mean_rho), function(x) length(mp_outs$metaprograms.genes[[x]]))
+  mp_names_with_desc <- sapply(colnames(result$mean_rho), function(x) {
+    if (x %in% names(mp_descriptions)) {
+      paste0(x, " ", mp_descriptions[x])
+    } else {
+      x
+    }
+  })
+  col_labels <- paste0(mp_names_with_desc, "\nn=", mp_sizes)
 
   # Plot
   ht <- Heatmap(
     result$mean_rho,
     name = "Mean Rho",
     col  = col_fun,
-    cluster_rows    = TRUE,
-    cluster_columns = TRUE,
-    clustering_method_rows    = "ward.D2",
-    clustering_method_columns = "ward.D2",
+    cluster_rows    = FALSE,
+    cluster_columns = FALSE,
+    row_split = ordered$row_split,
+    cluster_row_slices = FALSE,
     rect_gp = gpar(col = "white", lwd = 0.5),
     row_title    = "Reference Terms",
+    row_title_gp = gpar(fontsize = 11, fontface = "bold"),
     column_title = paste0(db, " — Expression Correlation with MPs"),
+    column_title_gp = gpar(fontsize = 12, fontface = "bold"),
+    column_labels = col_labels,
     row_names_gp    = gpar(fontsize = row_fontsize),
-    column_names_gp = gpar(fontsize = 10),
+    column_names_gp = gpar(fontsize = 9, fontface = "bold"),
+    column_names_rot = 45,
+    heatmap_legend_param = list(
+      title_gp = gpar(fontsize = 10, fontface = "bold"),
+      labels_gp = gpar(fontsize = 8),
+      legend_height = unit(4, "cm")
+    ),
 
     cell_fun = function(j, i, x, y, width, height, fill) {
       p   <- padj[i, j]
@@ -484,12 +769,13 @@ for (db in names(db_gene_lists)) {
   )
 
   draw(ht, merge_legend = TRUE)
+  ####################
   cat(sprintf("  Plotted %d terms x %d MPs\n", nrow(result$mean_rho), ncol(result$mean_rho)))
 }
 
 dev.off()
-cat("\nSaved Auto_MP_correlation_heatmaps_v2.pdf\n")
+cat("\nSaved Auto_MP_correlation_heatmaps_v2_MP19.pdf\n")
 
 saveRDS(all_results, file = "Auto_MP_correlation_results_v2_MP19.rds")
-cat("Saved Auto_MP_correlation_results_v2.rds\n")
+cat("Saved Auto_MP_correlation_results_v2_MP19.rds\n")
 cat("Done.\n")
