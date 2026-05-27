@@ -57,7 +57,7 @@ suppressPackageStartupMessages({
 ####################
 # setup
 ####################
-project_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
 out_dir <- "Auto_six_state_markers"
@@ -100,6 +100,11 @@ params <- list(
   top_markers_per_state = 5,
   mc_cores = 1L
 )
+
+####################
+# Override mc_cores for parallel execution
+params$mc_cores <- 4L
+####################
 
 ####################
 # helpers
@@ -1182,3 +1187,368 @@ writeLines(
   method_lines, 
   file.path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/methodology/cell_states/final_state_marker_discovery_methodology.md")
 )
+
+####################
+# Specificity dot plot for Basal and SMG markers
+####################
+message("Building specificity dot plot for Basal and SMG markers...")
+
+library(ggtext)
+
+target_states <- c("Basal to Intestinal Metaplasia", "SMG-like Metaplasia")
+dotplot_markers <- final_markers %>% filter(state %in% target_states)
+
+all_marker_genes <- dotplot_markers$gene
+panel_map <- setNames(as.character(dotplot_markers$state), dotplot_markers$gene)
+
+cell_states <- as.character(tmdata_state6$final_state6)
+
+data_mat <- GetAssayData(tmdata_state6, assay = "RNA", slot = "data")[all_marker_genes, , drop = FALSE]
+counts_mat <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[all_marker_genes, , drop = FALSE]
+
+results <- list()
+for (st in state_order) {
+  idx <- which(cell_states == st)
+  n_cells <- length(idx)
+  if (n_cells == 0) {
+    expr_vals <- setNames(rep(NA_real_, length(all_marker_genes)), all_marker_genes)
+    pct_vals  <- expr_vals
+  } else {
+    expr_vals <- Matrix::rowMeans(data_mat[, idx, drop = FALSE])
+    pct_vals  <- Matrix::rowMeans(counts_mat[, idx, drop = FALSE] > 0)
+  }
+  results[[st]] <- data.frame(
+    gene = all_marker_genes,
+    state = st,
+    mean_expr = as.numeric(expr_vals[all_marker_genes]),
+    pct_detected = as.numeric(pct_vals[all_marker_genes]),
+    n_cells = n_cells,
+    stringsAsFactors = FALSE
+  )
+}
+res_df <- bind_rows(results)
+
+plot_df <- res_df %>%
+  mutate(
+    state = factor(state, levels = state_order),
+    panel = factor(panel_map[gene], levels = target_states),
+    dummy_x = ""
+  )
+
+# Reverse order so first marker is at top
+gene_order <- rev(dotplot_markers$gene)
+plot_df$gene <- factor(plot_df$gene, levels = gene_order)
+
+plot_df <- plot_df %>%
+  group_by(gene) %>%
+  mutate(
+    norm_expr = {
+      rng <- range(mean_expr, na.rm = TRUE)
+      if (all(is.na(mean_expr)) || diff(rng) == 0) {
+        rep(0.5, n())
+      } else {
+        (mean_expr - rng[1]) / diff(rng)
+      }
+    }
+  ) %>%
+  ungroup()
+
+state_labels_wrap <- gsub(" ", "<br>", state_order)
+
+det_plot <- ggplot(plot_df, aes(x = dummy_x, y = gene)) +
+  geom_point(aes(size = pct_detected, fill = norm_expr), shape = 21, color = "grey35", stroke = 0.35) +
+  facet_grid(
+    panel ~ state,
+    scales = "free",
+    space = "free",
+    switch = "y",
+    labeller = labeller(
+      panel = setNames(
+        sprintf("<span style='color:%s'>%s</span>", state_cols[target_states], gsub(" ", "<br>", target_states)),
+        target_states
+      ),
+      state = setNames(
+        sprintf("<span style='color:%s'>%s</span>", state_cols[state_order], state_labels_wrap),
+        state_order
+      )
+    )
+  ) +
+  scale_size_continuous(range = c(0.5, 5.5), labels = scales::percent_format(accuracy = 1), name = "% Detected") +
+  scale_fill_gradient2(
+    low = "#2C7BB6", mid = "white", high = "#D7191C", midpoint = 0.5,
+    name = "Normalised\nExpression",
+    limits = c(0, 1)
+  ) +
+  theme_minimal(base_size = 9) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 8),
+    strip.placement = "outside",
+    strip.text.y.left = ggtext::element_markdown(angle = 0, face = "bold", size = 7.5, hjust = 0.5),
+    strip.text.x = ggtext::element_markdown(face = "bold", size = 8, lineheight = 1.1),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.spacing.x = unit(0.5, "lines"),
+    panel.spacing.y = unit(0.5, "lines")
+  ) +
+  labs(x = NULL, y = NULL)
+
+out_pdf <- file.path(out_dir, "Auto_basal_smg_marker_specificity_dotplot.pdf")
+ggsave(out_pdf, det_plot, width = 8, height = 5, useDingbats = FALSE)
+message("Saved PDF to: ", out_pdf)
+
+message("Done.")
+
+####################
+# Co-expression Analysis for Specific Markers
+# Redesigned: proportional Venn (eulerr) + jittered scatter
+####################
+message("Running co-expression analysis for specific marker pairs.")
+
+# ---------- helper: clean proportional Venn via ggplot ----------
+plot_coexpr_venn <- function(gene1, gene2, only1, only2, both, neither, state_title) {
+  # Area-proportional representation built in ggplot
+  # Instead of just two circles, we'll draw a large grey circle for the TOTAL cells,
+  # and the two gene circles inside it, so 'Neither' is visually proportional.
+  total <- only1 + only2 + both + neither
+
+  # Fractions
+  f1  <- (only1 + both) / total   # gene1+
+  f2  <- (only2 + both) / total   # gene2+
+  fab <- both / total             # overlap
+  fn  <- neither / total          # neither
+
+  # Radii proportional to set size (area = pi*r^2)
+  # Total area = 1, so outer radius = 1/sqrt(pi), but we can just use 1 for total radius
+  R_total <- 1.0
+  r1 <- sqrt(f1)
+  r2 <- sqrt(f2)
+
+  # Find circle center distance that gives the correct overlap area
+  target_overlap <- fab * pi  # target intersection area (in relative units where total area = pi)
+
+  calc_intersection <- function(d, r, R) {
+    if (d >= r + R) return(0)
+    if (d <= abs(r - R)) return(pi * min(r, R)^2)
+    part1 <- r^2 * acos((d^2 + r^2 - R^2) / (2 * d * r))
+    part2 <- R^2 * acos((d^2 + R^2 - r^2) / (2 * d * R))
+    part3 <- 0.5 * sqrt(abs((-d + r + R) * (d + r - R) * (d - r + R) * (d + r + R)))
+    return(part1 + part2 - part3)
+  }
+
+  if (both == 0) {
+    d <- r1 + r2 + 0.1
+  } else if (both >= (only1 + both) || both >= (only2 + both)) {
+    d <- abs(r1 - r2) * 0.5
+  } else {
+    opt_res <- tryCatch(
+      uniroot(function(d) calc_intersection(d, r1, r2) - target_overlap,
+              lower = abs(r1 - r2) + 1e-6, upper = r1 + r2 - 1e-6),
+      error = function(e) list(root = (r1 + r2) * 0.6)
+    )
+    d <- opt_res$root
+  }
+
+  # Shift so the pair is roughly centered at 0
+  c1_x <- -d/2;  c2_x <- d/2
+  
+  # The total bounding circle is centered at 0
+  theta <- seq(0, 2 * pi, length.out = 200)
+  circle_total <- data.frame(x = R_total * cos(theta), y = R_total * sin(theta))
+  circle1 <- data.frame(x = c1_x + r1 * cos(theta), y = r1 * sin(theta))
+  circle2 <- data.frame(x = c2_x + r2 * cos(theta), y = r2 * sin(theta))
+
+  # Label positions - push them outwards to avoid overlapping the central intersection
+  if (both > 0 && only1 > 0 && only2 > 0) {
+    lab_g1_x <- c1_x - r1 * 0.6
+    lab_g2_x <- c2_x + r2 * 0.6
+    lab_both_x <- 0
+  } else if (both == 0) {
+    lab_g1_x <- c1_x
+    lab_g2_x <- c2_x
+    lab_both_x <- 0
+  } else {
+    lab_g1_x <- c1_x - r1 * 0.6
+    lab_g2_x <- c2_x + r2 * 0.6
+    lab_both_x <- 0
+  }
+
+  # Build plot
+  p <- ggplot() +
+    geom_polygon(data = circle_total, aes(x, y), fill = "#E0E0E0", color = "grey60", linewidth = 0.5) +
+    geom_polygon(data = circle1, aes(x, y), fill = "#377EB8", alpha = 0.6, color = "#2166AC", linewidth = 1) +
+    geom_polygon(data = circle2, aes(x, y), fill = "#E41A1C", alpha = 0.6, color = "#B2182B", linewidth = 1) +
+    coord_fixed(clip = "off") +
+    theme_void(base_size = 14) +
+    labs(title = state_title) +
+    theme(
+      plot.title    = element_text(face = "bold", hjust = 0.5, size = 15,
+                                   margin = margin(b = 10)),
+      plot.margin   = margin(10, 20, 10, 20)
+    )
+
+  # Gene labels pointing to the circles
+  p <- p +
+    annotate("text", x = c1_x, y = r1 + 0.15, label = gene1,
+             fontface = "bold.italic", color = "#2166AC", size = 6) +
+    annotate("text", x = c2_x, y = r2 + 0.15, label = gene2,
+             fontface = "bold.italic", color = "#B2182B", size = 6)
+
+  # Category counts inside circles
+  make_label <- function(n, pct) {
+    paste0(formatC(n, format = "d", big.mark = ","), "\n(", sprintf("%.1f%%", pct), ")")
+  }
+
+  if (only1 > 0) {
+    p <- p + annotate("text", x = lab_g1_x, y = 0,
+                      label = make_label(only1, 100 * only1 / total),
+                      fontface = "bold", size = 5, color = "grey10")
+  }
+  if (only2 > 0) {
+    p <- p + annotate("text", x = lab_g2_x, y = 0,
+                      label = make_label(only2, 100 * only2 / total),
+                      fontface = "bold", size = 5, color = "grey10")
+  }
+  if (both > 0) {
+    p <- p + annotate("text", x = lab_both_x, y = 0,
+                      label = make_label(both, 100 * both / total),
+                      fontface = "bold", size = 5, color = "white") # White text on purple overlap
+  }
+
+  # "Neither" label inside the grey circle but outside the coloured circles (bottom right)
+  p <- p + annotate("text", x = 0.55, y = -0.75,
+                    label = paste0("Neither:\n", make_label(neither, 100 * neither / total)),
+                    fontface = "bold", size = 4.5, color = "grey30", hjust = 0.5) +
+           annotate("text", x = -0.75, y = 0.85, 
+                    label = paste0("Total cells: ", formatC(total, big.mark = ",")),
+                    size = 4, color = "grey30", hjust = 0)
+
+  return(p)
+}
+
+# ---------- helper: jittered scatter with category colours ----------
+plot_coexpr_scatter <- function(expr_mat, gene1, gene2, state_title) {
+  df <- data.frame(
+    g1 = as.numeric(expr_mat[gene1, ]),
+    g2 = as.numeric(expr_mat[gene2, ])
+  )
+  df$g1_log <- log1p(df$g1)
+  df$g2_log <- log1p(df$g2)
+
+  # classify cells
+  df$category <- dplyr::case_when(
+    df$g1 > 0 & df$g2 > 0 ~ "Both",
+    df$g1 > 0             ~ paste0(gene1, " only"),
+    df$g2 > 0             ~ paste0(gene2, " only"),
+    TRUE                  ~ "Neither"
+  )
+  df$category <- factor(df$category,
+    levels = c("Both", paste0(gene1, " only"), paste0(gene2, " only"), "Neither"))
+
+  cat_cols <- c(
+    "Both"                  = "#8C6BB1",
+    setNames("#377EB8", paste0(gene1, " only")),
+    setNames("#E41A1C", paste0(gene2, " only")),
+    "Neither"               = "#BDBDBD"
+  )
+
+  corr <- cor(df$g1, df$g2, method = "spearman")
+  max_val <- max(c(df$g1_log, df$g2_log), na.rm = TRUE) * 1.05
+
+  # Count per-category for legend
+  cat_n <- table(df$category)
+  
+  # Format legend labels
+  leg_labels <- sapply(levels(df$category), function(x) {
+    paste0(x, " (n=", formatC(as.integer(cat_n[x]), big.mark = ","), ")")
+  })
+
+  # Order so Neither draws first (bottom), Both last (top)
+  df <- df[order(df$category, decreasing = TRUE), ]
+
+  # Jitter amount: small relative to data range, enough to unstack zeros
+  jit <- max_val * 0.012
+
+  set.seed(42)
+
+  ggplot(df, aes(x = g1_log, y = g2_log, color = category)) +
+    geom_jitter(alpha = 0.45, size = 0.9, width = jit, height = jit) +
+    scale_color_manual(
+      values = cat_cols,
+      labels = leg_labels,
+      name = NULL
+    ) +
+    theme_classic(base_size = 12) +
+    coord_cartesian(xlim = c(-jit * 3, max_val), ylim = c(-jit * 3, max_val)) +
+    labs(
+      title = paste0(state_title, "  (\U03C1 = ", round(corr, 2), ")"),
+      x = paste0(gene1, " log1p(counts)"),
+      y = paste0(gene2, " log1p(counts)")
+    ) +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5, size = 13),
+      legend.position = "bottom",
+      legend.text = element_text(size = 9),
+      aspect.ratio = 1
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1), nrow = 2))
+}
+
+# ============================
+# Basal to IM: CEACAM6 vs DUOX2
+# ============================
+basal_cells <- colnames(tmdata_state6)[tmdata_state6$final_state6 == "Basal to Intestinal Metaplasia"]
+basal_expr <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[c("CEACAM6", "DUOX2"), basal_cells]
+basal_c       <- sum(basal_expr["CEACAM6", ] > 0 & basal_expr["DUOX2", ] == 0)
+basal_d       <- sum(basal_expr["DUOX2", ] > 0  & basal_expr["CEACAM6", ] == 0)
+basal_both    <- sum(basal_expr["CEACAM6", ] > 0 & basal_expr["DUOX2", ] > 0)
+basal_neither <- sum(basal_expr["CEACAM6", ] == 0 & basal_expr["DUOX2", ] == 0)
+
+cat("\n--- Basal to IM (CEACAM6 vs DUOX2) ---\n")
+cat("CEACAM6 only:", basal_c, "\nDUOX2 only:", basal_d,
+    "\nBoth:", basal_both, "\nNeither:", basal_neither, "\n")
+
+p_basal_venn    <- plot_coexpr_venn("CEACAM6", "DUOX2", basal_c, basal_d, basal_both, basal_neither,
+                                    "Basal to Intestinal Metaplasia")
+p_basal_scatter <- plot_coexpr_scatter(basal_expr, "CEACAM6", "DUOX2", "Basal to IM")
+
+# ============================
+# SMG-like: AQP5 vs WFDC2
+# ============================
+smg_cells <- colnames(tmdata_state6)[tmdata_state6$final_state6 == "SMG-like Metaplasia"]
+smg_expr <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[c("AQP5", "WFDC2"), smg_cells]
+smg_a       <- sum(smg_expr["AQP5", ] > 0  & smg_expr["WFDC2", ] == 0)
+smg_w       <- sum(smg_expr["WFDC2", ] > 0 & smg_expr["AQP5", ] == 0)
+smg_both    <- sum(smg_expr["AQP5", ] > 0  & smg_expr["WFDC2", ] > 0)
+smg_neither <- sum(smg_expr["AQP5", ] == 0 & smg_expr["WFDC2", ] == 0)
+
+cat("\n--- SMG-like (AQP5 vs WFDC2) ---\n")
+cat("AQP5 only:", smg_a, "\nWFDC2 only:", smg_w,
+    "\nBoth:", smg_both, "\nNeither:", smg_neither, "\n")
+
+p_smg_venn    <- plot_coexpr_venn("AQP5", "WFDC2", smg_a, smg_w, smg_both, smg_neither,
+                                  "SMG-like Metaplasia")
+p_smg_scatter <- plot_coexpr_scatter(smg_expr, "AQP5", "WFDC2", "SMG-like Metaplasia")
+
+# ============================
+# Combine: 2 rows × 2 cols  (Venn | Scatter)
+# ============================
+p_coexpr_combined <- (
+  (p_basal_venn | p_basal_scatter) +
+    plot_layout(widths = c(1, 1))
+) / (
+  (p_smg_venn | p_smg_scatter) +
+    plot_layout(widths = c(1, 1))
+) +
+  plot_annotation(
+    title    = "Marker Co-expression Patterns",
+    theme    = theme(
+      plot.title    = element_text(face = "bold", size = 16, hjust = 0.5)
+    )
+  )
+
+out_coexpr_pdf <- file.path(out_dir, "Auto_basal_smg_marker_coexpression.pdf")
+ggsave(out_coexpr_pdf, p_coexpr_combined, width = 14, height = 12, useDingbats = FALSE)
+message("Saved co-expression PDF to: ", out_coexpr_pdf)
+

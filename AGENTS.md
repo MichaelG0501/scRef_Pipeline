@@ -463,6 +463,18 @@ can read results on the login node without loading heavy `.rds` files, create fo
 - In non-interactive shells, these commands may not be on `PATH` by default, so use the absolute path if needed.
 
 ####################
+####################
+## 22 May 2026 Conference Poster Requested Revisions
+
+- `analysis/publication/poster_requested_revisions.R`
+  - Purpose: poster-specific replot layer for the requested Single Cell Biology 2026 A0 poster revisions. It creates minimal SVG workflow schematics, revised atlas/NMF/enrichment/TME/PDO/spatial/FLOT/survival/targeting panels, and copies final assets into `ref_outs/Auto_conference_poster_plan/assets/publication/`.
+  - Inputs: final cached scRef outputs, Visium mapping outputs, TME interaction CSVs, TCGA TPM/meta and Cox results, and PDO crossdata/FLOT/drug-reversal outputs.
+  - Outputs: `ref_outs/publication/requested_revisions/` plus poster-ready assets in `ref_outs/publication/assets/` and `ref_outs/Auto_conference_poster_plan/assets/publication/`.
+  - Redundant assets: no files are deleted; removed poster panels are copied with `delete_` prefixes and listed in `ref_outs/publication/requested_revisions/tables/delete_redundant_asset_manifest.csv`.
+  - Methodology: `analysis/methodology/publication/poster_requested_revisions_methodology.md`.
+- Current live poster HTML: `ref_outs/Auto_conference_poster_plan/oac_poster_final.html`; older poster drafts are listed in `ref_outs/Auto_conference_poster_plan/legacy_html_manifest.md`.
+- 23 May 2026 update: requested-revision plotting behaviour was moved into the canonical `analysis/publication/poster_section*.R` scripts. `analysis/publication/run_poster_publication_figures.sh` no longer runs `poster_requested_revisions.R`, so manually curated poster assets such as `assets/Schematic_overall.svg`, `assets/Schematic_Anno.svg`, and the merged atlas UMAP/barplot are not overwritten by the wrapper.
+####################
 ## 25 Mar 2026 Non-Malignant MP Cross-Celltype Correlation Script
 
 - `analysis/non_malignant_nmf/mp_cross_celltype_correlations.R`
@@ -702,6 +714,33 @@ Do **not** apply this to every R script. Focus on scripts that synthesize data a
   - Key plotting decisions: consensus heatmap hides row names and cluster row labels; recurrent CNA event summaries use recurrent + next ranked events split into MPs, six states (excluding Hybrid/Unresolved), and QC/CNA metrics; significance with group-level BH FDR point size and stars; largest-subclone standardized boxplots; chr8q/MYC 3-group comparison; pairwise CNA-distance sample-centered Spearman.
   - Supersedes: `analysis/cnv/legacy_cna_subclone_expression_visuals_v2.R` (retained as legacy reference).
   - Methodology: `analysis/methodology/cnv/cna_subclone_expression_correlation_methodology.md`.
+####################
+
+####################
+## 21 May 2026 Conference Poster Publication Replot Layer
+
+- New publication-only scripts live under `analysis/publication/` and should be used for A0 poster/manuscript-style figure replots rather than editing upstream biological analysis scripts.
+- Shared helper: `analysis/publication/publication_helpers.R`
+  - Defines canonical poster state order, state colours from `analysis/shared/scRef_config.R`, MP order, MP-to-state grouping, PDF/PNG export helpers, and placeholder/status helpers.
+- Section scripts:
+  - `poster_section1_atlas_metaprograms.R`
+  - `poster_section2_genetics_regulons.R`
+  - `poster_section3_tme_interactions.R`
+  - `poster_section4_pdo_concordance.R`
+  - `poster_section5_lineage_validation.R`
+  - `poster_section6_flot_remodelling.R`
+  - `poster_section7_survival_targeting.R`
+- Wrapper: `analysis/publication/run_poster_publication_figures.sh` (`ncpus=4`, `mem=32gb`, `walltime=4h`, `#PBS -koed`, `dmtcp` env). It reruns all section scripts and copies generated assets into `ref_outs/Auto_conference_poster_plan/assets/publication/`.
+- Dependency wrapper: `analysis/publication/replot_after_scenic.sh` (`ncpus=2`, `mem=16gb`, `walltime=1h`, `#PBS -koed`, `dmtcp` env). Submit with `qsub -W depend=afterok:<scenic_jobid>` to refresh the SCENIC publication panel after `final_mp_scenic.sh` completes.
+- Outputs:
+  - Sectioned figures/tables/logs under `ref_outs/publication/<section>/`.
+  - Bulk poster-ready copies under `ref_outs/publication/assets/` and `ref_outs/Auto_conference_poster_plan/assets/publication/`.
+- Known current placeholders/status files:
+  - SCENIC regulon network: upstream `ref_outs/final_mp_scenic/` was absent.
+  - scRef pseudotime/state-distance node plot: upstream `ref_outs/state_distance_pseudotime/` and `task6_hybrid_pairwise_distance/` were absent.
+  - Visium validation: no final Visium state mapping PNG/PDF was found under `ref_outs`.
+  - TCGA/GEO survival: no final survival/Cox/volcano output was found under `ref_outs`.
+- Methodology: `analysis/methodology/publication/poster_figures_methodology.md`.
 ####################
 
 ####################

@@ -181,6 +181,22 @@ Recommended environment toggles:
 - `SCREF_FORCE_REBUILD=TRUE`: ignore cached intermediates.
 - `SCREF_REPLOT_ONLY=TRUE`: read cached intermediates and regenerate plots only.
 
+## Publication Poster Figures
+
+| Script | Status | Inputs | Outputs | Notes |
+|---|---|---|---|---|
+| `publication/publication_helpers.R` | active helper | shared scRef config/helpers | helper functions only | canonical poster state/MP order, colours, saving, placeholders |
+| `publication/poster_section1_atlas_metaprograms.R` | terminal publication figure | scRef nMP19 GeneNMF, UCell, final/noreg states, enrichment RDS | `ref_outs/publication/section1_atlas_metaprograms/` | NMF composition, MP correlation, state MP heatmap, state abundance, focused enrichment |
+| `publication/poster_section2_genetics_regulons.R` | terminal publication figure | CNA subclone visualisation RDS, optional final SCENIC outputs | `ref_outs/publication/section2_genetics_regulons/` | CNA consensus/association replot; writes SCENIC placeholder when upstream result absent |
+| `publication/poster_section3_tme_interactions.R` | terminal publication figure | cross-celltype MP correlation and LR CSVs | `ref_outs/publication/section3_tme_interactions/` | relaxed-threshold cancer-TME dotmap and simplified LR network |
+| `publication/poster_section4_pdo_concordance.R` | terminal publication figure | PDO nMP13 GeneNMF, PDO states, 3CA crossdata, matched PDO/snRNA CSVs | `ref_outs/publication/section4_pdo_concordance/` | PDO NMF, scAtlas-vs-PDO state occurrence, pan-cancer concordance, matched-pair state bars |
+| `publication/poster_section5_lineage_validation.R` | terminal publication figure | lineage marker CSVs, basal/SMG signature RDS, clinical summary CSV, optional pseudotime/spatial outputs | `ref_outs/publication/section5_lineage_validation/` | marker/signature bubbles and location association; writes placeholders for missing state-distance/Visium outputs |
+| `publication/poster_section6_flot_remodelling.R` | terminal publication figure | PDO FLOT matched-response CSVs | `ref_outs/publication/section6_flot_remodelling/` | pathway response matrix and selected MP paired-expression plot |
+| `publication/poster_section7_survival_targeting.R` | terminal publication figure | drug reversal overlap CSVs, optional survival outputs | `ref_outs/publication/section7_survival_targeting/` | inhibitor overlap plots; writes survival placeholder when upstream TCGA/GEO outputs absent |
+| `publication/poster_requested_revisions.R` | legacy | final scRef/PDO/Visium/TME/TCGA poster outputs | `ref_outs/publication/requested_revisions/` and poster asset copies | superseded by in-place updates to `poster_section*.R`; retained for provenance only and not called by the wrapper |
+| `publication/run_poster_publication_figures.sh` | PBS wrapper | all publication section scripts | `ref_outs/publication/` plus copied poster assets | re-runs canonical section replots and copies assets into the conference poster folder without overwriting manually curated schematics |
+| `publication/replot_after_scenic.sh` | PBS dependency wrapper | completed `final_mp_scenic` outputs | section 2 SCENIC publication asset | submit with `afterok:<scenic_jobid>` to refresh the regulon panel automatically |
+
 ## Untracked Files
 
 The following files or folders are intentionally not staged by agents unless the user explicitly requests it:

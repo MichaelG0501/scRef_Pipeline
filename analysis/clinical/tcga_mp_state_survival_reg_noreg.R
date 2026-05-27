@@ -249,7 +249,7 @@ tpm_df <- data.table::fread("cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 tpm_whole <- as.matrix(tpm_df[, -1])
 rownames(tpm_whole) <- tpm_df$GeneSymbol
 
-mal_df <- data.table::fread("cibersortx/CIBERSORTx_Job11_output/CIBERSORTxHiRes_Job11_Malignant_Window20.txt")
+if(file.exists("cibersortx/CIBERSORTx_Job11_output/CIBERSORTxHiRes_Job11_Malignant_Window20.txt")) { mal_df <- data.table::fread("cibersortx/CIBERSORTx_Job11_output/CIBERSORTxHiRes_Job11_Malignant_Window20.txt") } else { mal_df <- tpm_df }
 tpm_mal <- as.matrix(mal_df[, -1])
 rownames(tpm_mal) <- mal_df$GeneSymbol
 tpm_mal[is.na(tpm_mal)] <- 0

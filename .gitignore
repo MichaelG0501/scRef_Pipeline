@@ -22,3 +22,6 @@ __pycache__/
 *.synctex.gz
 *.fls
 *.fdb_latexmk
+
+# Mac
+.DS_Store

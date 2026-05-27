@@ -1,6 +1,6 @@
 # Auto Six-State Marker Methodology
 
-Generated: 2026-04-14 09:40:18 BST
+Generated: 2026-05-26 15:42:41 BST
 
 ## 1. Goal and Scope
 
@@ -132,15 +132,15 @@ The top 5 markers by **Ranking Score** per state are selected for the final pane
 ## 9. Current 3CA recurrence profile
 
 ```text
-# A tibble: 5 x 7
+# A tibble: 5 × 7
   gene      hit_sample_n hit_study_n sample_recurrence study_recurrence
   <chr>            <int>       <int>             <dbl>            <dbl>
-1 EXT1                 3           1            0.125             0.143
-2 CD44                 2           1            0.0833            0.143
+1 CD44                 2           1            0.0833            0.143
+2 EXT1                 3           1            0.125             0.143
 3 MYOF                 2           1            0.0833            0.143
 4 MBNL2                2           1            0.0833            0.143
 5 LINC03009            3           1            0.125             0.143
-# i 2 more variables: support_class <chr>,
+# ℹ 2 more variables: support_class <chr>,
 #   passes_legacy_strict_recurrence <lgl>
 ```
 
@@ -166,16 +166,16 @@ The top 5 markers by **Ranking Score** per state are selected for the final pane
 ## 11. Recurrence summary by state
 
 ```text
-# A tibble: 6 x 7
+# A tibble: 6 × 7
   state                  top_marker_n multi_sample_marker_n multi_study_marker_n
   <chr>                         <int>                 <int>                <int>
-1 3CA_EMT_and_Protein_m~            5                     5                    0
-2 Basal to Intestinal M~            5                     5                    5
+1 3CA_EMT_and_Protein_m…            5                     5                    0
+2 Basal to Intestinal M…            5                     5                    5
 3 Classic Proliferative             5                     5                    5
 4 Immune Infiltrating               5                     5                    5
 5 SMG-like Metaplasia               5                     5                    5
 6 Stress-adaptive                   5                     5                    5
-# i 3 more variables: median_sample_recurrence <dbl>,
+# ℹ 3 more variables: median_sample_recurrence <dbl>,
 #   median_study_recurrence <dbl>, n_passing_legacy_strict_recurrence <int>
 ```
 
