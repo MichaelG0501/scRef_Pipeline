@@ -123,6 +123,9 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `cnv/cnv_plotting.R` | core CNV terminal | CNA matrices | publication CNV plots | terminal |
 | `developmental/developmental.R` | reference build | developmental xlsx files | `enrich_dev.rds`, per-stage RDS | enrichment/reference interpretation |
 | `developmental/external_epi_mp_ucell_heatmap.R` | active terminal/upstream | MP genes, adult oesophagus/stomach, Barretts references | external epithelial MP UCell heatmaps/cache | terminal |
+| `developmental/developmental_mp_enrichment_unified.R` | active terminal/upstream | MP genes/UCell, `EAC_Ref_epi.rds`, developmental ranked marker workbooks, available annotated external references | unified developmental MP overlap/correlation/reference-celltype UCell PDFs, top50-vs-all comparison, rank/external-data audit tables | terminal developmental validation |
+| `developmental/developmental_mp_enrichment_unified_original_aligned_core.R` | sourced helper | loaded by `developmental_mp_enrichment_unified.R` after ranked-reference and MP setup | original-script-aligned overlap/correlation/external-scoring tables and PDFs | helper; not run directly |
+| `developmental/developmental_mp_enrichment_unified.sh` | PBS wrapper | `developmental_mp_enrichment_unified.R` | live PBS log/output for unified developmental MP validation | run wrapper |
 | `enrichment/enrichment_analysis.R` | upstream | MP gene lists, TERM2GENE DBs | `cluster_enrich.rds` | enrichment annotation |
 | `enrichment/enrichment_annotation.R` | terminal | MP object, `cluster_enrich.rds`, reference DBs | enrichment heatmaps | terminal |
 | `enrichment/enrichment_plotting_helpers.R` | helper/reference | enrichment data frames | helper functions/plots | reuse or reference |
@@ -231,4 +234,33 @@ The following files or folders are intentionally not staged by agents unless the
   - Outputs: `ref_outs/TCGA/gender_validation/` with cached GSVA scores, scRef/TCGA feature stats, concordance tables, and `Auto_tcga_gender_scRef_concordance.pdf/png`; compact summary at `updates/new_updates/summaries/Auto_tcga_gender_scRef_concordance_summary.csv`.
   - PBS wrapper: `analysis/TCGA/tcga_gender_state_mp_validation.sh` (`ncpus=4`, `mem=64gb`, `walltime=4h`, `dmtcp`, live logging).
   - Methodology: `analysis/methodology/TCGA/tcga_reconstruction_and_gender_validation_methodology.md`.
+####################
+
+####################
+## 27 May 2026 TCGA CNA Recurrent Event Validation
+
+- `analysis/TCGA/tcga_cna_recurrent_event_validation.R`
+  - Status: active terminal.
+  - Purpose: validate the top 8 scRef recurrent chromosome-arm CNA events in TCGA EAC bulk RNA-seq by deriving weighted arm-level gain/loss calls from GDC segment means, splitting patients by event presence, and testing TCGA MP/state GSVA score associations. It also discovers recurrent TCGA arm events and reports whether significant event-feature associations are also recurrent in scRef.
+  - Inputs: `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg`, reconstructed TCGA TPM/meta and/or the cached gender-validation GSVA scores, scRef recurrent CNA event tables from `ref_outs/Auto_cna_subclone_expression/tables/`, `ref_outs/OAC_CNV.xlsx`, and `ref_outs/41588_2018_331_MOESM3_ESM.xlsx`.
+  - Thresholding: scans absolute TCGA arm means from 0.05 to 0.30 and selects the threshold with best F1/Jaccard concordance to curated `OAC_CNV.xlsx` arm events; current run selected `0.12`.
+  - Annotation correction: parses OCCAMS driver sheets by locating the real `Gene`/`hgnc_symbol` header row and normalizes display symbols while preserving raw symbols, so ST5 row 25 `ENSG00000136997 / MYC*` is retained as a high-confidence `MYC` driver on `gain_chr8q`.
+  - Plotting: mirrors `analysis/cnv/cna_subclone_expression_correlation.R` presentation style: same MP/state order, separate MP/state pages, top 8 scRef recurrent events in dotplots, top 4 in boxplots, standardized event deltas, and large slide-readable labels.
+  - Outputs: `ref_outs/TCGA/cna_recurrent_event_validation/` with arm-call caches, reparsed CNA annotation tables, threshold sensitivity/optimization tables, scRef-validation event tests, TCGA-discovery event tests, dotplot/boxplot PDFs, run logs, conclusion CSV, and compact summary at `updates/new_updates/summaries/Auto_tcga_cna_recurrent_event_validation_summary.csv`.
+  - Current result summary: 87 TCGA EAC primary samples matched; the top 8 scRef recurrent events had 0 TCGA MP/state associations at feature-type FDR < 0.10; TCGA-discovered events had 5 associations at feature-type FDR < 0.10, none recurrent in scRef. Conclusion: the TCGA validation supports the scRef trend that recurrent arm CNAs are not robustly coupled to MP/state programmes.
+  - Methodology: `analysis/methodology/TCGA/tcga_cna_recurrent_event_validation_methodology.md`.
+####################
+
+####################
+## 28 May 2026 State UMAP Dispersion And Co-Localisation
+
+- `analysis/cell_states/state_umap_dispersion_colocalisation.R`
+  - Status: active terminal/intermediate.
+  - Purpose: quantify per-sample UMAP dispersion and same-label nearest-neighbour co-localisation for the five primary noreg Approach B states, excluding `Unresolved` and `Hybrid`, then repeat the analysis within `Basal to Intestinal Metaplasia` using basal-only UMAPs labelled by top basal state-defining MP (`MP17`, `MP14`, `MP5`, `MP10`, `MP8`).
+  - Inputs: `ref_outs/EAC_Ref_epi.rds`, `ref_outs/Auto_topmp_v2_noreg_states_B.rds`, `ref_outs/Auto_topmp_v2_noreg_mp_adj.rds`, and `ref_outs/state_distance_pseudotime/sample_state_trajectories/*_pseudotime_states.rds`.
+  - Regeneration: if the pseudotime trajectory RDS files are absent, the script reruns `analysis/cell_states/pseudotime_state_distance_matrix.R` before calculating metrics.
+  - Outputs: `ref_outs/state_umap_dispersion_colocalisation/` with cached UMAP coordinates/metric RDS files in `intermediate/`, per-cell/per-sample/overall tables in `tables/`, colocalisation boxplots, dispersion boxplots, dispersion-vs-colocalisation scatter plots, and per-sample UMAP pages in `figures/`, plus compact summary `updates/new_updates/summaries/Auto_state_umap_dispersion_colocalisation_summary.csv`.
+  - Cache controls: `SCREF_FORCE_REBUILD=TRUE`, `SCREF_REPLOT_ONLY=TRUE`, `SCREF_COLOCAL_K`, `SCREF_STATE_UMAP_MIN_CELLS`, and `SCREF_BASAL_UMAP_MIN_CELLS`.
+  - PBS wrapper: `analysis/cell_states/state_umap_dispersion_colocalisation.sh` (`ncpus=8`, `mem=128gb`, `walltime=12h`, `dmtcp`, live logging).
+  - Methodology: `analysis/methodology/cell_states/state_umap_dispersion_colocalisation_methodology.md`.
 ####################

@@ -378,7 +378,7 @@ When delegating work to subagents or background tasks, you **MUST** restrict mod
    - Fallback/general → `opencode/big-pickle`
 4. **Do not escalate**: Never use a paid model as a subagent when your primary is free or 0.33X tier. This is a hard rule.
 
-## Uploading Files to Google Drive (rclone)
+## Uploading Files to Google Drive (rclone) (ONLY do this when required explicitly)
 
 rclone is configured with a remote named `gdrive`. Always upload into the `IMPERIAL/` folder:
 
@@ -755,4 +755,50 @@ Do **not** apply this to every R script. Focus on scripts that synthesize data a
 
 - `analysis/metaprograms/mp_database_correlation.sh`
   - PBS wrapper for the regeneration (`ncpus=4`, `mem=128gb`, `walltime=8h`, `#PBS -koed`, `dmtcp` env).
+####################
+
+####################
+## 27 May 2026 TCGA CNA Recurrent Event Validation
+
+- `analysis/TCGA/tcga_cna_recurrent_event_validation.R`
+  - Purpose: validate the top 8 scRef recurrent chromosome-arm CNA events in TCGA EAC bulk RNA-seq using the GDC segment file `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg`.
+  - Arm calling: computes length-weighted segment means per hg38 chromosome arm and matches segment IDs like `TCGA-2H-A9GF-01` to RNA-seq barcodes like `TCGA-2H-A9GF-01A` using the first 15 TCGA barcode characters.
+  - Thresholding: scans absolute arm mean thresholds 0.05-0.30 against curated `OAC_CNV.xlsx` arm events; current selected threshold is `0.12`.
+  - Annotation workbook interpretation:
+    - `OAC_CNV.xlsx` is a curated gain/loss arm-driver table with rank, cytoband, genes, approximate frequency, pathway, and clinical relevance.
+    - `41588_2018_331_MOESM3_ESM.xlsx` ST1/ST2 are GISTIC peak sheets; ST3/ST4 are deletion driver sheets; ST5/ST6 are amplification driver sheets.
+    - The parser locates the real `Gene`/`hgnc_symbol` header row in driver sheets instead of relying on a fixed skip count. ST5 row 25 `ENSG00000136997 / MYC*` is retained as high-confidence `MYC` on `gain_chr8q`.
+  - Plotting: mirrors `analysis/cnv/cna_subclone_expression_correlation.R` presentation style: same MP/state order, separate MP/state pages, top 8 scRef recurrent events in dotplots, top 4 in boxplots, standardized event deltas, and large slide-readable labels.
+  - Outputs: `ref_outs/TCGA/cna_recurrent_event_validation/` with `intermediate/`, `tables/`, `figures/`, and `logs/`; compact summary at `updates/new_updates/summaries/Auto_tcga_cna_recurrent_event_validation_summary.csv`.
+  - Current result: 87 matched TCGA EAC primary samples; 0 top-scRef recurrent event TCGA MP/state associations at feature-type FDR < 0.10; 5 TCGA-discovered associations at feature-type FDR < 0.10, none recurrent in scRef. Conclusion: TCGA supports the scRef trend that recurrent arm CNAs are not robustly coupled to MP/state programmes.
+  - Methodology: `analysis/methodology/TCGA/tcga_cna_recurrent_event_validation_methodology.md`.
+####################
+
+####################
+## 28 May 2026 State UMAP Dispersion And Co-Localisation
+
+- `analysis/cell_states/state_umap_dispersion_colocalisation.R`
+  - Purpose: calculates per-sample UMAP dispersion and same-label nearest-neighbour co-localisation for the five primary noreg Approach B states, excluding `Unresolved` and `Hybrid`, then repeats the analysis within `Basal to Intestinal Metaplasia` using basal-only UMAPs labelled by top basal MP.
+  - Basal MP labels: use the top z-normalised noreg MP among `MP17`, `MP14`, `MP5`, `MP10`, and `MP8` for each basal cell.
+  - Inputs: `ref_outs/EAC_Ref_epi.rds`, `ref_outs/Auto_topmp_v2_noreg_states_B.rds`, `ref_outs/Auto_topmp_v2_noreg_mp_adj.rds`, and `ref_outs/state_distance_pseudotime/sample_state_trajectories/*_pseudotime_states.rds`.
+  - Regeneration: if trajectory RDS files are missing, the script reruns `analysis/cell_states/pseudotime_state_distance_matrix.R` first.
+  - Outputs: `ref_outs/state_umap_dispersion_colocalisation/` with `intermediate/`, `tables/`, `figures/`, and `logs/`; compact summary at `updates/new_updates/summaries/Auto_state_umap_dispersion_colocalisation_summary.csv`.
+  - PBS wrapper: `analysis/cell_states/state_umap_dispersion_colocalisation.sh` (`ncpus=8`, `mem=128gb`, `walltime=12h`, `#PBS -koed`, `dmtcp` env).
+  - Methodology: `analysis/methodology/cell_states/state_umap_dispersion_colocalisation_methodology.md`.
+####################
+
+####################
+## 28 May 2026 Unified Developmental MP Validation
+
+- `analysis/developmental/developmental_mp_enrichment_unified.R`
+  - Purpose: unified developmental validation workflow for scATLAS metaprogrammes using three evidence layers: original `clusterProfiler::enricher()` overlap enrichment, original epithelial scATLAS expression-correlation enrichment, and original-style external annotated reference-celltype MP UCell scoring when annotated expression matrices are available.
+  - Runtime core: `analysis/developmental/developmental_mp_enrichment_unified_original_aligned_core.R` is sourced by the main script and keeps the original-script-aligned method logic separate from ranked-reference construction.
+  - Ranked gene handling: rebuilds ranked developmental reference genes from the source workbooks and writes `ref_outs/Auto_developmental_mp_enrichment_unified/tables/Auto_developmental_reference_rank_audit.csv`. Top-50 mode uses the first 50 ranked genes per term, then runs the same original enrichment/correlation logic. All-gene mode uses the original per-stage `TERM2GENE` references and validates against the original outputs.
+  - Rank sources: Early embryogenesis/adult oesophagus/Barretts use source workbook marker order with available DE statistics; Organogenesis `S1D` uses marker columns labelled as DEGs ordered by z-score; Normal development long uses `fold.change`/`qval`; Normal development short is literature-marker order and is flagged as not a differential ranked list.
+  - Validation outputs: `Auto_developmental_validation_overlap_all_vs_original.csv` and `Auto_developmental_validation_correlation_all_vs_original.csv` should be checked after reruns; the all-gene values are expected to have zero difference from `cluster_enrich.rds` and `Auto_MP_correlation_results_v2_MP19.rds`.
+  - Method 3 availability: early embryogenesis processed Seurat data were downloaded from the paper dataset portal; organogenesis raw counts/cell/gene annotations were downloaded from GEO `GSE157329`; adult stomach uses the local developmental `Stomach.rds`. Normal fetal development, adult oesophagus, and Barretts were not scored in the 28 May 2026 run because directly usable annotated expression matrices were not available locally/directly.
+  - Outputs: `ref_outs/Auto_developmental_mp_enrichment_unified/` with `intermediate/`, `tables/`, `figures/`, and `logs/`. Main PDFs are `Auto_developmental_mp_unified_top50.pdf` and `Auto_developmental_mp_top50_vs_all_overlap_correlation.pdf`.
+  - Cache controls: `SCREF_FORCE_REBUILD=TRUE` rebuilds UCell caches; `SCREF_REPLOT_ONLY=TRUE` replots from existing tables; `SCREF_UCELL_CORES` and `SCREF_MAX_CELLS_PER_TYPE` control runtime.
+  - PBS wrapper: `analysis/developmental/developmental_mp_enrichment_unified.sh` (`ncpus=8`, `mem=128gb`, `walltime=12h`, `#PBS -koed`, `dmtcp` env).
+  - Methodology: `analysis/methodology/developmental/developmental_mp_enrichment_unified_methodology.md`.
 ####################

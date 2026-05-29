@@ -46,6 +46,7 @@ suppressPackageStartupMessages({
   library(gridExtra)
   library(ggrepel)
   library(cluster)
+  library(ggpubr)
 })
 
 options(stringsAsFactors = FALSE)
@@ -952,6 +953,214 @@ cluster_feature_tests <- bind_rows(lapply(target_features, function(feat) {
   arrange(.data$kruskal_p_adj)
 
 write_table(cluster_feature_tests, "Auto_cna_cluster_feature_tests.csv")
+
+####################
+message("Plotting CNA consensus cluster MP/state associations")
+
+cluster_k_diagnostics <- bind_rows(lapply(2:min(12L, nrow(arm_matrix_valid) - 1L), function(k) {
+  cl <- cutree(hc, k = k)
+  sil <- if (any(table(cl) < 2)) {
+    NA_real_
+  } else {
+    tryCatch(mean(cluster::silhouette(cl, dist(arm_matrix_valid))[, "sil_width"]), error = function(e) NA_real_)
+  }
+  data.frame(
+    k = k,
+    min_cluster_size = min(table(cl)),
+    max_cluster_size = max(table(cl)),
+    mean_silhouette = sil,
+    selected_current = k == length(unique(cna_cluster)),
+    stringsAsFactors = FALSE
+  )
+}))
+write_table(cluster_k_diagnostics, "Auto_cna_consensus_k_silhouette_diagnostics.csv")
+
+cluster_size_summary <- features %>%
+  count(.data$cna_cluster, name = "n_subclones") %>%
+  arrange(.data$cna_cluster)
+write_table(cluster_size_summary, "Auto_cna_consensus_cluster_sizes.csv")
+
+cluster_plot_state_features <- setdiff(state_feature_cols, c(hybrid_state_col, unresolved_state_col))
+cluster_plot_features <- intersect(c(mp_feature_cols, cluster_plot_state_features), colnames(features))
+cluster_plot_group <- c(
+  setNames(rep("Metaprogrammes", length(intersect(mp_feature_cols, cluster_plot_features))), intersect(mp_feature_cols, cluster_plot_features)),
+  setNames(rep("Six states", length(intersect(cluster_plot_state_features, cluster_plot_features))), intersect(cluster_plot_state_features, cluster_plot_features))
+)
+cluster_plot_features <- names(cluster_plot_group)
+
+cluster_p_to_stars <- function(p) {
+  case_when(
+    is.na(p) ~ "",
+    p < 0.001 ~ "***",
+    p < 0.01 ~ "**",
+    p < 0.05 ~ "*",
+    TRUE ~ ""
+  )
+}
+
+cluster_plot_long <- features %>%
+  select(.data$sample, .data$subclone, .data$subclone_id, .data$n_cells,
+         .data$subclone_fraction, .data$cna_cluster, all_of(cluster_plot_features)) %>%
+  pivot_longer(all_of(cluster_plot_features), names_to = "feature", values_to = "value") %>%
+  filter(!is.na(.data$cna_cluster), is.finite(.data$value)) %>%
+  mutate(
+    cna_cluster = factor(.data$cna_cluster, levels = sort(unique(as.character(features$cna_cluster)))),
+    feature_group = unname(cluster_plot_group[.data$feature]),
+    feature_label = feature_label(.data$feature)
+  )
+
+cluster_mp_state_tests <- cluster_plot_long %>%
+  group_by(.data$feature_group, .data$feature, .data$feature_label) %>%
+  summarise(
+    n_subclones = n(),
+    n_clusters = n_distinct(.data$cna_cluster),
+    kruskal_p_value = if (n() >= 5 && n_distinct(.data$cna_cluster) >= 2) {
+      tryCatch(kruskal.test(.data$value ~ .data$cna_cluster)$p.value, error = function(e) NA_real_)
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  ) %>%
+  group_by(.data$feature_group) %>%
+  mutate(kruskal_p_adj_group = p.adjust(.data$kruskal_p_value, method = "BH")) %>%
+  ungroup() %>%
+  mutate(
+    kruskal_p_adj_global = p.adjust(.data$kruskal_p_value, method = "BH"),
+    sig_label = cluster_p_to_stars(.data$kruskal_p_adj_group)
+  ) %>%
+  arrange(.data$feature_group, .data$kruskal_p_adj_group)
+write_table(cluster_mp_state_tests, "Auto_cna_consensus_cluster_mp_state_tests.csv")
+
+cluster_pairwise_tests <- bind_rows(lapply(split(cluster_plot_long, cluster_plot_long$feature), function(df) {
+  if (n_distinct(df$cna_cluster) < 2) return(NULL)
+  pw <- tryCatch(pairwise.wilcox.test(df$value, df$cna_cluster, p.adjust.method = "BH")$p.value,
+                 error = function(e) NULL)
+  if (is.null(pw)) return(NULL)
+  as.data.frame(as.table(pw), stringsAsFactors = FALSE) %>%
+    filter(!is.na(.data$Freq)) %>%
+    transmute(
+      feature = df$feature[1],
+      feature_label = df$feature_label[1],
+      feature_group = df$feature_group[1],
+      cluster_1 = .data$Var1,
+      cluster_2 = .data$Var2,
+      pairwise_p_adj = .data$Freq
+    )
+})) %>%
+  arrange(.data$feature_group, .data$pairwise_p_adj)
+write_table(cluster_pairwise_tests, "Auto_cna_consensus_cluster_mp_state_pairwise_wilcox.csv")
+
+cluster_cols <- setNames(
+  colorRampPalette(brewer.pal(8, "Set2"))(length(unique(cluster_plot_long$cna_cluster))),
+  sort(unique(as.character(cluster_plot_long$cna_cluster)))
+)
+
+plot_cluster_feature_boxplots <- function(group_name, title_text) {
+  df <- cluster_plot_long %>%
+    filter(.data$feature_group == group_name) %>%
+    mutate(feature_label = factor(.data$feature_label, levels = unique(feature_label(cluster_plot_features[cluster_plot_group == group_name]))))
+  sig_df <- cluster_mp_state_tests %>%
+    filter(.data$feature_group == group_name) %>%
+    mutate(feature_label = factor(.data$feature_label, levels = unique(feature_label(cluster_plot_features[cluster_plot_group == group_name]))))
+  
+  pw_df <- cluster_pairwise_tests %>%
+    filter(.data$feature_group == group_name, .data$pairwise_p_adj < 0.05) %>%
+    mutate(feature_label = factor(.data$feature_label, levels = levels(df$feature_label))) %>%
+    mutate(p.signif = cluster_p_to_stars(.data$pairwise_p_adj)) %>%
+    rename(group1 = .data$cluster_1, group2 = .data$cluster_2)
+  
+  if (nrow(pw_df) > 0) {
+    max_vals <- df %>% 
+      group_by(.data$feature_label) %>% 
+      summarise(max_val = max(.data$value, na.rm = TRUE), diff = max(.data$value, na.rm=TRUE) - min(.data$value, na.rm=TRUE), .groups="drop")
+    pw_df <- pw_df %>%
+      left_join(max_vals, by = "feature_label") %>%
+      group_by(.data$feature_label) %>%
+      mutate(y.position = .data$max_val + .data$diff * 0.1 * row_number()) %>%
+      ungroup()
+  }
+  
+  p <- ggplot(df, aes(.data$cna_cluster, .data$value, fill = .data$cna_cluster)) +
+    geom_boxplot(outlier.shape = NA, alpha = 0.72, linewidth = 0.45) +
+    geom_point(aes(size = .data$n_cells), position = position_jitter(width = 0.16, height = 0),
+               alpha = 0.55, shape = 21, color = "black") +
+    geom_text(data = sig_df, aes(x = Inf, y = Inf, label = .data$sig_label),
+              inherit.aes = FALSE, hjust = 1.2, vjust = 1.2, size = 8, fontface = "bold")
+              
+  if (nrow(pw_df) > 0) {
+    p <- p + stat_pvalue_manual(pw_df, label = "p.signif", size = 6, hide.ns = TRUE)
+  }
+  
+  p + facet_wrap(~feature_label, scales = "free_y", ncol = 4) +
+    scale_fill_manual(values = cluster_cols, drop = FALSE) +
+    scale_size_continuous(range = c(1.2, 4.5)) +
+    labs(title = title_text, x = NULL, y = "Subclone feature value",
+         fill = "CNA cluster", size = "Cells") +
+    theme_classic(base_size = 20) +
+    theme(
+      plot.title = element_text(face = "bold", size = 26),
+      strip.text = element_text(face = "bold", size = 16),
+      axis.text.x = element_text(angle = 35, hjust = 1, size = 16),
+      axis.text.y = element_text(size = 14),
+      legend.title = element_text(face = "bold", size = 18),
+      legend.text = element_text(size = 16)
+    )
+}
+
+cluster_k_plot <- ggplot(cluster_k_diagnostics, aes(.data$k, .data$mean_silhouette)) +
+  geom_line(linewidth = 0.8, color = "grey35") +
+  geom_point(aes(fill = .data$selected_current), shape = 21, size = 4, color = "black") +
+  geom_text(aes(label = ifelse(.data$selected_current, "current", "")),
+            vjust = -0.9, fontface = "bold", size = 5) +
+  scale_fill_manual(values = c("FALSE" = "white", "TRUE" = "#B2182B"), guide = "none") +
+  scale_x_continuous(breaks = cluster_k_diagnostics$k) +
+  labs(title = "Consensus CNA cluster k diagnostics",
+       x = "Number of clusters", y = "Mean silhouette width") +
+  theme_classic(base_size = 18) +
+  theme(plot.title = element_text(face = "bold", size = 22),
+        axis.text = element_text(size = 15))
+ggsave(file.path(figure_dir, "Auto_cna_consensus_k_silhouette_diagnostics.pdf"),
+       cluster_k_plot, width = 9, height = 6, useDingbats = FALSE)
+
+cluster_mp_plot <- plot_cluster_feature_boxplots(
+  "Metaprogrammes",
+  "CNA consensus clusters versus metaprogramme expression"
+)
+cluster_state_plot <- plot_cluster_feature_boxplots(
+  "Six states",
+  "CNA consensus clusters versus state abundance"
+)
+ggsave(file.path(figure_dir, "Auto_cna_consensus_cluster_mp_boxplots.pdf"),
+       cluster_mp_plot, width = 18, height = 12, useDingbats = FALSE)
+ggsave(file.path(figure_dir, "Auto_cna_consensus_cluster_state_boxplots.pdf"),
+       cluster_state_plot, width = 16, height = 9, useDingbats = FALSE)
+pdf(file.path(figure_dir, "Auto_cna_consensus_cluster_mp_state_boxplots.pdf"),
+    width = 18, height = 12, useDingbats = FALSE)
+print(cluster_mp_plot)
+print(cluster_state_plot)
+dev.off()
+
+dir.create("../updates/new_updates/summaries", recursive = TRUE, showWarnings = FALSE)
+cluster_compact_summary <- bind_rows(
+  cluster_k_diagnostics %>%
+    transmute(summary_type = "k_diagnostic",
+              item = paste0("k_", .data$k),
+              metric = "mean_silhouette",
+              value = signif(.data$mean_silhouette, 5),
+              detail = paste0("min_cluster_size=", .data$min_cluster_size,
+                              ";current=", .data$selected_current)),
+  cluster_mp_state_tests %>%
+    head(12) %>%
+    transmute(summary_type = "top_cluster_feature",
+              item = .data$feature,
+              metric = "kruskal_group_fdr",
+              value = signif(.data$kruskal_p_adj_group, 5),
+              detail = paste(.data$feature_group, .data$feature_label, .data$sig_label, sep = " | "))
+)
+write.csv(cluster_compact_summary,
+          "../updates/new_updates/summaries/Auto_cna_consensus_cluster_mp_state_summary.csv",
+          row.names = FALSE)
+####################
 
 message("Summarising recurrent chromosome-arm CNA events")
 
