@@ -463,6 +463,43 @@ can read results on the login node without loading heavy `.rds` files, create fo
 - In non-interactive shells, these commands may not be on `PATH` by default, so use the absolute path if needed.
 
 ####################
+
+## 3 Jun 2026 CNA Subclone Functional Exclusivity Update
+
+- **Exclusivity Logic**: Updated `analysis/cnv/cnv_malignant_subclone_mp_heatmap.R` with refined "functional exclusivity" definitions.
+    - **Cell States**: Focus on 5 main biological states. A state is "exclusive" if it is present in exactly one subclone.
+    - **Metaprogrammes (MPs)**: An MP is "exclusive" if its mean UCell score is > 0.10 in exactly one subclone.
+- **Visualization**: Redesigned Page 1 of the cohort summary PDF (`Auto_malignant_subclone_mp_cohort_summary.pdf`) with neutral color palettes (gray/black) to avoid collisions with state-label colors. Added a "State exclusivity" percentage bar plot alongside subclone counts and MP exclusivity.
+- **Maintenance**: Ported temporary regeneration logic into the canonical pipeline script to ensure consistency in future runs.
+- **Resource Discovery**: Confirmed that `BiocParallel` workers must be restricted to 2 even if more cores are allocated, due to cluster-level environment limits (`_R_CHECK_LIMIT_CORES_`).
+
+####################
+## 2 Jun 2026 scATLAS Numbat Terminal No-Subclone Handling
+
+- `analysis/cnv/Auto_scatlas_numbat_run_sample.R` treats Numbat terminal biological statuses such as `No clones remain after filtering by size` and `No CNV remains after filtering by LLR in pseudobulks` as valid no-subclone outcomes for this validation workflow. It writes a done file, empty clone/joint summaries, and an RDS summary with `terminal_no_subclone = TRUE` instead of failing the PBS dependency chain.
+- `analysis/cnv/Auto_scatlas_numbat_conservative_recut.R` records these samples as `terminal_no_subclone` in `ref_outs/Auto_scatlas_numbat/conservative_clones/Auto_scatlas_numbat_conservative_clone_summary.csv` and does not attempt to re-cut a missing Numbat tree.
+- Do not loosen Numbat thresholds solely to force clone calls for these samples; the requested validation layer is conservative and should avoid over-fragmenting weak/no-CNV samples.
+####################
+## 29 May 2026 scATLAS Raw Redownload And Numbat Validation
+
+- Raw-data rebuild scripts now live in `analysis/raw_data/`:
+  - `Auto_download_alcindor_srr.sh`: downloads Alcindor `SRR27335925`-`SRR27335944` with `fasterq-dump --split-files --include-technical`.
+  - `Auto_download_carroll_ega.sh`: downloads Carroll EGA dataset `EGAD00001009401` with `pyega3`; use `EGA_CREDENTIAL_JSON` for credentials and do not copy credentials into scripts.
+  - `Auto_cellranger_alcindor_bam.sh` and `Auto_cellranger_carroll_bam.sh`: rerun Cell Ranger with `--create-bam=true` for Numbat pileup while otherwise matching the historical `cellranger count` logic.
+  - `Auto_stage_validate_scatlas_cellranger_outputs.R/.sh`: stage new `filtered_feature_bc_matrix` outputs into historical `matrix_all/<sample>_filtered` structure, optionally export dense count CSVs using the original `write.sh` logic, and require exact sparse-matrix identity to the live historical matrices.
+  - `Auto_submit_scatlas_raw_rebuild.sh`: submits download jobs first, then dependent Cell Ranger jobs.
+- Raw FASTQs and BAM-producing Cell Ranger outputs are staged under `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/` by explicit user request for this workflow.
+- scATLAS Numbat scripts now live in `analysis/cnv/`:
+  - `Auto_scatlas_numbat_export_inputs.R`: writes `ref_outs/Auto_scatlas_numbat/Auto_scatlas_numbat_manifest.csv`.
+  - `Auto_prepare_scatlas_numbat_container.sh`, `Auto_run_scatlas_numbat_pileup.sh`, `Auto_scatlas_numbat_run_sample.R`, and `Auto_run_scatlas_numbat_sample.sh`: mirror the PDO Numbat settings (`max_iter=2`, `gamma=20`, `init_k=3`, `min_cells=50`).
+  - `Auto_scatlas_numbat_conservative_recut.R`: default direct validation cut is `SCATLAS_NUMBAT_CONSERVATIVE_N_CUT=3`, with minor clones below `max(20 cells, 3%)` merged into major clones.
+  - `Auto_00_submit_scatlas_numbat.sh`: submits the full Numbat dependency chain, but now refuses to run until `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/validation/Auto_scatlas_cellranger_matrix_validation.csv` exists and contains only `ok` rows.
+- Methodology files:
+  - `analysis/methodology/raw_data/scatlas_raw_redownload_numbat_methodology.md`
+  - `analysis/methodology/cnv/scatlas_numbat_methodology.md`
+####################
+
+####################
 ####################
 ## 22 May 2026 Conference Poster Requested Revisions
 
@@ -474,6 +511,21 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - Methodology: `analysis/methodology/publication/poster_requested_revisions_methodology.md`.
 - Current live poster HTML: `ref_outs/Auto_conference_poster_plan/oac_poster_final.html`; older poster drafts are listed in `ref_outs/Auto_conference_poster_plan/legacy_html_manifest.md`.
 - 23 May 2026 update: requested-revision plotting behaviour was moved into the canonical `analysis/publication/poster_section*.R` scripts. `analysis/publication/run_poster_publication_figures.sh` no longer runs `poster_requested_revisions.R`, so manually curated poster assets such as `assets/Schematic_overall.svg`, `assets/Schematic_Anno.svg`, and the merged atlas UMAP/barplot are not overwritten by the wrapper.
+####################
+## 1 Jun 2026 scATLAS Raw Redownload And Numbat Validation Notes
+
+- `analysis/raw_data/Auto_cellranger_carroll_bam.sh`
+  - Carroll EGA FASTQs include multiple flowcell-specific sample prefixes for some biological samples, e.g. `<sample>_HGHWKBGXH` and `<sample>_HGHYKBGXH`. Cell Ranger 8 requires `--sample` when multiple prefixes are present in one FASTQ folder; the wrapper derives all prefixes from filenames and passes them as a comma-separated `--sample` value.
+  - The Carroll rebuild now processes all historical `EAC-` and `BARR-` samples by default so outputs can be validated exactly against the 54 live `Carroll_2023/matrix_all/*_filtered` directories. Numbat input export is the later step that restricts to tumour samples.
+- `analysis/raw_data/Auto_cellranger_carroll_bam_single.sh`
+  - Single-sample recovery wrapper for cancelled/failed Carroll array elements. It uses the same Cell Ranger binary, GRCh38-2024-A transcriptome, FASTQ symlink layout, comma-separated multi-flowcell `--sample` logic, and `--create-bam=true` as the array wrapper.
+- Validation gate:
+  - `analysis/cnv/Auto_00_submit_scatlas_numbat.sh` must not be run until `analysis/raw_data/Auto_stage_validate_scatlas_cellranger_outputs.sh` has written `Auto_scatlas_cellranger_matrix_validation.csv` with all rows `status == "ok"` and no validation-failures CSV.
+- Alcindor SRA recovery:
+  - `analysis/raw_data/Auto_download_alcindor_srr_array.sh` is a per-accession recovery wrapper for unfinished SRR downloads. It keeps `fasterq-dump --split-files --include-technical` identical to the sequential downloader and uses `pigz` only to speed compression.
+  - `analysis/raw_data/Auto_cellranger_alcindor_bam.sh` stages non-destructive 10x-style symlinks under `Alcindor_2025/fastq_cellranger/<SRR>/` because Cell Ranger 8 does not accept raw `fasterq-dump` names like `<SRR>_1.fastq.gz` with `--sample=<SRR>`.
+####################
+
 ####################
 ## 25 Mar 2026 Non-Malignant MP Cross-Celltype Correlation Script
 
@@ -600,6 +652,11 @@ can read results on the login node without loading heavy `.rds` files, create fo
 - `analysis/clinical/tcga_mp_state_survival_reg_noreg.sh`
   - PBS wrapper for `tcga_mp_state_survival_reg_noreg.R`
   - Resources: `ncpus=8`, `mem=128gb`, `walltime=08:00:00`, env `dmtcp`
+
+- `analysis/metaprograms/mp_3ca_ucell_scoring.sh`
+  - PBS wrapper for `mp_3ca_ucell_scoring.R`
+  - Resources: `ncpus=8` (reduced to `ncores=2` in R), `mem=128gb`, `walltime=08:00:00`, env `gnmf`
+
 ####################
 ####################
 ## 25 Mar 2026 External Epithelial MP UCell Heatmap
@@ -801,4 +858,14 @@ Do **not** apply this to every R script. Focus on scripts that synthesize data a
   - Cache controls: `SCREF_FORCE_REBUILD=TRUE` rebuilds UCell caches; `SCREF_REPLOT_ONLY=TRUE` replots from existing tables; `SCREF_UCELL_CORES` and `SCREF_MAX_CELLS_PER_TYPE` control runtime.
   - PBS wrapper: `analysis/developmental/developmental_mp_enrichment_unified.sh` (`ncpus=8`, `mem=128gb`, `walltime=12h`, `#PBS -koed`, `dmtcp` env).
   - Methodology: `analysis/methodology/developmental/developmental_mp_enrichment_unified_methodology.md`.
+####################
+
+####################
+## 4 Jun 2026 Developmental External Reference Downloads
+
+- `analysis/developmental/developmental_mp_enrichment_unified_original_aligned_core.R` now scores additional processed annotated method-3 references:
+  - Adult oesophagus: Broad SCP1242 downloaded under `ref_outs/Auto_developmental_mp_enrichment_unified/downloads/adult_oesophagus/` using the user-supplied temporary `generate_curl_config` URL and `curl -K cfg.txt`; `cfg.txt` is retained for provenance. The workflow streams a sampled subset from `EoE.mtx` using `EoE_meta.txt$cell_type_anno`.
+  - Normal development stomach: Descartes/Fred Hutch direct public downloads under `ref_outs/Auto_developmental_mp_enrichment_unified/downloads/normal_development/`: `Stomach_gene_count.RDS`, `df_cell.RDS`, and `df_gene.RDS`. Only stomach cells are scored, with `Main_cluster_name` mapped to the 16 stomach terms in both long and short normal-development references.
+  - Barretts oesophagus: Esophagus Cancer Cell Atlas high-quality combined RDS downloaded to `ref_outs/Auto_developmental_mp_enrichment_unified/downloads/barretts/alldatahighquality.rds`, scored by `cell_type_secondary`.
+- New audit output: `ref_outs/Auto_developmental_mp_enrichment_unified/tables/Auto_developmental_reference_celltype_coverage.csv` confirms expected external annotation terms are present and scored for each dataset source.
 ####################

@@ -139,9 +139,9 @@ plot_volcano <- function(df, ttl) {
     geom_point(aes(color = sig), size = 2.8, alpha = 0.9) +
     geom_hline(yintercept = -log10(0.05), linetype = "dashed", linewidth = 0.4, color = "grey45") +
     geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.4, color = "grey45") +
-    geom_text_repel(aes(label = feature), size = 2.8, max.overlaps = 100) +
+    geom_text_repel(aes(label = feature), size = 3.5, max.overlaps = 30, fontface = "bold") +
     scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "firebrick3"), guide = "none") +
-    theme_minimal(base_size = 12) +
+    theme_minimal(base_size = 14) +
     labs(title = ttl, x = "log2(HR)", y = "-log10(p)")
 }
 
@@ -159,7 +159,7 @@ make_tcga_page <- function(top_left, top_right, bottom_left, bottom_right, page_
     bottom_left %||% make_placeholder_plot("Whole TCGA reference"),
     bottom_right %||% make_placeholder_plot("Whole TCGA DGE"),
     ncol = 2,
-    top = grid::textGrob(page_title, gp = grid::gpar(fontsize = 14, fontface = "bold"))
+    top = grid::textGrob(page_title, gp = grid::gpar(fontsize = 16, fontface = "bold"))
   )
 }
 
@@ -210,7 +210,7 @@ mp_desc <- c(
   "MP8"  = "Intestinal Diff.",
   "MP9"  = "G1S Cell Cycle",
   "MP10" = "Columnar Diff.",
-  "MP12" = "Neuro-responsive Epi",
+  "MP12" = "Neuro-responsive Epi.",
   "MP13" = "Hypoxic Inflam. Epi.",
   "MP14" = "Hypoxia Adapted Epi.",
   "MP15" = "Immune Infiltration",
@@ -242,10 +242,12 @@ extra_mps <- setdiff(names(mp.genes), ordered_mp_list)
 retained_mps <- c(ordered_mp_list, extra_mps, "X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1")
 retained_mps <- retained_mps[retained_mps %in% c(names(mp.genes), "X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1")]
 
-meta_tcga <- readRDS("tcga_esca_meta.rds")
-meta_tcga$HistologyGroup <- infer_histology(meta_tcga$type)
+meta_tcga <- readRDS("TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds")
+if (!"HistologyGroup" %in% colnames(meta_tcga)) {
+  meta_tcga$HistologyGroup <- infer_histology(meta_tcga$type)
+}
 
-tpm_df <- data.table::fread("cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
+tpm_df <- data.table::fread("TCGA/esca_gdc_reconstruction/tables/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 tpm_whole <- as.matrix(tpm_df[, -1])
 rownames(tpm_whole) <- tpm_df$GeneSymbol
 
@@ -257,8 +259,8 @@ tpm_mal[is.na(tpm_mal)] <- 0
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
 final_states_path <- "Auto_final_states.rds"
 
-state_reg <- readRDS("Auto_topmp_v2_reg_states_B.rds")
-state_noreg <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+state_reg <- if ("reg" %in% requested_modes) readRDS("Auto_topmp_v2_reg_states_B.rds") else NULL
+state_noreg <- if ("noreg" %in% requested_modes) readRDS("Auto_topmp_v2_noreg_states_B.rds") else NULL
 
 if (file.exists(final_states_path)) {
   state_rel <- readRDS(final_states_path)

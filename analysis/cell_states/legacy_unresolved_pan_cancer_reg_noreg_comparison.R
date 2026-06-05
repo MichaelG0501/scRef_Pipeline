@@ -34,13 +34,10 @@ library(scales)
 setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
 
 args <- commandArgs(trailingOnly = TRUE)
-requested_modes <- if (length(args) >= 1 && nzchar(args[1])) unlist(strsplit(args[1], ",")) else c("reg", "noreg")
-requested_modes <- intersect(c("reg", "noreg"), requested_modes)
-if (length(requested_modes) == 0) stop("No valid modes requested. Use: reg,noreg or reg or noreg")
+requested_modes <- c("noreg")
 
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
 meta_full_epi <- readRDS("meta_full_epi.rds")
-state_reg <- readRDS("Auto_topmp_v2_reg_states_B.rds")
 state_noreg <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
 ucell_3ca <- readRDS("UCell_3CA_MPs.rds")
 
@@ -50,7 +47,6 @@ cell_cycle_genes <- read.csv(cc_genes_path, header = TRUE, stringsAsFactors = FA
 common_cells <- intersect(Cells(tmdata_all), rownames(ucell_3ca))
 tmdata_all <- tmdata_all[, common_cells]
 ucell_3ca <- ucell_3ca[common_cells, , drop = FALSE]
-state_reg <- state_reg[common_cells]
 state_noreg <- state_noreg[common_cells]
 
 cna_cells <- intersect(rownames(meta_full_epi), common_cells)
@@ -103,15 +99,10 @@ classify_mode <- function(state_vec, mode_name) {
   }
   mp_adj[!is.finite(mp_adj)] <- 0
 
-  mp_matrix <- t(mp_adj)
-  temp_obj <- CreateSeuratObject(counts = mp_matrix, assay = "MPs")
-  temp_obj <- ScaleData(temp_obj, assay = "MPs", layer = "counts", features = rownames(temp_obj), verbose = FALSE)
-  n_pcs <- min(30, nrow(mp_matrix) - 1)
-  temp_obj <- RunPCA(temp_obj, features = rownames(temp_obj), npcs = n_pcs, verbose = FALSE)
-  temp_obj <- FindNeighbors(temp_obj, reduction = "pca", dims = 1:n_pcs, graph.name = "MPs_snn", verbose = FALSE)
-  temp_obj <- FindClusters(temp_obj, graph.name = "MPs_snn", resolution = 1, verbose = FALSE)
-  
-  subclass <- paste0("State_", as.numeric(as.character(temp_obj$seurat_clusters)) + 1)
+  # Use raw UCell scores for classification (no normalisation) as requested
+  sub_scores_raw <- ucell_3ca[unresolved_cells, mps, drop = FALSE]
+  top_mp_idx <- max.col(sub_scores_raw, ties.method = "first")
+  subclass <- mps[top_mp_idx]
 
   out <- data.frame(
     cell = unresolved_cells,
@@ -194,14 +185,9 @@ make_unresolved_heatmap <- function(res_list, mode_name) {
   )
 }
 
-res_reg <- if ("reg" %in% requested_modes) classify_mode(state_reg, "reg") else NULL
-res_noreg <- if ("noreg" %in% requested_modes) classify_mode(state_noreg, "noreg") else NULL
+res_noreg <- classify_mode(state_noreg, "noreg")
 
-pdf("Auto_topmp_v2_reg_noreg_unresolved_heatmap.pdf", width = 18, height = 10, useDingbats = FALSE)
-if (!is.null(res_reg)) {
-  ht_reg <- make_unresolved_heatmap(res_reg, "reg")
-  if (!is.null(ht_reg)) draw(ht_reg, merge_legend = TRUE)
-}
+pdf("Auto_topmp_v2_noreg_unresolved_heatmap.pdf", width = 18, height = 10, useDingbats = FALSE)
 if (!is.null(res_noreg)) {
   ht_noreg <- make_unresolved_heatmap(res_noreg, "noreg")
   if (!is.null(ht_noreg)) draw(ht_noreg, merge_legend = TRUE)
@@ -216,11 +202,53 @@ summary_dir <- file.path(
 )
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
-summary_df <- bind_rows(res_reg$df, res_noreg$df) %>%
+summary_df <- res_noreg$df %>%
   count(mode, unresolved_subclass, name = "cells") %>%
   group_by(mode) %>%
   mutate(pct = 100 * cells / sum(cells)) %>%
-  ungroup()
-write.csv(summary_df, file.path(summary_dir, "Auto_topmp_v2_reg_noreg_unresolved_summary.csv"), row.names = FALSE)
+  ungroup() %>%
+  arrange(desc(pct))
 
-message("Saved unified unresolved outputs (reg+noreg).")
+write.csv(summary_df, file.path(summary_dir, "Auto_topmp_v2_noreg_unresolved_summary.csv"), row.names = FALSE)
+
+# Subset for the plot to show only the top half of MPs
+summary_df_plot <- head(summary_df, n = ceiling(nrow(summary_df) / 2))
+summary_df_plot$unresolved_subclass <- factor(summary_df_plot$unresolved_subclass, levels = summary_df_plot$unresolved_subclass)
+
+# Ensure hue_pal or a larger palette is used and shuffle for diversity
+num_classes <- nrow(summary_df_plot)
+set.seed(42)
+my_colors <- sample(scales::hue_pal()(num_classes))
+
+p_bar <- ggplot(summary_df_plot, aes(x = unresolved_subclass, y = pct, fill = unresolved_subclass)) +
+  geom_bar(stat = "identity", color = "black", linewidth = 0.8) +
+  geom_text(aes(label = sprintf("%.1f%%", pct)), vjust = -0.5, size = 5.3, fontface = "bold") +
+  theme_classic(base_size = 20) +
+  labs(
+    title = "Unresolved pan-cancer subclass proportion",
+    subtitle = "noreg",
+    x = "",
+    y = "% unresolved cells"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 16, color = "black"),
+    axis.text.y = element_text(size = 18, color = "black"),
+    axis.title.y = element_text(size = 22, face = "bold", margin = margin(r = 15)),
+    plot.title = element_text(size = 26, face = "bold", hjust = 0.5, margin = margin(b = 10)),
+    plot.subtitle = element_text(size = 20, hjust = 0.5, margin = margin(b = 20)),
+    legend.position = "none",
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20)
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  scale_fill_manual(values = my_colors)
+
+# Save both in summary_dir and in the main ref_outs for visibility
+pdf(file.path(summary_dir, "Auto_topmp_v2_noreg_unresolved_barplot.pdf"), width = 20, height = 12)
+print(p_bar)
+dev.off()
+
+pdf("Auto_topmp_v2_noreg_unresolved_barplot.pdf", width = 12, height = 12)
+print(p_bar)
+dev.off()
+
+message("Saved unified unresolved outputs (noreg only).")

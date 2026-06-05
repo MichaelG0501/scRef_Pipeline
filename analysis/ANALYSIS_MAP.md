@@ -58,6 +58,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
    - `analysis/cnv/cnv_plotting.R`
    - `analysis/cnv/cnv_malignant_subclone_mp_heatmap.R`
    - `analysis/cnv/cna_subclone_expression_correlation.R`
+   - `analysis/cnv/cna_subclone_expression_correlation_strasser_e17a.R`
 
 8. Optional external references, enrichment, spatial, and non-malignant NMF
    - See folder-specific tables below.
@@ -117,6 +118,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `clinical/legacy_*` | legacy | varies | old comparison or superseded clinical outputs | no new downstream use |
 | `cnv/cnv_malignant_subclone_mp_heatmap.R` | active terminal | per-sample InferCNA, epithelial RDS, UCell, state vectors | subclone MP/state PDFs and CSVs | terminal |
 | `cnv/cna_subclone_expression_correlation.R` | active terminal | CNA/subclone outputs, inferCNA per-sample matrices, OAC/OCCAMS xlsx | `ref_outs/Auto_cna_subclone_expression/` with arm CNA, consensus heatmap, recurrent event associations, largest-subclone, pairwise distance figures/tables/RDS | terminal; merged from previous v1+v2 split |
+| `cnv/cna_subclone_expression_correlation_strasser_e17a.R` | active terminal figure | `Auto_malignant_subclone_cells.csv`, `UCell_nMP19_filtered.rds` | single-sample MP/subclone boxplot PDF | terminal |
 | `cnv/mp_chromosomal_mapping.R` | untracked terminal | MP gene positions | MP chromosomal mapping figures | terminal; currently unstaged |
 | `cnv/cnv_profiling.R` | core CNV | epithelial per-sample RDS | inferCNA profiles | CNV subsetting/plotting |
 | `cnv/cnv_subsetting.R` | core CNV | inferCNA profiles | filtered CNA matrices | CNV plotting |
@@ -245,8 +247,8 @@ The following files or folders are intentionally not staged by agents unless the
   - Inputs: `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg`, reconstructed TCGA TPM/meta and/or the cached gender-validation GSVA scores, scRef recurrent CNA event tables from `ref_outs/Auto_cna_subclone_expression/tables/`, `ref_outs/OAC_CNV.xlsx`, and `ref_outs/41588_2018_331_MOESM3_ESM.xlsx`.
   - Thresholding: scans absolute TCGA arm means from 0.05 to 0.30 and selects the threshold with best F1/Jaccard concordance to curated `OAC_CNV.xlsx` arm events; current run selected `0.12`.
   - Annotation correction: parses OCCAMS driver sheets by locating the real `Gene`/`hgnc_symbol` header row and normalizes display symbols while preserving raw symbols, so ST5 row 25 `ENSG00000136997 / MYC*` is retained as a high-confidence `MYC` driver on `gain_chr8q`.
-  - Plotting: mirrors `analysis/cnv/cna_subclone_expression_correlation.R` presentation style: same MP/state order, separate MP/state pages, top 8 scRef recurrent events in dotplots, top 4 in boxplots, standardized event deltas, and large slide-readable labels.
-  - Outputs: `ref_outs/TCGA/cna_recurrent_event_validation/` with arm-call caches, reparsed CNA annotation tables, threshold sensitivity/optimization tables, scRef-validation event tests, TCGA-discovery event tests, dotplot/boxplot PDFs, run logs, conclusion CSV, and compact summary at `updates/new_updates/summaries/Auto_tcga_cna_recurrent_event_validation_summary.csv`.
+  - Plotting: mirrors `analysis/cnv/cna_subclone_expression_correlation.R` presentation style: same MP/state order, separate MP/state pages, top 8 scRef recurrent events in dotplots, top 4 in boxplots, standardized event deltas, large slide-readable labels, and newer rectangular scRef-vs-TCGA MP heatmaps for recurrent events plus significant-only and all-trend continuous all-arm Spearman associations.
+  - Outputs: `ref_outs/TCGA/cna_recurrent_event_validation/` with arm-call caches, reparsed CNA annotation tables, threshold sensitivity/optimization tables, scRef-validation event tests, TCGA-discovery event tests, dotplot/boxplot PDFs, rectangular MP/CNA validation heatmaps, run logs, conclusion CSV, and compact summary at `updates/new_updates/summaries/Auto_tcga_cna_recurrent_event_validation_summary.csv`.
   - Current result summary: 87 TCGA EAC primary samples matched; the top 8 scRef recurrent events had 0 TCGA MP/state associations at feature-type FDR < 0.10; TCGA-discovered events had 5 associations at feature-type FDR < 0.10, none recurrent in scRef. Conclusion: the TCGA validation supports the scRef trend that recurrent arm CNAs are not robustly coupled to MP/state programmes.
   - Methodology: `analysis/methodology/TCGA/tcga_cna_recurrent_event_validation_methodology.md`.
 ####################
@@ -263,4 +265,55 @@ The following files or folders are intentionally not staged by agents unless the
   - Cache controls: `SCREF_FORCE_REBUILD=TRUE`, `SCREF_REPLOT_ONLY=TRUE`, `SCREF_COLOCAL_K`, `SCREF_STATE_UMAP_MIN_CELLS`, and `SCREF_BASAL_UMAP_MIN_CELLS`.
   - PBS wrapper: `analysis/cell_states/state_umap_dispersion_colocalisation.sh` (`ncpus=8`, `mem=128gb`, `walltime=12h`, `dmtcp`, live logging).
   - Methodology: `analysis/methodology/cell_states/state_umap_dispersion_colocalisation_methodology.md`.
+####################
+
+####################
+## 29 May 2026 scATLAS Raw Redownload And Numbat Subclone Validation
+
+- `analysis/raw_data/Auto_download_alcindor_srr.sh` and `analysis/raw_data/Auto_download_alcindor_srr_array.sh`
+  - Status: active upstream PBS downloader.
+  - Purpose: redownload Alcindor 2025 raw FASTQs for `SRR27335925` through `SRR27335944` using the same `fasterq-dump --split-files --include-technical` approach as the original SRR fetch script. The array wrapper is for recovery/acceleration of unfinished accessions and uses `pigz` compression when available.
+  - Outputs: `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/Alcindor_2025/fastq/`.
+
+- `analysis/raw_data/Auto_download_carroll_ega.sh`
+  - Status: active upstream PBS downloader.
+  - Purpose: redownload Carroll 2023 raw FASTQs from EGA dataset `EGAD00001009401` via `pyega3`; credentials are supplied by `EGA_CREDENTIAL_JSON` and are not copied into the repo.
+  - Outputs: `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/Carroll_2023/ega_download/`.
+
+- `analysis/raw_data/Auto_cellranger_alcindor_bam.sh`, `analysis/raw_data/Auto_cellranger_carroll_bam.sh`, and `analysis/raw_data/Auto_cellranger_carroll_bam_single.sh`
+  - Status: active upstream PBS preprocessors.
+  - Purpose: rerun Cell Ranger with `--create-bam=true` so Numbat can run SNP pileup/phasing, while preserving the original `cellranger count --id=<sample> --fastqs=<sample_dir> --transcriptome=<GRCh38-2024-A> --chemistry=auto` processing logic. Alcindor SRA FASTQs are staged as non-destructive 10x-style symlinks under `fastq_cellranger/` before Cell Ranger because raw `fasterq-dump` names are not accepted by Cell Ranger 8. Carroll samples sequenced across multiple flowcells pass a comma-separated `--sample` list of all flowcell-specific FASTQ prefixes; the single wrapper is for targeted recovery of individual failed/cancelled array elements.
+  - Outputs: `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/<dataset>/cellranger/<sample>/outs/`.
+
+- `analysis/raw_data/Auto_stage_validate_scatlas_cellranger_outputs.R` and `.sh`
+  - Status: active upstream validation.
+  - Purpose: copy new `filtered_feature_bc_matrix` outputs into the same `matrix_all/<sample>_filtered` structure as the historical workflow, optionally export dense count CSVs using the original `write.sh` `Read10X()`/`fwrite(as.matrix())` logic, and require exact sparse-matrix identity to the live historical matrices before Numbat.
+  - Outputs: `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/{Alcindor_2025,Carroll_2023}/matrix_all/`, validation CSVs under `/validation/`, and optional `/00_counts_matrix_all/`.
+
+- `analysis/raw_data/Auto_submit_scatlas_raw_rebuild.sh`
+  - Status: active convenience submitter.
+  - Purpose: submit EGA/SRA download jobs and dependent BAM-producing Cell Ranger arrays.
+  - Methodology: `analysis/methodology/raw_data/scatlas_raw_redownload_numbat_methodology.md`.
+
+- `analysis/cnv/Auto_scatlas_numbat_export_inputs.R`
+  - Status: active upstream.
+  - Purpose: export raw-barcode count matrices, cell maps, BAM paths, and barcode files for Carroll tumour and Alcindor samples.
+  - Outputs: `ref_outs/Auto_scatlas_numbat/Auto_scatlas_numbat_manifest.csv` plus per-sample input folders.
+
+- `analysis/cnv/Auto_prepare_scatlas_numbat_container.sh`, `Auto_run_scatlas_numbat_pileup.sh`, `Auto_scatlas_numbat_run_sample.R`, and `Auto_run_scatlas_numbat_sample.sh`
+  - Status: active Numbat execution workflow.
+  - Purpose: mirror the PDO Numbat approach using `pileup_and_phase.R` followed by `run_numbat(max_iter=2, gamma=20, init_k=3, min_cells=50)`.
+  - Terminal biological statuses such as no surviving clone or no CNV after Numbat filtering are written as valid `terminal_no_subclone` sample summaries rather than rerun with looser clone-forming thresholds.
+  - Outputs: per-sample allele counts and Numbat outputs under `ref_outs/Auto_scatlas_numbat/by_samples/<sample>/`.
+
+- `analysis/cnv/Auto_scatlas_numbat_conservative_recut.R`
+  - Status: active terminal/audit workflow.
+  - Purpose: apply the direct conservative tree cut requested for validation, default `SCATLAS_NUMBAT_CONSERVATIVE_N_CUT=3`, with minor clone merging below `max(20 cells, 3%)`.
+  - Terminal no-subclone samples are retained in the final summary as `terminal_no_subclone` and are not treated as missing tree failures.
+  - Outputs: `ref_outs/Auto_scatlas_numbat/conservative_clones/`.
+
+- `analysis/cnv/Auto_00_submit_scatlas_numbat.sh`
+  - Status: active convenience submitter.
+  - Purpose: submit manifest export, container preparation, per-sample pileup/Numbat jobs, and dependent conservative re-cut.
+  - Methodology: `analysis/methodology/cnv/scatlas_numbat_methodology.md`.
 ####################

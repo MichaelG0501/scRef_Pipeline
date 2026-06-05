@@ -21,13 +21,25 @@ task_prefix <- "task8"
 out_dir <- paste0(task_prefix, "_tcga_eac_escc_compare")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-infer_histology <- function(type_vec) {
-  t <- tolower(as.character(type_vec))
+####################
+# Updated TCGA reconstruction paths and histology helper
+####################
+tcga_recon_dir <- "TCGA/esca_gdc_reconstruction"
+tcga_meta_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_meta.rds")
+tcga_matrix_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_tpm_matrix.rds")
+tcga_mixture_path <- file.path(tcga_recon_dir, "tables", "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
+tcga_compat_meta_path <- "tcga_esca_meta.rds"
+tcga_compat_mixture_path <- file.path("cibersortx", "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
+expression_transform <- "log2(TPM + 1)"
+
+infer_histology <- function(type_vec, detailed_vec = NA_character_) {
+  t <- tolower(paste(as.character(type_vec), as.character(detailed_vec)))
   out <- rep("Other", length(t))
   out[grepl("adeno", t)] <- "EAC"
   out[grepl("squamous", t)] <- "ESCC"
   out
 }
+####################
 
 run_gsva <- function(expr_mat, gene_sets) {
   gs <- lapply(gene_sets, function(g) intersect(unique(g), rownames(expr_mat)))
@@ -95,22 +107,78 @@ pan_sets <- MP_list[retained_3ca]
 # Combine all sets for GSVA
 all_gsva_sets <- c(mp.genes, pan_sets)
 
-tpm_df <- data.table::fread("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
-tpm_mat <- as.matrix(tpm_df[, -1])
-rownames(tpm_mat) <- tpm_df$GeneSymbol
+####################
+# Load updated TCGA reconstruction and prepare GSVA matrix
+####################
+if (file.exists(tcga_meta_path)) {
+  meta_tcga <- readRDS(tcga_meta_path)
+} else if (file.exists(tcga_compat_meta_path)) {
+  meta_tcga <- readRDS(tcga_compat_meta_path)
+} else {
+  stop("Missing TCGA metadata. Run analysis/TCGA/tcga_esca_reconstruct_data.R first.")
+}
 
-meta_tcga <- readRDS("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/tcga_esca_meta.rds")
-meta_tcga$HistologyGroup <- infer_histology(meta_tcga$type)
+if (file.exists(tcga_matrix_path)) {
+  tpm_mat <- readRDS(tcga_matrix_path)
+} else if (file.exists(tcga_mixture_path)) {
+  tpm_df <- data.table::fread(tcga_mixture_path)
+  tpm_mat <- as.matrix(tpm_df[, -1, with = FALSE])
+  rownames(tpm_mat) <- tpm_df[[1]]
+} else if (file.exists(tcga_compat_mixture_path)) {
+  tpm_df <- data.table::fread(tcga_compat_mixture_path)
+  tpm_mat <- as.matrix(tpm_df[, -1, with = FALSE])
+  rownames(tpm_mat) <- tpm_df[[1]]
+} else {
+  stop("Missing TCGA TPM matrix. Run analysis/TCGA/tcga_esca_reconstruct_data.R first.")
+}
+
+if (!"sample_barcode" %in% colnames(meta_tcga)) {
+  stop("TCGA metadata lacks sample_barcode.")
+}
+if (is.null(colnames(tpm_mat))) {
+  stop("TCGA TPM matrix lacks sample barcode column names.")
+}
+
+detailed_vec <- if ("Cancer_Type_Detailed" %in% colnames(meta_tcga)) meta_tcga$Cancer_Type_Detailed else NA_character_
+type_vec <- if ("type" %in% colnames(meta_tcga)) meta_tcga$type else detailed_vec
+inferred_histology <- infer_histology(type_vec, detailed_vec)
+if ("HistologyGroup" %in% colnames(meta_tcga)) {
+  meta_tcga$HistologyGroup <- ifelse(
+    is.na(meta_tcga$HistologyGroup) | meta_tcga$HistologyGroup == "Other",
+    inferred_histology,
+    as.character(meta_tcga$HistologyGroup)
+  )
+} else {
+  meta_tcga$HistologyGroup <- inferred_histology
+}
+
+common_samples <- intersect(colnames(tpm_mat), meta_tcga$sample_barcode)
+if (length(common_samples) < 20) {
+  stop("Too few TCGA samples overlap between metadata and TPM matrix: ", length(common_samples))
+}
+tpm_mat <- tpm_mat[, common_samples, drop = FALSE]
+expr_mat <- log2(tpm_mat + 1)
+expr_mat[!is.finite(expr_mat)] <- 0
+
 meta_tcga <- meta_tcga %>% 
+  filter(sample_barcode %in% common_samples) %>%
   filter(sample_type_code == "01", HistologyGroup %in% c("EAC", "ESCC")) %>%
   mutate(HistologyGroup = factor(HistologyGroup, levels = c("EAC", "ESCC")))
 
-mp_gs <- run_gsva(tpm_mat, all_gsva_sets)
+if (nrow(meta_tcga) == 0) {
+  stop("No primary EAC/ESCC TCGA samples remain after filtering.")
+}
+
+mp_gs <- run_gsva(expr_mat, all_gsva_sets)
 if (is.null(mp_gs)) stop("No valid MP GSVA results")
 mp_df <- as.data.frame(t(mp_gs))
 mp_df$sample_barcode <- rownames(mp_df)
 
 plot_df <- meta_tcga %>% inner_join(mp_df, by = "sample_barcode")
+if (nrow(plot_df) == 0) {
+  stop("No TCGA metadata rows joined to GSVA scores.")
+}
+####################
 
 # State scores as max MP-in-group expression (with finalized 3CA-merge: Respiration -> Classic Prolif)
 local_state_groups <- state_groups
@@ -181,44 +249,98 @@ mean_by_cohort <- plot_df %>%
 mean_mp <- mean_by_cohort %>% filter(feature %in% mp_features) %>% mutate(label = mp_labels[feature])
 mean_state <- mean_by_cohort %>% filter(feature %in% state_features) %>% mutate(label = feature)
 
+####################
+# Classify mean-score quadrants for EAC/ESCC comparison
+####################
+classify_mean_region <- function(eac, escc) {
+  dplyr::case_when(
+    eac > 0 & escc < 0 ~ "EAC-specific",
+    eac < 0 & escc > 0 ~ "ESCC-high_EAC-low",
+    eac > 0 & escc > 0 ~ "High-in-both",
+    eac < 0 & escc < 0 ~ "Low-in-both",
+    TRUE ~ "Boundary"
+  )
+}
+
+mean_mp <- mean_mp %>%
+  mutate(region = classify_mean_region(EAC, ESCC))
+mean_state <- mean_state %>%
+  mutate(region = classify_mean_region(EAC, ESCC))
+
+region_summary <- bind_rows(
+  mean_mp %>% count(region, name = "n_features") %>% mutate(feature_type = "MP"),
+  mean_state %>% count(region, name = "n_features") %>% mutate(feature_type = "State")
+) %>%
+  select(feature_type, region, n_features) %>%
+  arrange(feature_type, region)
+####################
+
 cor_mp <- cor.test(mean_mp$EAC, mean_mp$ESCC, method = "spearman")
 cor_state <- cor.test(mean_state$EAC, mean_state$ESCC, method = "spearman")
 
 # Define common limits for correlation plots (Page 1)
-common_min <- min(c(mean_mp$EAC, mean_mp$ESCC, mean_state$EAC, mean_state$ESCC), na.rm=TRUE)
-common_max <- max(c(mean_mp$EAC, mean_mp$ESCC, mean_state$EAC, mean_state$ESCC), na.rm=TRUE)
-padding <- (common_max - common_min) * 0.05
-common_lims <- c(common_min - padding, common_max + padding)
+# Allow X and Y to have different ranges so we don't have empty space
+x_min <- min(c(mean_mp$EAC, mean_state$EAC, 0), na.rm=TRUE)
+x_max <- max(c(mean_mp$EAC, mean_state$EAC, 0), na.rm=TRUE)
+y_min <- min(c(mean_mp$ESCC, mean_state$ESCC, 0), na.rm=TRUE)
+y_max <- max(c(mean_mp$ESCC, mean_state$ESCC, 0), na.rm=TRUE)
+
+x_pad <- (x_max - x_min) * 0.10
+y_pad <- (y_max - y_min) * 0.10
+
+x_lims <- c(x_min - x_pad, x_max + x_pad)
+y_lims <- c(y_min - y_pad, y_max + y_pad)
+
+n_eac <- sum(meta_tcga$HistologyGroup == "EAC")
+n_escc <- sum(meta_tcga$HistologyGroup == "ESCC")
+x_lab <- paste0("EAC mean (n = ", n_eac, ")")
+y_lab <- paste0("ESCC mean (n = ", n_escc, ")")
 
 p_mean_cor_mp <- ggplot(mean_mp, aes(EAC, ESCC, label = label)) +
-  geom_point(color = "darkgrey", size = 3, alpha = 0.8) +
-  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 0.8) +
-  geom_text_repel(size = 4, max.overlaps = 30, box.padding = 0.5) +
-  scale_x_continuous(limits = common_lims) +
-  scale_y_continuous(limits = common_lims) +
+  annotate("rect", xmin = 0, xmax = x_lims[2], ymin = y_lims[1], ymax = 0,
+           fill = NA, color = "#E41A1C", linetype = "dashed", linewidth = 1.5) +
+  annotate("rect", xmin = x_lims[1], xmax = 0, ymin = 0, ymax = y_lims[2],
+           fill = NA, color = "#377EB8", linetype = "dashed", linewidth = 1.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey45", linewidth = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey45", linewidth = 1) +
+  geom_point(color = "darkgrey", size = 4, alpha = 0.8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 1.2) +
+  geom_text_repel(size = 5, fontface = "bold", max.overlaps = Inf, box.padding = 1.5, point.padding = 0.8, force = 5, segment.color = "grey50") +
+  scale_x_continuous(limits = x_lims) +
+  scale_y_continuous(limits = y_lims) +
   labs(
     title = "Clinical MP Correlation: EAC vs ESCC",
-    subtitle = paste0("Spearman rho = ", round(unname(cor_mp$estimate), 3), ", p = ", signif(cor_mp$p.value, 3)),
-    x = "EAC mean", y = "ESCC mean"
+    subtitle = paste0("Spearman rho = ", round(unname(cor_mp$estimate), 3), ", p = ", signif(cor_mp$p.value, 3),
+                      "; dotted boxes: EAC-specific and ESCC-high/EAC-low regions"),
+    x = x_lab, y = y_lab
   ) +
-  theme_classic(base_size = 18) +
-  theme(plot.title = element_text(face = "bold"),
-        axis.text = element_text(color = "black", size = 14))
+  theme_classic(base_size = 20) +
+  theme(plot.title = element_text(face = "bold", size = 22),
+        axis.title = element_text(size = 20, face = "bold"),
+        axis.text = element_text(color = "black", size = 18))
 
 p_mean_cor_state <- ggplot(mean_state, aes(EAC, ESCC, label = label)) +
-  geom_point(color = "navy", size = 4, alpha = 0.8) +
-  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 1) +
-  geom_text_repel(size = 5.5, max.overlaps = 30, box.padding = 0.7) +
-  scale_x_continuous(limits = common_lims) +
-  scale_y_continuous(limits = common_lims) +
+  annotate("rect", xmin = 0, xmax = x_lims[2], ymin = y_lims[1], ymax = 0,
+           fill = NA, color = "#E41A1C", linetype = "dashed", linewidth = 1.5) +
+  annotate("rect", xmin = x_lims[1], xmax = 0, ymin = 0, ymax = y_lims[2],
+           fill = NA, color = "#377EB8", linetype = "dashed", linewidth = 1.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey45", linewidth = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey45", linewidth = 1) +
+  geom_point(color = "navy", size = 4.5, alpha = 0.8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 1.2) +
+  geom_text_repel(size = 5.5, fontface = "bold", max.overlaps = Inf, box.padding = 1.5, point.padding = 0.8, force = 5, segment.color = "grey50") +
+  scale_x_continuous(limits = x_lims) +
+  scale_y_continuous(limits = y_lims) +
   labs(
     title = "Clinical State Correlation: EAC vs ESCC",
-    subtitle = paste0("Spearman rho = ", round(unname(cor_state$estimate), 3), ", p = ", signif(cor_state$p.value, 3)),
-    x = "EAC mean", y = "ESCC mean"
+    subtitle = paste0("Spearman rho = ", round(unname(cor_state$estimate), 3), ", p = ", signif(cor_state$p.value, 3),
+                      "; dotted boxes: EAC-specific and ESCC-high/EAC-low regions"),
+    x = x_lab, y = y_lab
   ) +
-  theme_classic(base_size = 18) +
-  theme(plot.title = element_text(face = "bold"),
-        axis.text = element_text(color = "black", size = 14))
+  theme_classic(base_size = 20) +
+  theme(plot.title = element_text(face = "bold", size = 22),
+        axis.title = element_text(size = 20, face = "bold"),
+        axis.text = element_text(color = "black", size = 18))
 
 p_page1 <- (p_mean_cor_mp | p_mean_cor_state)
 
@@ -289,9 +411,14 @@ p_state <- ggplot(state_long, aes(x = State_label, y = Score, fill = HistologyGr
         plot.title = element_text(face = "bold")) +
   labs(title = "Clinical State Scores", x = NULL, y = "Score")
 
+####################
+# Avoid patchwork '&' operator for current patchwork/S7 method dispatch
+####################
+p_mp <- p_mp + theme(legend.position = "bottom", legend.text = element_text(size = 16))
+p_state <- p_state + theme(legend.position = "bottom", legend.text = element_text(size = 16))
 p_combined <- (p_mp | p_state) + 
-  plot_layout(guides = "collect", widths = c(1.8, 1)) & 
-  theme(legend.position = "bottom", legend.text = element_text(size = 16))
+  plot_layout(guides = "collect", widths = c(1.8, 1))
+####################
 
 ####################
 # Define Page 3: Delta Plots (EAC - ESCC) with Sample-level Stats
@@ -345,9 +472,10 @@ p_delta_state <- ggplot(mean_state, aes(x = reorder(label, delta), y = delta, fi
   theme(axis.text = element_text(color = "black", size = 13),
         plot.title = element_text(face = "bold"))
 
+p_delta_mp <- p_delta_mp + theme(legend.position = "bottom", legend.title = element_blank())
+p_delta_state <- p_delta_state + theme(legend.position = "bottom", legend.title = element_blank())
 p_page3 <- (p_delta_mp | p_delta_state) + 
-  plot_layout(guides = "collect", widths = c(1.8, 1)) & 
-  theme(legend.position = "bottom", legend.title = element_blank())
+  plot_layout(guides = "collect", widths = c(1.8, 1))
 ####################
 
 pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_tcga_eac_escc_compare_plots.pdf")), width = 16, height = 9, onefile = TRUE)
@@ -357,6 +485,16 @@ print(p_page3)
 dev.off()
 
 write.csv(mean_by_cohort, file.path(out_dir, paste0("Auto_", task_prefix, "_feature_means_eac_escc.csv")), row.names = FALSE)
+write.csv(
+  bind_rows(
+    mean_mp %>% mutate(feature_type = "MP"),
+    mean_state %>% mutate(feature_type = "State")
+  ) %>%
+    select(feature_type, feature, label, EAC, ESCC, region, everything()),
+  file.path(out_dir, paste0("Auto_", task_prefix, "_feature_mean_regions_eac_escc.csv")),
+  row.names = FALSE
+)
+write.csv(region_summary, file.path(out_dir, paste0("Auto_", task_prefix, "_feature_mean_region_summary.csv")), row.names = FALSE)
 # presence_summary removed
 
 summary_dir <- file.path(
@@ -373,6 +511,9 @@ write.csv(data.frame(
   mean_corr_mp_p = cor_mp$p.value,
   mean_corr_state_rho = unname(cor_state$estimate),
   mean_corr_state_p = cor_state$p.value,
+  tcga_expression_transform = expression_transform,
+  n_high_in_both = sum(region_summary$region == "High-in-both"),
+  n_low_in_both = sum(region_summary$region == "Low-in-both"),
   stringsAsFactors = FALSE
 ), file.path(summary_dir, paste0("Auto_", task_prefix, "_tcga_eac_escc_compare_summary.csv")), row.names = FALSE)
 

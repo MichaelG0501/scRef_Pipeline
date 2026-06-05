@@ -87,7 +87,7 @@ mp_descriptions <- c(
   "MP18" = "Secretory Diff. (Intest.)",
   "MP16" = "Secretory Diff. (Gastric)",
   "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi"
+  "MP12" = "Neuro-responsive Epi."
 )
 
 cc_mps <- c("MP1", "MP7", "MP9")
@@ -301,13 +301,11 @@ make_state_heatmap <- function(state_vec, mp_adj_all, mode_label) {
     State = split_vec,
     CNA = cna_status[cells_to_plot],
     CC_score = cc_score[cells_to_plot],
-    Diversity = state_div_vals,
     Study = study_vals,
     col = list(
       State = local_group_cols,
       CNA = c(cna_malignant = "black", cna_unresolved = "grey70"),
       CC_score = colorRamp2(c(0, max_cc), c("white", "darkgreen")),
-      Diversity = colorRamp2(c(0, 1), c("grey95", "purple4")),
       Study = study_cols
     ),
     annotation_name_side = "left",
@@ -329,7 +327,10 @@ make_state_heatmap <- function(state_vec, mp_adj_all, mode_label) {
   row_ann <- rowAnnotation(
     MP_group = factor(mp_group_label, levels = c("Cell_cycle", ordered_group_names, "Other")),
     col = list(MP_group = group_colors_row),
-    show_annotation_name = FALSE
+    show_annotation_name = FALSE,
+    annotation_legend_param = list(
+      MP_group = list(title_gp = gpar(fontsize = 16, fontface = "bold"), labels_gp = gpar(fontsize = 14))
+    )
   )
 
   lim <- as.numeric(quantile(abs(sub_scores), 0.98, na.rm = TRUE))
@@ -365,14 +366,15 @@ make_state_heatmap <- function(state_vec, mp_adj_all, mode_label) {
     cluster_columns = FALSE,
     show_row_dend = FALSE,
     row_names_side = "left",
-    row_names_gp = gpar(fontsize = 9, fontface = "italic"),
+    row_names_gp = gpar(fontsize = 14, fontface = "bold"),
     show_column_names = FALSE,
     column_title_rot = 30,
-    column_title_gp = gpar(fontsize = 10, fontface = "bold"),
+    column_title_gp = gpar(fontsize = 16, fontface = "bold"),
     use_raster = TRUE,
     raster_quality = 5,
     border = FALSE,
-    rect_gp = gpar(col = NA)
+    rect_gp = gpar(col = NA),
+    heatmap_legend_param = list(title_gp = gpar(fontsize = 16, fontface = "bold"), labels_gp = gpar(fontsize = 14))
   )
 }
 
@@ -382,31 +384,50 @@ make_prop_and_pie <- function(state_vec, mode_label) {
     study = as.character(tmdata_all@meta.data[names(state_vec), "study"]),
     stringsAsFactors = FALSE
   )
-  overall <- prop_df %>% count(state) %>% mutate(study = "Overall", pct = 100 * n / sum(n))
+  overall <- prop_df %>% count(state) %>% mutate(study = "Total", pct = 100 * n / sum(n))
   per_study <- prop_df %>%
     count(study, state) %>%
     group_by(study) %>%
     mutate(pct = 100 * n / sum(n)) %>%
     ungroup()
-  plot_df <- bind_rows(overall, per_study)
+  
+  plot_df <- bind_rows(per_study, overall)
   plot_df$state <- factor(plot_df$state, levels = state_level_order)
+  
+  study_levels <- c(sort(unique(per_study$study)), "Total")
+  plot_df$study <- factor(plot_df$study, levels = study_levels)
+  plot_df$is_total <- factor(ifelse(plot_df$study == "Total", "Total", "Studies"), levels = c("Studies", "Total"))
 
   p_bar <- ggplot(plot_df, aes(study, pct, fill = state)) +
     geom_col(color = "black", linewidth = 0.2) +
-    geom_text(aes(label = sprintf("%.1f%%", pct)), position = position_stack(vjust = 0.5), size = 2.6) +
+    geom_text(aes(label = ifelse(pct > 3, sprintf("%.1f%%", pct), "")), position = position_stack(vjust = 0.5), size = 4.5) +
     scale_fill_manual(values = group_cols, drop = FALSE) +
+    facet_grid(~ is_total, scales = "free_x", space = "free_x") +
     labs(title = paste0("Approach B ", mode_label, ": state proportions"), x = NULL, y = "% of cells", fill = "State") +
-    theme_minimal(base_size = 12) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    theme_minimal(base_size = 16) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+      axis.title.y = element_text(size = 16, face = "bold"),
+      strip.background = element_blank(),
+      strip.text = element_blank(),
+      legend.position = "right",
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 16, face = "bold"),
+      panel.spacing = unit(1, "lines")
+    )
 
   pie_df <- overall %>% mutate(label = paste0(state, "\n", sprintf("%.1f%%", pct)))
   p_pie <- ggplot(pie_df, aes(x = "", y = pct, fill = state)) +
     geom_col(width = 1, color = "white") +
     coord_polar(theta = "y") +
-    geom_text(aes(label = label), position = position_stack(vjust = 0.5), size = 3) +
+    geom_text(aes(label = ifelse(pct > 3, label, "")), position = position_stack(vjust = 0.5), size = 5, fontface = "bold") +
     scale_fill_manual(values = group_cols, drop = FALSE) +
     labs(title = paste0("Approach B ", mode_label, ": overall pie"), fill = "State") +
-    theme_void(base_size = 11)
+    theme_void(base_size = 16) +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size = 18, face = "bold", hjust = 0.5)
+    )
 
   list(bar = p_bar, pie = p_pie, overall = overall)
 }
@@ -423,8 +444,8 @@ make_cc_box <- function(state_vec, mode_label) {
     geom_jitter(width = 0.15, size = 0.15, alpha = 0.2) +
     scale_fill_manual(values = group_cols, drop = FALSE) +
     labs(title = paste0("Approach B ", mode_label, ": cell-cycle score by state"), x = NULL, y = "Cell-cycle score") +
-    theme_classic(base_size = 12) +
-    theme(axis.text.x = element_text(angle = 35, hjust = 1), legend.position = "none")
+    theme_classic(base_size = 16) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 14), legend.position = "none", plot.title = element_text(size = 18, face = "bold"))
 }
 
 results <- list()
@@ -442,16 +463,16 @@ if (!is.null(results$noreg)) {
   saveRDS(results$noreg$group_max, "Auto_topmp_v2_noreg_group_max.rds")
 }
 
-pdf("Auto_topmp_v2_reg_noreg_heatmap_B_cconly.pdf", width = 18, height = 8, useDingbats = FALSE)
+pdf("Auto_topmp_v2_reg_noreg_heatmap_B_cconly.pdf", width = 20, height = 12, useDingbats = FALSE)
 if (!is.null(results$reg)) {
-  draw(make_state_heatmap(results$reg$state, results$reg$mp_adj_all, "reg"), merge_legend = TRUE)
+  draw(make_state_heatmap(results$reg$state, results$reg$mp_adj_all, "reg"), merge_legend = TRUE, padding = unit(c(10, 10, 10, 10), "mm"))
   grid.text("Approach B - Regressed", x = unit(2, "mm"), y = unit(1, "npc") - unit(2, "mm"), 
-            just = c("left", "top"), gp = gpar(fontsize = 12, fontface = "bold"))
+            just = c("left", "top"), gp = gpar(fontsize = 20, fontface = "bold"))
 }
 if (!is.null(results$noreg)) {
-  draw(make_state_heatmap(results$noreg$state, results$noreg$mp_adj_all, "noreg"), merge_legend = TRUE)
+  draw(make_state_heatmap(results$noreg$state, results$noreg$mp_adj_all, "noreg"), merge_legend = TRUE, padding = unit(c(10, 10, 10, 10), "mm"))
   grid.text("Approach B - No regress", x = unit(2, "mm"), y = unit(1, "npc") - unit(2, "mm"), 
-            just = c("left", "top"), gp = gpar(fontsize = 12, fontface = "bold"))
+            just = c("left", "top"), gp = gpar(fontsize = 20, fontface = "bold"))
 }
 dev.off()
 
@@ -471,10 +492,12 @@ if (!is.null(results$noreg)) {
   cc_panels[["noreg"]] <- make_cc_box(results$noreg$state, "noreg")
 }
 if (length(prop_panels) == 2) {
-  ggsave("Auto_topmp_v2_reg_noreg_proportion_B_withpie.pdf", (prop_panels[[1]] + prop_panels[[2]]) / (pie_panels[[1]] + pie_panels[[2]]), width = 18, height = 12)
+  p_all <- (prop_panels[[1]] / pie_panels[[1]]) | (prop_panels[[2]] / pie_panels[[2]])
+  ggsave("Auto_topmp_v2_reg_noreg_proportion_B_withpie.pdf", p_all, width = 18, height = 18)
   ggsave("Auto_topmp_v2_reg_noreg_ccscore_boxplot_B.pdf", cc_panels[[1]] + cc_panels[[2]], width = 16, height = 6)
 } else if (length(prop_panels) == 1) {
-  ggsave("Auto_topmp_v2_reg_noreg_proportion_B_withpie.pdf", prop_panels[[1]] + pie_panels[[1]], width = 16, height = 7)
+  p_all <- prop_panels[[1]] / pie_panels[[1]]
+  ggsave("Auto_topmp_v2_reg_noreg_proportion_B_withpie.pdf", p_all, width = 10, height = 18)
   ggsave("Auto_topmp_v2_reg_noreg_ccscore_boxplot_B.pdf", cc_panels[[1]], width = 10, height = 6)
 }
 

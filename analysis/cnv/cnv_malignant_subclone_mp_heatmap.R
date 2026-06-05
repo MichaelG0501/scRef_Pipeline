@@ -103,7 +103,7 @@ mp_descriptions <- c(
   "MP18" = "Secretory Diff. (Intest.)",
   "MP16" = "Secretory Diff. (Gastric)",
   "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi"
+  "MP12" = "Neuro-responsive Epi."
 )
 
 state_groups <- list(
@@ -153,7 +153,7 @@ mp_cols <- c(
   "MP18_Secretory Diff. (Intest.)" = "#FF7F00",
   "MP16_Secretory Diff. (Gastric)" = "#FFD92F",
   "MP13_Hypoxic Inflam. Epi." = "#984EA3",
-  "MP12_Neuro-responsive Epi" = "#E78AC3",
+  "MP12_Neuro-responsive Epi." = "#E78AC3",
   "MP15_Immune Infiltration" = "#377EB8"
 )
 
@@ -591,6 +591,7 @@ make_cna_heatmap <- function(binned, meta_plot, sample_id) {
     column_title_rot = 30,
     column_title_gp = gpar(fontsize = 8, fontface = "bold"),
     row_title_gp = gpar(fontsize = 7),
+    row_title_rot = 0,
     use_raster = TRUE,
     raster_quality = 4,
     border = FALSE,
@@ -1071,13 +1072,12 @@ if (nrow(sub_tests_df) > 0) {
     mutate(category = factor(category, levels = c("None", "One significant", "More than one")),
            pct = 100 * n / sum(n)) %>%
     ggplot(aes(category, pct, fill = category)) +
-    geom_col(color = "black", linewidth = 0.3) +
-    geom_text(aes(label = paste0(round(pct, 1), "%")), vjust = -0.3, size = 4) +
-    scale_fill_manual(values = c("None" = "grey70", "One significant" = "#FDB863", "More than one" = "#B2182B")) +
+    geom_col(color = "black", linewidth = 0.4, width = 0.5) +
+    geom_text(aes(label = paste0(n, " (", round(pct, 1), "%)")), vjust = -0.4, size = 3.5) +
+    scale_fill_manual(values = c("None" = "#DEEBF7", "One significant" = "#6BAED6", "More than one" = "#08519C")) +
     scale_y_continuous(limits = c(0, 100)) +
-    labs(title = "Significant MP differences per sample", x = NULL, y = "Percentage of samples") +
-    theme_classic(base_size = 12) +
-    theme(legend.position = "none")
+    labs(title = "Significant MP differences per sample", x = NULL, y = "% samples") +
+    theme_classic(base_size = 11) + theme(legend.position = "none", plot.title = element_text(face = "bold"))
 
   target_mps <- c("MP1", "MP7", "MP9", "MP2", "MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16", "MP13", "MP12", "MP15")
   # Filter to those present in mp_labels
@@ -1096,12 +1096,15 @@ if (nrow(sub_tests_df) > 0) {
     geom_boxplot(outlier.shape = NA, alpha = 0.7) +
     geom_jitter(width = 0.2, size = 1, alpha = 0.6) +
     geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red") +
-    geom_text(data = mp_pcts, aes(x = mp_label, y = max(mp_plot_df$val, na.rm = TRUE) * 1.15, label = sprintf("%.1f%%", pct)), inherit.aes = FALSE, size = 3) +
+    geom_text(data = mp_pcts, aes(x = mp_label, y = max(mp_plot_df$val, na.rm = TRUE) * 1.15, label = sprintf("%.1f%%", pct)), inherit.aes = FALSE, size = 4.5) +
     scale_y_log10(expand = expansion(mult = c(0.1, 0.3))) +
     scale_fill_manual(values = mp_cols[mp_labels[target_mps]]) +
     labs(title = NULL, x = NULL, y = "-log10(p_adj)") +
-    theme_classic(base_size = 12) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+    theme_classic(base_size = 16) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 16),
+          axis.text.y = element_text(size = 14),
+          axis.title.y = element_text(size = 16),
+          legend.position = "none")
 
   # Page 2: QC Summary across the cohort
   qc_summary_rows <- list()
@@ -1300,17 +1303,143 @@ if (nrow(sub_tests_df) > 0) {
   write.csv(sig_counts_sample, file.path(out_dir, "Auto_malignant_subclone_sig_count_summary.csv"), row.names = FALSE)
   write.csv(mp_summary_sample, file.path(out_dir, "Auto_malignant_subclone_mp_cohort_summary.csv"), row.names = FALSE)
 
-  pdf(file.path(out_dir, "Auto_malignant_subclone_mp_cohort_summary.pdf"), width = 15, height = 9, useDingbats = FALSE)
-  # Page 1
-  grid.arrange(p_counts, p_mp, ncol = 2, widths = c(1, 2))
-  # Page 2: QC Summary
+  ####################
+  # Page 1 (Overview): Subclone count distribution + functional exclusivity (neutral style)
+  ####################
+
+  # --- Plot 1A: Subclone counts ---
+  analysed_df <- sample_df %>% filter(status == "analysed")
+  subclone_count_df <- analysed_df %>%
+    mutate(n_subclones_cat = case_when(
+      n_subclones == 1 ~ "1",
+      n_subclones == 2 ~ "2",
+      n_subclones == 3 ~ "3",
+      n_subclones >= 4 ~ "4+"
+    )) %>%
+    count(n_subclones_cat, name = "n_samples") %>%
+    mutate(n_subclones_cat = factor(n_subclones_cat, levels = c("1", "2", "3", "4+")),
+           pct = 100 * n_samples / sum(n_samples))
+
+  # Sequential Blue colors for summary to avoid collision with state colors
+  neutral_cols <- c("1" = "#C6DBEF", "2" = "#9ECAE1", "3" = "#4292C6", "4+" = "#084594")
+
+  p_subclone_dist <- ggplot(subclone_count_df, aes(n_subclones_cat, n_samples, fill = n_subclones_cat)) +
+    geom_col(color = "black", linewidth = 0.4, width = 0.6) +
+    geom_text(aes(label = paste0(n_samples, " (", round(pct, 1), "%)")),
+              vjust = -0.4, size = 3.5) +
+    scale_fill_manual(values = neutral_cols) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.22))) +
+    labs(title = "CNA subclones per sample",
+         subtitle = paste0("n = ", sum(subclone_count_df$n_samples), " analysed samples"),
+         x = "Number of subclones", y = "Samples") +
+    theme_classic(base_size = 11) +
+    theme(legend.position = "none",
+          plot.title = element_text(face = "bold", size = 11),
+          plot.subtitle = element_text(size = 9),
+          plot.margin = margin(4, 6, 4, 6))
+
+  # --- Exclusivity Logic for MPs and States ---
+  main_states <- c("Classic Proliferative", "Basal to Intestinal Metaplasia", 
+                   "SMG-like Metaplasia", "Stress-adaptive", "Immune Infiltrating")
+  mp_ucell_thresh <- 0.10
+
+  valid_cells_ms <- intersect(cell_df$cell, rownames(ucell_scores))
+  cell_df_ms <- cell_df[match(valid_cells_ms, cell_df$cell), ]
+  ucell_mps <- intersect(target_mps, colnames(ucell_scores))
+  ucell_ms <- as.matrix(ucell_scores[valid_cells_ms, ucell_mps, drop = FALSE])
+
+  excl_res <- list()
+  for (samp in multi_subclone_samples) {
+    samp_mask <- cell_df_ms$sample == samp & cell_df_ms$subclone != "Unresolved"
+    samp_cells <- cell_df_ms$cell[samp_mask]
+    samp_subs <- cell_df_ms$subclone[samp_mask]
+    if (length(samp_cells) < 10) next
+    
+    # MP Exclusivity (exactly one subclone > threshold)
+    any_excl_mp <- FALSE
+    for (mp in ucell_mps) {
+      sc_means <- tapply(ucell_ms[samp_cells, mp], samp_subs, mean, na.rm = TRUE)
+      if (sum(sc_means > mp_ucell_thresh, na.rm = TRUE) == 1) { any_excl_mp <- TRUE; break }
+    }
+    
+    # State Exclusivity (exactly one subclone has any cells of that state)
+    any_excl_state <- FALSE
+    samp_states <- cell_df_ms$state_label[samp_mask]
+    for (st in main_states) {
+      st_presence <- tapply(samp_states == st, samp_subs, any, na.rm = TRUE)
+      if (sum(st_presence, na.rm = TRUE) == 1) { any_excl_state <- TRUE; break }
+    }
+    
+    excl_res[[samp]] <- data.frame(sample = samp, has_excl_mp = any_excl_mp, has_excl_state = any_excl_state)
+  }
+  excl_df <- bind_rows(excl_res)
+
+  # MP exclusivity plot (neutral colors)
+  mp_excl_summary <- excl_df %>%
+    count(category = ifelse(has_excl_mp, "Has exclusive MP(s)", "All MPs shared")) %>%
+    mutate(category = factor(category, levels = c("Has exclusive MP(s)", "All MPs shared")),
+           pct = 100 * n / sum(n))
+
+  p_mp_excl <- ggplot(mp_excl_summary, aes(category, pct, fill = category)) +
+    geom_col(color = "black", linewidth = 0.4, width = 0.5) +
+    geom_text(aes(label = paste0(n, " (", round(pct, 1), "%)")), vjust = -0.4, size = 3.5) +
+    scale_fill_manual(values = c("Has exclusive MP(s)" = "#08519C", "All MPs shared" = "#9ECAE1")) +
+    scale_y_continuous(limits = c(0, 100), expand = expansion(mult = c(0, 0.12))) +
+    labs(title = "MP exclusivity",
+         subtitle = paste0("n = ", nrow(excl_df), " multi-subclone; UCell > ", mp_ucell_thresh),
+         x = NULL, y = "% samples") +
+    theme_classic(base_size = 11) +
+    theme(legend.position = "none", 
+          plot.title = element_text(face = "bold", size = 11), 
+          plot.subtitle = element_text(size = 9),
+          plot.margin = margin(4, 6, 4, 6))
+
+  # State exclusivity plot (neutral colors)
+  st_excl_summary <- excl_df %>%
+    count(category = ifelse(has_excl_state, "Has exclusive State(s)", "All States shared")) %>%
+    mutate(category = factor(category, levels = c("Has exclusive State(s)", "All States shared")),
+           pct = 100 * n / sum(n))
+
+  p_st_excl <- ggplot(st_excl_summary, aes(category, pct, fill = category)) +
+    geom_col(color = "black", linewidth = 0.4, width = 0.5) +
+    geom_text(aes(label = paste0(n, " (", round(pct, 1), "%)")), vjust = -0.4, size = 3.5) +
+    scale_fill_manual(values = c("Has exclusive State(s)" = "#08519C", "All States shared" = "#9ECAE1")) +
+    scale_y_continuous(limits = c(0, 100), expand = expansion(mult = c(0, 0.12))) +
+    labs(title = "State exclusivity",
+         subtitle = paste0("n = ", nrow(excl_df), " multi-subclone; 5 main states"),
+         x = NULL, y = "% samples") +
+    theme_classic(base_size = 11) +
+    theme(legend.position = "none", 
+          plot.title = element_text(face = "bold", size = 11), 
+          plot.subtitle = element_text(size = 9),
+          plot.margin = margin(4, 6, 4, 6))
+
+  # --- Write page 1 as a separate compact PDF, then combine ---
+  tmp_page0 <- tempfile(fileext = ".pdf")
+  pdf(tmp_page0, width = 15, height = 4.2, useDingbats = FALSE)
+  grid.arrange(p_subclone_dist, p_counts, p_mp_excl, p_st_excl, ncol = 4)
+  dev.off()
+
+  tmp_rest <- tempfile(fileext = ".pdf")
+  pdf(tmp_rest, width = 15, height = 9, useDingbats = FALSE)
+  # Page 2: Summary of MP Differences
+  grid.arrange(p_mp, nullGrob(), ncol = 2, widths = c(2, 1))
+  # Page 3: QC Summary
   grid.arrange(grobs = plot_list_qc, ncol = 3)
-  # Page 3
+  # Page 4: MP Differences by Clone
   grid.arrange(grobs = plot_list_mp, ncol = 4)
-  # Page 4
+  # Page 5: State Distributions
   grid.arrange(grobs = plot_list_state, ncol = 4)
   dev.off()
-}
 
+  # Combine into final output
+  final_summary_pdf <- file.path(out_dir, "Auto_malignant_subclone_mp_cohort_summary.pdf")
+  if (requireNamespace("qpdf", quietly = TRUE)) {
+    qpdf::pdf_combine(c(tmp_page0, tmp_rest), output = final_summary_pdf)
+  } else {
+    py_cmd <- sprintf("python -c 'import PyPDF2; m = PyPDF2.PdfMerger(); m.append(\"%s\"); m.append(\"%s\"); m.write(\"%s\"); m.close()'", tmp_page0, tmp_rest, final_summary_pdf)
+    system(py_cmd)
+  }
+  unlink(c(tmp_page0, tmp_rest))
 message("Saved sample pages to: ", sample_pdf)
 message("Saved tables and cohort summary to: ", out_dir)

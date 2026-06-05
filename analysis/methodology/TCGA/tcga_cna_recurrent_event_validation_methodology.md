@@ -64,6 +64,8 @@ For TCGA-discovered events, the output includes whether the same event was recur
 
 The validation figures follow the presentation styling of `analysis/cnv/cna_subclone_expression_correlation.R`: MP and state pages are separated, MP/state order is fixed to the scRef plotting order, dotplots use median standardized event delta and `-log10(FDR)`, and boxplots show standardized TCGA GSVA scores.
 
+The rectangular MP/CNA validation layer adds two direct scRef-vs-TCGA comparisons. For all chromosome arms, the script uses the continuous Spearman approach from `analysis/cnv/Auto_mp18_cna_investigation.R`: each arm-level CNA mean is correlated with each MP score, separately in scRef subclones and TCGA bulk samples, with BH FDR correction across the full MP-by-arm family in each dataset. For recurrent events, the script keeps the existing event-positive versus event-negative Wilcoxon framework from `analysis/cnv/cna_subclone_expression_correlation.R` and plots the standardized event delta for every recurrent event/MP pair. Rectangular heatmaps use blue-red direction coloring, asterisks for dataset-level FDR significance, gold outlines for same-trend scRef/TCGA concordance, and magenta plus-marked outlines for same-trend pairs significant in both datasets. The all-arm layer writes both a significant-only plot and an all-trends plot.
+
 ## Outputs
 
 Outputs are written under `ref_outs/TCGA/cna_recurrent_event_validation/`.
@@ -86,6 +88,11 @@ Outputs are written under `ref_outs/TCGA/cna_recurrent_event_validation/`.
 - `Auto_tcga_discovered_recurrent_event_feature_tests.csv`
 - `Auto_tcga_discovered_significant_event_overlap_scRef.csv`
 - `Auto_scRef_tcga_event_feature_concordance.csv`
+- `Auto_scRef_all_arm_mp_spearman_tests.csv`
+- `Auto_tcga_all_arm_mp_spearman_tests.csv`
+- `Auto_scRef_tcga_all_arm_mp_spearman_concordance.csv`
+- `Auto_scRef_tcga_recurrent_event_mp_concordance_rectangles.csv`
+- `Auto_tcga_cna_rectangle_heatmap_summary.csv`
 - `Auto_tcga_cna_validation_conclusion.csv`
 - `Auto_tcga_cna_recurrent_event_validation_summary.csv`
 
@@ -94,6 +101,9 @@ Outputs are written under `ref_outs/TCGA/cna_recurrent_event_validation/`.
 - `Auto_tcga_cna_threshold_optimization.pdf`
 - `Auto_tcga_cna_event_association_dotplots.pdf`
 - `Auto_tcga_cna_event_boxplots.pdf`
+- `Auto_scRef_tcga_all_arm_mp_spearman_rectangles.pdf`
+- `Auto_scRef_tcga_all_arm_mp_spearman_rectangles_all_trends.pdf`
+- `Auto_scRef_tcga_recurrent_event_mp_rectangles.pdf`
 
 ### Logs and Summaries
 

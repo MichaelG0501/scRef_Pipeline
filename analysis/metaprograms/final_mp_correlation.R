@@ -113,18 +113,18 @@ mp_descriptions <- setNames(rownames(mod_mat), rownames(mod_mat))
 mp_desc_map <- c(
   "MP1"  = "G2M Cell Cycle",
   "MP9"  = "G1S Cell Cycle",
-  "MP2"  = "MYC Proliferation",
-  "MP17" = "Basal transition",
-  "MP14" = "Hypoxia adapted",
-  "MP5"  = "IFN response",
-  "MP10" = "Columnar diff.",
-  "MP8"  = "Intestinal diff.",
-  "MP13" = "Hypoxic inflam.",
-  "MP7"  = "DNA damage",
-  "MP18" = "Secretory (Intest.)",
-  "MP16" = "Secretory (Gastric)",
-  "MP15" = "Immune infiltrating",
-  "MP12" = "Neuro-responsive"
+  "MP2"  = "MYC-related Proliferation",
+  "MP17" = "Basal-like Transition",
+  "MP14" = "Hypoxia Adapted Epi.",
+  "MP5"  = "Epithelial IFN Resp.",
+  "MP10" = "Columnar Diff.",
+  "MP8"  = "Intestinal Diff.",
+  "MP13" = "Hypoxic Inflam. Epi.",
+  "MP7"  = "DNA Damage Repair",
+  "MP18" = "Secretory Diff. (Intest.)",
+  "MP16" = "Secretory Diff. (Gastric)",
+  "MP15" = "Immune Infiltration",
+  "MP12" = "Neuro-responsive Epi."
 )
 
 # Apply name mapping: "MPX Description"
@@ -220,12 +220,12 @@ ha_top <- HeatmapAnnotation(
 )
 
 # Common heatmap settings for square shape and labels
-hm_width <- unit(7, "inch")
-hm_height <- unit(7, "inch")
+hm_width <- unit(9, "inch")
+hm_height <- unit(9, "inch")
 
 col_cor <- colorRamp2(c(-0.4, 0, 0.4), c("blue", "white", "red"))
 
-pdf("Metaprogrammes_Results/Auto_final_mp_correlation_heatmap.pdf", width = 12, height = 12, useDingbats = FALSE)
+pdf("Metaprogrammes_Results/Auto_final_mp_correlation_heatmap.pdf", width = 16, height = 16, useDingbats = FALSE)
 ht_cor <- Heatmap(mean_rho,
         name = paste0("Mean Rho\n(", length(samples), " Samples)"),
         col = col_cor,
@@ -240,14 +240,14 @@ ht_cor <- Heatmap(mean_rho,
         # Labels and rotation
         column_title_rot = 20,
         column_title_side = "top",
-        column_title_gp = gpar(fontsize = 10, fontface = "bold"),
+        column_title_gp = gpar(fontsize = 16, fontface = "bold"),
         row_title = NULL, # Remove state labels on the left
         
         # MP names on bottom and right
         row_names_side = "right",
         column_names_side = "bottom",
-        row_names_gp = gpar(fontsize = 10, fontface = "bold"),
-        column_names_gp = gpar(fontsize = 10, fontface = "bold"),
+        row_names_gp = gpar(fontsize = 16, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 16, fontface = "bold"),
         
         # Square shape
         width = hm_width,
@@ -258,19 +258,19 @@ ht_cor <- Heatmap(mean_rho,
           p <- p_vals[i, j]
           rho <- mean_rho[i, j]
           if (is.na(p) || is.na(rho)) {
-            grid.text("NA", x, y, gp = gpar(fontsize = 8, col = "grey50"))
+            grid.text("NA", x, y, gp = gpar(fontsize = 12, col = "grey50"))
           } else if (p < 0.001) {
-            grid.text(paste0(round(rho, 2), "\n***"), x, y, gp = gpar(fontsize = 10))
+            grid.text(paste0(round(rho, 2), "\n***"), x, y, gp = gpar(fontsize = 14))
           } else if (p < 0.01) {
-            grid.text(paste0(round(rho, 2), "\n**"), x, y, gp = gpar(fontsize = 10))
+            grid.text(paste0(round(rho, 2), "\n**"), x, y, gp = gpar(fontsize = 14))
           } else if (p < 0.05) {
-            grid.text(paste0(round(rho, 2), "\n*"), x, y, gp = gpar(fontsize = 10))
+            grid.text(paste0(round(rho, 2), "\n*"), x, y, gp = gpar(fontsize = 14))
           } else {
-            grid.text(round(rho, 2), x, y, gp = gpar(fontsize = 10))
+            grid.text(round(rho, 2), x, y, gp = gpar(fontsize = 14))
           }
         },
-        heatmap_legend_param = list(title_gp = gpar(fontsize = 10, fontface = "bold")))
-draw(ht_cor)
+        heatmap_legend_param = list(title_gp = gpar(fontsize = 16, fontface = "bold"), labels_gp = gpar(fontsize = 14)))
+draw(ht_cor, padding = unit(c(20, 20, 20, 20), "mm"))
 dev.off()
 cat("Saved: Metaprogrammes_Results/Auto_final_mp_correlation_heatmap.pdf\n")
 
@@ -329,7 +329,7 @@ display_mat <- matrix(
 rownames(jaccard_mat) <- mp_names_with_desc[rownames(jaccard_mat)]
 colnames(jaccard_mat) <- mp_names_with_desc[colnames(jaccard_mat)]
 
-pdf("Metaprogrammes_Results/Auto_final_mp_jaccard_heatmap.pdf", width = 12, height = 12, useDingbats = FALSE)
+pdf("Metaprogrammes_Results/Auto_final_mp_jaccard_heatmap.pdf", width = 16, height = 16, useDingbats = FALSE)
 ht_jaccard <- Heatmap(
   jaccard_mat,
   name = "Jaccard Index",
@@ -345,25 +345,25 @@ ht_jaccard <- Heatmap(
   # Labels and rotation
   column_title_rot = 20,
   column_title_side = "top",
-  column_title_gp = gpar(fontsize = 10, fontface = "bold"),
+  column_title_gp = gpar(fontsize = 16, fontface = "bold"),
   row_title = NULL, # Remove state labels on the left
   
   # MP names on bottom and right
   row_names_side = "right",
   column_names_side = "bottom",
-  row_names_gp = gpar(fontsize = 10, fontface = "bold"),
-  column_names_gp = gpar(fontsize = 10, fontface = "bold"),
+  row_names_gp = gpar(fontsize = 16, fontface = "bold"),
+  column_names_gp = gpar(fontsize = 16, fontface = "bold"),
   
   # Square shape
   width = hm_width,
   height = hm_height,
   
   cell_fun = function(j, i, x, y, width, height, fill) {
-    grid.text(display_mat[i, j], x, y, gp = gpar(fontsize = 8))
+    grid.text(display_mat[i, j], x, y, gp = gpar(fontsize = 12))
   },
   
-  heatmap_legend_param = list(title_gp = gpar(fontsize = 10, fontface = "bold"))
+  heatmap_legend_param = list(title_gp = gpar(fontsize = 16, fontface = "bold"), labels_gp = gpar(fontsize = 14))
 )
-draw(ht_jaccard)
+draw(ht_jaccard, padding = unit(c(20, 20, 20, 20), "mm"))
 dev.off()
 cat("Saved: Metaprogrammes_Results/Auto_final_mp_jaccard_heatmap.pdf\n")

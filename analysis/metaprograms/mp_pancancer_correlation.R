@@ -249,6 +249,161 @@ pheatmap(
 )
 dev.off()
 
+####################
+# NEW STYLED PDF PLOTS (matching final_mp_correlation.R)
+####################
+# 1. State definitions and colors
+styled_group_cols <- c(
+  "Classic Proliferative" = "#E41A1C",
+  "Repeiration" = "#FF9999",
+  "Basal to Intestinal Metaplasia" = "#4DAF4A",
+  "Stress-adaptive"       = "#984EA3",
+  "SMG-like Metaplasia"   = "#FF7F00",
+  "Immune Infiltrating"   = "#377EB8",
+  "3CA_EMT_and_Protein_maturation" = "#666666",
+  "Other" = "grey80"
+)
+
+styled_mp_to_state <- c(
+  "MP2" = "Classic Proliferative",
+  "MP17" = "Basal to Intestinal Metaplasia",
+  "MP14" = "Basal to Intestinal Metaplasia",
+  "MP5" = "Basal to Intestinal Metaplasia",
+  "MP10" = "Basal to Intestinal Metaplasia",
+  "MP8" = "Basal to Intestinal Metaplasia",
+  "MP13" = "Stress-adaptive",
+  "MP12" = "Stress-adaptive",
+  "MP18" = "SMG-like Metaplasia",
+  "MP16" = "SMG-like Metaplasia",
+  "MP15" = "Immune Infiltrating",
+  "MP1" = "Cell cycle",
+  "MP9" = "Cell cycle",
+  "MP7" = "Cell cycle",
+  "3CA_mp_30 Respiration 1" = "Repeiration",
+  "3CA_mp_12 Protein maturation" = "3CA_EMT_and_Protein_maturation",
+  "3CA_mp_17 EMT III" = "3CA_EMT_and_Protein_maturation"
+)
+
+raw_mp_keys <- c(canon_mps_avail, clean_3ca_name(retained_3ca_corr))
+state_assign <- styled_mp_to_state[raw_mp_keys]
+state_assign[is.na(state_assign)] <- "Other"
+
+# Remove Cell cycle MPs
+non_cc_idx <- state_assign != "Cell cycle"
+state_assign <- state_assign[non_cc_idx]
+
+styled_mean_rho <- mean_rho[non_cc_idx, non_cc_idx, drop = FALSE]
+styled_p_vals <- p_vals[non_cc_idx, non_cc_idx, drop = FALSE]
+styled_jaccard_mat <- jaccard_mat[non_cc_idx, non_cc_idx, drop = FALSE]
+styled_display_mat <- display_mat[non_cc_idx, non_cc_idx, drop = FALSE]
+
+state_vec_for_mps <- factor(state_assign, levels = c(
+  "Classic Proliferative",
+  "Repeiration",
+  "Basal to Intestinal Metaplasia",
+  "Stress-adaptive",
+  "SMG-like Metaplasia",
+  "Immune Infiltrating",
+  "3CA_EMT_and_Protein_maturation",
+  "Other"
+))
+
+# Row/Col annotations
+ha_left <- rowAnnotation(
+  State = state_vec_for_mps,
+  col = list(State = styled_group_cols),
+  show_annotation_name = FALSE,
+  show_legend = FALSE
+)
+ha_top <- HeatmapAnnotation(
+  State = state_vec_for_mps,
+  col = list(State = styled_group_cols),
+  show_annotation_name = FALSE,
+  show_legend = FALSE
+)
+
+hm_width <- unit(9, "inch")
+hm_height <- unit(9, "inch")
+styled_col_cor <- colorRamp2(c(-0.4, 0, 0.4), c("blue", "white", "red"))
+
+pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_nMP19_correlation_heatmap_persample_styled.pdf")), width = 16, height = 16, useDingbats = FALSE)
+ht_cor_styled <- Heatmap(styled_mean_rho,
+        name = paste0("Mean Rho\n(", length(samples), " Samples)"),
+        col = styled_col_cor,
+        rect_gp = gpar(col = "white", lwd = 1),
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        left_annotation = ha_left,
+        top_annotation = ha_top,
+        row_split = state_vec_for_mps,
+        column_split = state_vec_for_mps,
+        
+        column_title_rot = 20,
+        column_title_side = "top",
+        column_title_gp = gpar(fontsize = 16, fontface = "bold"),
+        row_title = NULL,
+        
+        row_names_side = "right",
+        column_names_side = "bottom",
+        row_names_gp = gpar(fontsize = 16, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 16, fontface = "bold"),
+        
+        width = hm_width,
+        height = hm_height,
+        show_heatmap_legend = FALSE,
+        
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          p <- styled_p_vals[i, j]
+          rho <- styled_mean_rho[i, j]
+          if (is.na(p) || is.na(rho)) {
+            grid.text("NA", x, y, gp = gpar(fontsize = 12, col = "grey50"))
+          } else if (p < 0.001) {
+            grid.text(paste0(round(rho, 2), "\n***"), x, y, gp = gpar(fontsize = 14))
+          } else if (p < 0.01) {
+            grid.text(paste0(round(rho, 2), "\n**"), x, y, gp = gpar(fontsize = 14))
+          } else if (p < 0.05) {
+            grid.text(paste0(round(rho, 2), "\n*"), x, y, gp = gpar(fontsize = 14))
+          } else {
+            grid.text(round(rho, 2), x, y, gp = gpar(fontsize = 14))
+          }
+        })
+draw(ht_cor_styled, padding = unit(c(20, 20, 20, 20), "mm"))
+dev.off()
+
+pdf(file.path(out_dir, paste0("Auto_", task_prefix, "_nMP19_jaccard_with_pancancer_heatmap_styled.pdf")), width = 16, height = 16, useDingbats = FALSE)
+ht_jaccard_styled <- Heatmap(
+  styled_jaccard_mat,
+  name = "Jaccard Index",
+  col = colorRampPalette(c("#ffffff", "#ffcccc", "#ff6666", "#cc0000", "#660000"))(100),
+  rect_gp = gpar(col = "grey85", lwd = 1),
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  left_annotation = ha_left,
+  top_annotation = ha_top,
+  row_split = state_vec_for_mps,
+  column_split = state_vec_for_mps,
+  
+  column_title_rot = 20,
+  column_title_side = "top",
+  column_title_gp = gpar(fontsize = 16, fontface = "bold"),
+  row_title = NULL,
+  
+  row_names_side = "right",
+  column_names_side = "bottom",
+  row_names_gp = gpar(fontsize = 16, fontface = "bold"),
+  column_names_gp = gpar(fontsize = 16, fontface = "bold"),
+  
+  width = hm_width,
+  height = hm_height,
+  show_heatmap_legend = FALSE,
+  
+  cell_fun = function(j, i, x, y, width, height, fill) {
+    grid.text(styled_display_mat[i, j], x, y, gp = gpar(fontsize = 12))
+  }
+)
+draw(ht_jaccard_styled, padding = unit(c(20, 20, 20, 20), "mm"))
+dev.off()
+
 summary_dir <- file.path(
   "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
   "updates", "new_updates", "summaries"

@@ -805,13 +805,39 @@ cliffs_delta <- function(x, y) {
   (sum(diffs > 0) - sum(diffs < 0)) / (length(x) * length(y))
 }
 
+####################
+# Prioritise familiar CNA genes in compact event labels so key drivers are not hidden.
+####################
+cna_gene_priority <- c(
+  "MYC", "ERBB2", "CCNE1", "CDKN2A", "SMAD4", "TP53", "KRAS", "GATA6",
+  "EGFR", "MET", "VEGFA", "PIK3CA", "APC", "ARID1A", "AURKA", "ZNF217",
+  "MDM2", "CDK6", "FGFR1", "SOX2", "TERT", "RNF43", "SMAD2", "CDH1"
+)
+
+prioritise_known_genes <- function(known_genes, max_genes = 3L) {
+  vapply(as.character(known_genes), function(x) {
+    if (is.na(x) || !nzchar(x)) return("")
+    genes <- trimws(unlist(strsplit(x, ",")))
+    genes <- gsub("\\*$", "", genes)
+    genes <- genes[nzchar(genes)]
+    genes <- unique(genes)
+    priority <- cna_gene_priority[cna_gene_priority %in% genes]
+    ordered <- unique(c(priority, genes))
+    shown <- head(ordered, max_genes)
+    suffix <- if (length(ordered) > max_genes) paste0(" +", length(ordered) - max_genes) else ""
+    paste0(paste(shown, collapse = ", "), suffix)
+  }, character(1))
+}
+####################
+
 event_label <- function(event_id, known_genes = NULL) {
   direction <- sub("_.*$", "", event_id)
   arm <- sub("^[^_]+_", "", event_id)
   base <- paste0(ifelse(direction == "gain", "Gain ", "Loss "), arm)
   known_genes <- as.character(known_genes)
   known_genes[is.na(known_genes)] <- ""
-  paste0(base, ifelse(nzchar(known_genes), paste0(" (", str_trunc(known_genes, 42), ")"), ""))
+  known_genes <- prioritise_known_genes(known_genes)
+  paste0(base, ifelse(nzchar(known_genes), paste0(" (", known_genes, ")"), ""))
 }
 
 collapse_annotation_columns <- function(df) {
@@ -1004,6 +1030,375 @@ if (file.exists(sc_event_tests_path)) {
   sc_tcga_concordance <- data.frame()
 }
 
+####################
+# 6b) Rectangular MP-by-CNA validation heatmaps
+####################
+all_arm_fdr_cutoff <- 0.05
+recurrent_fdr_cutoff <- 0.05
+
+sc_results_path_for_arm_mp <- file.path(SCREF_REF_OUTS_DIR, "Auto_cna_subclone_expression", "rds", "Auto_cna_subclone_expression_results.rds")
+
+safe_spearman <- function(x, y) {
+  x <- suppressWarnings(as.numeric(x))
+  y <- suppressWarnings(as.numeric(y))
+  ok <- is.finite(x) & is.finite(y)
+  if (sum(ok) < 5 || length(unique(x[ok])) < 2 || length(unique(y[ok])) < 2) {
+    return(list(rho = NA_real_, p_value = NA_real_, n = sum(ok)))
+  }
+  cr <- suppressWarnings(tryCatch(cor.test(x[ok], y[ok], method = "spearman"), error = function(e) NULL))
+  if (is.null(cr)) return(list(rho = NA_real_, p_value = NA_real_, n = sum(ok)))
+  list(rho = unname(cr$estimate), p_value = cr$p.value, n = sum(ok))
+}
+
+compute_sc_arm_mp_spearman <- function(sc_results_obj, arm_order, mp_order_for_tests) {
+  sc_arm_matrix <- as.matrix(sc_results_obj$arm_matrix)
+  sc_arm_matrix[!is.finite(sc_arm_matrix)] <- 0
+  sc_features_for_tests <- as.data.frame(sc_results_obj$features)
+  if (!"subclone_id" %in% colnames(sc_features_for_tests) &&
+      all(c("sample", "subclone") %in% colnames(sc_features_for_tests))) {
+    sc_features_for_tests <- sc_features_for_tests |>
+      mutate(subclone_id = paste(.data$sample, .data$subclone, sep = "::"))
+  }
+  ids <- intersect(rownames(sc_arm_matrix), sc_features_for_tests$subclone_id)
+  bind_rows(lapply(arm_order, function(arm_name) {
+    if (!arm_name %in% colnames(sc_arm_matrix)) return(NULL)
+    bind_rows(lapply(mp_order_for_tests, function(mp_name) {
+      mp_col <- paste0("mp__", mp_name)
+      if (!mp_col %in% colnames(sc_features_for_tests)) return(NULL)
+      mp_val <- sc_features_for_tests[[mp_col]][match(ids, sc_features_for_tests$subclone_id)]
+      res <- safe_spearman(sc_arm_matrix[ids, arm_name], mp_val)
+      data.frame(
+        dataset = "scRef subclones",
+        arm = arm_name,
+        mp = mp_name,
+        rho = res$rho,
+        p_value = res$p_value,
+        n = res$n,
+        stringsAsFactors = FALSE
+      )
+    }))
+  })) |>
+    mutate(
+      p_adj = p.adjust(.data$p_value, method = "BH"),
+      sig_fdr = !is.na(.data$p_adj) & .data$p_adj < all_arm_fdr_cutoff,
+      sig_label = p_to_stars(.data$p_adj)
+    )
+}
+
+compute_tcga_arm_mp_spearman <- function(arm_long_df, score_df, arm_order, mp_order_for_tests) {
+  bind_rows(lapply(arm_order, function(arm_name) {
+    arm_df <- arm_long_df |>
+      filter(.data$arm == arm_name) |>
+      select(.data$sample_barcode, .data$sample_key, .data$arm_mean)
+    bind_rows(lapply(mp_order_for_tests, function(mp_name) {
+      if (!mp_name %in% colnames(score_df)) return(NULL)
+      d <- arm_df |>
+        inner_join(score_df |> select(.data$sample_barcode, .data$sample_key, all_of(mp_name)),
+                   by = c("sample_barcode", "sample_key"))
+      res <- safe_spearman(d$arm_mean, d[[mp_name]])
+      data.frame(
+        dataset = "TCGA bulk",
+        arm = arm_name,
+        mp = mp_name,
+        rho = res$rho,
+        p_value = res$p_value,
+        n = res$n,
+        stringsAsFactors = FALSE
+      )
+    }))
+  })) |>
+    mutate(
+      p_adj = p.adjust(.data$p_value, method = "BH"),
+      sig_fdr = !is.na(.data$p_adj) & .data$p_adj < all_arm_fdr_cutoff,
+      sig_label = p_to_stars(.data$p_adj)
+    )
+}
+
+make_concordance_flags <- function(df, sc_prefix, tcga_prefix, fdr_cutoff) {
+  df |>
+    mutate(
+      sc_sig = !is.na(.data[[paste0(sc_prefix, "_p_adj")]]) & .data[[paste0(sc_prefix, "_p_adj")]] < fdr_cutoff,
+      tcga_sig = !is.na(.data[[paste0(tcga_prefix, "_p_adj")]]) & .data[[paste0(tcga_prefix, "_p_adj")]] < fdr_cutoff,
+      same_trend = is.finite(.data[[paste0(sc_prefix, "_effect")]]) &
+        is.finite(.data[[paste0(tcga_prefix, "_effect")]]) &
+        .data[[paste0(sc_prefix, "_effect")]] != 0 &
+        .data[[paste0(tcga_prefix, "_effect")]] != 0 &
+        sign(.data[[paste0(sc_prefix, "_effect")]]) == sign(.data[[paste0(tcga_prefix, "_effect")]]),
+      same_trend_sig_any = .data$same_trend & (.data$sc_sig | .data$tcga_sig),
+      same_trend_sig_both = .data$same_trend & .data$sc_sig & .data$tcga_sig
+    )
+}
+
+build_all_arm_tile_plot <- function(plot_df, title_text, fill_title,
+                                    x_text_size = 15, y_text_size = 14,
+                                    base_size = 20) {
+  max_abs <- max(abs(plot_df$effect_for_fill), na.rm = TRUE)
+  if (!is.finite(max_abs) || max_abs == 0) max_abs <- 1
+  
+  if (!"star_label" %in% colnames(plot_df)) {
+      plot_df <- plot_df |>
+        mutate(
+          star_label = ifelse(!is.na(.data$p_adj) & .data$p_adj < 0.05, "\u2605", "")
+        )
+  }
+
+  ggplot(plot_df, aes(x = .data$arm, y = .data$mp_label)) +
+    geom_tile(aes(fill = .data$effect_for_fill), colour = "grey85", linewidth = 0.4, width = 1, height = 1) +
+    geom_text(
+      data = plot_df |> filter(.data$star_label != ""),
+      aes(label = .data$star_label), colour = "black", size = 8, vjust = 0.4, hjust = 0.5
+    ) +
+    facet_grid(. ~ dataset) +
+    scale_fill_gradient2(
+      low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0,
+      limits = c(-0.25, 0.25), oob = scales::squish, na.value = "white", 
+      name = fill_title
+    ) +
+    labs(title = title_text, x = "Chromosome arm level CNA events", y = "MP expression") +
+    theme_classic(base_size = base_size) +
+    theme(
+      plot.title = element_text(face = "bold", size = base_size + 4),
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = x_text_size, colour = "black"),
+      axis.text.y = element_text(size = y_text_size, colour = "black"),
+      axis.title.x = element_text(size = base_size + 1, face = "bold", margin = margin(t = 8)),
+      axis.title.y = element_text(size = base_size + 1, face = "bold", margin = margin(r = 8)),
+      strip.text = element_text(face = "bold", size = base_size + 1),
+      legend.title = element_text(face = "bold", size = base_size - 1),
+      legend.text = element_text(size = base_size - 2),
+      panel.spacing.x = grid::unit(1.5, "lines"),
+      panel.border = element_rect(colour = "black", fill = NA, linewidth = 1.2),
+      axis.line = element_blank()
+    )
+}
+
+if (file.exists(sc_results_path_for_arm_mp)) {
+  message("Computing all-arm continuous CNA vs MP Spearman validation")
+  sc_results_for_arm_mp <- readRDS(sc_results_path_for_arm_mp)
+  arm_mp_features <- intersect(mp_order, mp_features)
+  sc_all_arm_mp_tests <- compute_sc_arm_mp_spearman(sc_results_for_arm_mp, arm_levels, arm_mp_features)
+  tcga_all_arm_mp_tests <- compute_tcga_arm_mp_spearman(tcga_arm_long, tcga_score_df, arm_levels, arm_mp_features)
+
+  all_arm_concordance <- sc_all_arm_mp_tests |>
+    select(.data$arm, .data$mp, sc_effect = .data$rho, sc_p_value = .data$p_value,
+           sc_p_adj = .data$p_adj, sc_n = .data$n, sc_sig_fdr = .data$sig_fdr) |>
+    inner_join(
+      tcga_all_arm_mp_tests |>
+        select(.data$arm, .data$mp, tcga_effect = .data$rho, tcga_p_value = .data$p_value,
+               tcga_p_adj = .data$p_adj, tcga_n = .data$n, tcga_sig_fdr = .data$sig_fdr),
+      by = c("arm", "mp")
+    ) |>
+    make_concordance_flags("sc", "tcga", all_arm_fdr_cutoff) |>
+    mutate(
+      mp_label = feature_label_map[.data$mp],
+      mp_label = ifelse(is.na(.data$mp_label), .data$mp, .data$mp_label)
+    )
+
+  write.csv(sc_all_arm_mp_tests, file.path(tiers[["tables"]], "Auto_scRef_all_arm_mp_spearman_tests.csv"), row.names = FALSE)
+  write.csv(tcga_all_arm_mp_tests, file.path(tiers[["tables"]], "Auto_tcga_all_arm_mp_spearman_tests.csv"), row.names = FALSE)
+  write.csv(all_arm_concordance, file.path(tiers[["tables"]], "Auto_scRef_tcga_all_arm_mp_spearman_concordance.csv"), row.names = FALSE)
+
+  all_arm_plot_df <- bind_rows(
+    sc_all_arm_mp_tests |> transmute(dataset = "scATLAS subclones", arm, mp, effect = rho, p_adj, sig_fdr),
+    tcga_all_arm_mp_tests |> transmute(dataset = "OAC TCGA dataset", arm, mp, effect = rho, p_adj, sig_fdr)
+  ) |>
+    left_join(
+      all_arm_concordance |>
+        select(.data$arm, .data$mp, sc_sig = .data$sc_sig_fdr, tcga_sig = .data$tcga_sig_fdr),
+      by = c("arm", "mp")
+    ) |>
+    mutate(
+      dataset = factor(.data$dataset, levels = c("scATLAS subclones", "OAC TCGA dataset")),
+      arm = factor(.data$arm, levels = arm_levels),
+      mp_label = feature_label_map[.data$mp],
+      mp_label = ifelse(is.na(.data$mp_label), .data$mp, .data$mp_label),
+      mp_label = factor(.data$mp_label, levels = feature_label_map[arm_mp_features]),
+      effect_for_fill = case_when(
+        dataset == "scATLAS subclones" & sc_sig ~ effect,
+        dataset == "OAC TCGA dataset" & sc_sig ~ effect,
+        TRUE ~ NA_real_
+      ),
+      star_label = case_when(
+        dataset == "scATLAS subclones" & sc_sig ~ "\u2605",
+        dataset == "OAC TCGA dataset" & sc_sig & tcga_sig ~ "\u2605",
+        TRUE ~ ""
+      )
+    )
+
+  p_all_arm_rectangles <- build_all_arm_tile_plot(
+    all_arm_plot_df,
+    "Chromosome arm level CNA events vs MP expression",
+    "Spearman rho",
+    x_text_size = 15,
+    y_text_size = 14,
+    base_size = 20
+  )
+  ggsave(
+    file.path(tiers[["figures"]], "Auto_scRef_tcga_all_arm_mp_spearman_rectangles.pdf"),
+    p_all_arm_rectangles, width = 25, height = 10, device = cairo_pdf
+  )
+
+  all_arm_all_trends_plot_df <- bind_rows(
+    sc_all_arm_mp_tests |> transmute(dataset = "scATLAS subclones", arm, mp, effect = rho, p_adj, sig_fdr),
+    tcga_all_arm_mp_tests |> transmute(dataset = "OAC TCGA dataset", arm, mp, effect = rho, p_adj, sig_fdr)
+  ) |>
+    left_join(
+      all_arm_concordance |>
+        select(.data$arm, .data$mp, sc_sig = .data$sc_sig_fdr, tcga_sig = .data$tcga_sig_fdr),
+      by = c("arm", "mp")
+    ) |>
+    mutate(
+      dataset = factor(.data$dataset, levels = c("scATLAS subclones", "OAC TCGA dataset")),
+      arm = factor(.data$arm, levels = arm_levels),
+      mp_label = feature_label_map[.data$mp],
+      mp_label = ifelse(is.na(.data$mp_label), .data$mp, .data$mp_label),
+      mp_label = factor(.data$mp_label, levels = feature_label_map[arm_mp_features]),
+      effect_for_fill = .data$effect,
+      star_label = ifelse(.data$sig_fdr, "\u2605", "")
+    )
+
+  p_all_arm_all_trends <- build_all_arm_tile_plot(
+    all_arm_all_trends_plot_df,
+    "Chromosome arm level CNA events vs MP expression: all trends",
+    "Spearman rho",
+    x_text_size = 15,
+    y_text_size = 14,
+    base_size = 20
+  )
+  ggsave(
+    file.path(tiers[["figures"]], "Auto_scRef_tcga_all_arm_mp_spearman_rectangles_all_trends.pdf"),
+    p_all_arm_all_trends, width = 25, height = 10, device = cairo_pdf
+  )
+
+  if (file.exists(sc_event_tests_path)) {
+    message("Creating rectangular recurrent-event MP validation heatmap")
+    sc_event_tests_for_rectangles <- read.csv(sc_event_tests_path, check.names = FALSE) |>
+      mutate(
+        tcga_feature = case_when(
+          grepl("^mp__", .data$feature) ~ sub("^mp__", "", .data$feature),
+          TRUE ~ .data$feature
+        )
+      )
+
+    sc_recurrent_mp_rect <- sc_event_tests_for_rectangles |>
+      filter(.data$event_id %in% sc_recurrent$event_id, .data$feature_group == "Metaprogrammes") |>
+      transmute(
+        event_id = .data$event_id,
+        event_label = .data$event_label,
+        arm = .data$arm,
+        direction = .data$direction,
+        mp = .data$tcga_feature,
+        sc_effect = .data$primary_delta,
+        sc_p_value = .data$unpaired_p_value,
+        sc_p_adj = .data$primary_p_adj_group
+      )
+
+    tcga_recurrent_mp_rect <- sc_validation$tests |>
+      filter(.data$feature_group == "Metaprogrammes") |>
+      transmute(
+        event_id = .data$event_id,
+        event_label = as.character(.data$event_label),
+        arm = .data$arm,
+        direction = .data$direction,
+        mp = .data$feature,
+        tcga_effect = .data$primary_delta,
+        tcga_p_value = .data$p_value,
+        tcga_p_adj = .data$primary_p_adj_group
+      )
+
+    recurrent_mp_concordance <- sc_recurrent_mp_rect |>
+      inner_join(tcga_recurrent_mp_rect, by = c("event_id", "arm", "direction", "mp"), suffix = c("_sc", "_tcga")) |>
+      mutate(event_label = ifelse(!is.na(.data$event_label_tcga), .data$event_label_tcga, .data$event_label_sc)) |>
+      select(.data$event_id, .data$event_label, .data$arm, .data$direction, .data$mp,
+             .data$sc_effect, .data$sc_p_value, .data$sc_p_adj,
+             .data$tcga_effect, .data$tcga_p_value, .data$tcga_p_adj) |>
+      make_concordance_flags("sc", "tcga", recurrent_fdr_cutoff)
+
+    write.csv(recurrent_mp_concordance, file.path(tiers[["tables"]], "Auto_scRef_tcga_recurrent_event_mp_concordance_rectangles.csv"), row.names = FALSE)
+
+    recurrent_event_levels <- sc_recurrent |>
+      mutate(event_label_for_rectangles = event_label(.data$event_id, .data$known_genes)) |>
+      pull(.data$event_label_for_rectangles)
+
+    recurrent_plot_df <- bind_rows(
+      recurrent_mp_concordance |>
+        transmute(dataset = "scATLAS subclones", event_id, event_label, mp, effect = sc_effect,
+                  p_adj = sc_p_adj, sig_fdr = sc_sig, sc_sig = sc_sig, tcga_sig = tcga_sig),
+      recurrent_mp_concordance |>
+        transmute(dataset = "OAC TCGA dataset", event_id, event_label, mp, effect = tcga_effect,
+                  p_adj = tcga_p_adj, sig_fdr = tcga_sig, sc_sig = sc_sig, tcga_sig = tcga_sig)
+    ) |>
+      mutate(
+        dataset = factor(.data$dataset, levels = c("scATLAS subclones", "OAC TCGA dataset")),
+        arm = factor(.data$event_label, levels = recurrent_event_levels),
+        mp_label = feature_label_map[.data$mp],
+        mp_label = ifelse(is.na(.data$mp_label), .data$mp, .data$mp_label),
+        mp_label = factor(.data$mp_label, levels = feature_label_map[arm_mp_features]),
+        effect_for_fill = case_when(
+          dataset == "scATLAS subclones" & sc_sig ~ effect,
+          dataset == "OAC TCGA dataset" & sc_sig ~ effect,
+          TRUE ~ NA_real_
+        ),
+        star_label = case_when(
+          dataset == "scATLAS subclones" & sc_sig ~ "\u2605",
+          dataset == "OAC TCGA dataset" & sc_sig & tcga_sig ~ "\u2605",
+          TRUE ~ ""
+        )
+      )
+
+    p_recurrent_rectangles <- build_all_arm_tile_plot(
+      recurrent_plot_df,
+      "Top recurrent scRef CNA event MP associations and TCGA validation",
+      "Standardized\nevent delta",
+      x_text_size = 15,
+      y_text_size = 14,
+      base_size = 20
+    ) + labs(x = "Recurrent chromosome-arm event")
+
+    ggsave(
+      file.path(tiers[["figures"]], "Auto_scRef_tcga_recurrent_event_mp_rectangles.pdf"),
+      p_recurrent_rectangles, width = 25, height = 10, device = cairo_pdf
+    )
+  } else {
+    recurrent_mp_concordance <- data.frame()
+    message("Skipping recurrent rectangular heatmap because scRef recurrent event tests are missing: ", sc_event_tests_path)
+  }
+
+  rectangle_summary <- bind_rows(
+    data.frame(
+      summary_type = "all_arm_continuous",
+      item = "scRef_fdr_lt_0.05",
+      value = sum(sc_all_arm_mp_tests$sig_fdr, na.rm = TRUE),
+      detail = paste0(nrow(sc_all_arm_mp_tests), " scRef arm-MP Spearman tests"),
+      stringsAsFactors = FALSE
+    ),
+    data.frame(
+      summary_type = "all_arm_continuous",
+      item = "tcga_fdr_lt_0.05",
+      value = sum(tcga_all_arm_mp_tests$sig_fdr, na.rm = TRUE),
+      detail = paste0(nrow(tcga_all_arm_mp_tests), " TCGA arm-MP Spearman tests"),
+      stringsAsFactors = FALSE
+    ),
+    data.frame(
+      summary_type = "all_arm_continuous",
+      item = "same_trend_significant_either_dataset",
+      value = sum(all_arm_concordance$same_trend_sig_any, na.rm = TRUE),
+      detail = paste0(sum(all_arm_concordance$same_trend_sig_both, na.rm = TRUE), " significant in both datasets"),
+      stringsAsFactors = FALSE
+    ),
+    data.frame(
+      summary_type = "recurrent_rectangles",
+      item = "same_trend_significant_either_dataset",
+      value = if (exists("recurrent_mp_concordance")) sum(recurrent_mp_concordance$same_trend_sig_any, na.rm = TRUE) else NA_real_,
+      detail = if (exists("recurrent_mp_concordance")) paste0(sum(recurrent_mp_concordance$same_trend_sig_both, na.rm = TRUE), " significant in both datasets") else "not computed",
+      stringsAsFactors = FALSE
+    )
+  )
+  write.csv(rectangle_summary, file.path(tiers[["tables"]], "Auto_tcga_cna_rectangle_heatmap_summary.csv"), row.names = FALSE)
+} else {
+  message("Skipping all-arm MP association heatmap because scRef result cache is missing: ", sc_results_path_for_arm_mp)
+}
+####################
+
 validation_conclusion <- data.frame(
   conclusion_item = c(
     "event_universe",
@@ -1060,15 +1455,17 @@ event_bar <- event_meta |>
   mutate(event_label = factor(.data$event_label, levels = rev(as.character(.data$event_label)))) |>
   ggplot(aes(.data$frac_samples_event, .data$event_label, fill = .data$direction)) +
   geom_col(color = "black", linewidth = 0.35, width = 0.72) +
-  geom_text(aes(label = percent(.data$frac_samples_event, accuracy = 1)), hjust = -0.08, size = 5) +
+  geom_text(aes(label = percent(.data$frac_samples_event, accuracy = 1)), hjust = -0.08, size = 8) +
   scale_x_continuous(labels = percent, limits = c(0, min(1, max(event_meta$frac_samples_event) * 1.18))) +
   scale_fill_manual(values = c(gain = "#B2182B", loss = "#2166AC")) +
   labs(title = "Top scRef recurrent arm-level CNA events validated in TCGA",
-       x = "Fraction of scRef samples with event in at least one subclone", y = NULL, fill = NULL) +
-  theme_classic(base_size = 20) +
-  theme(plot.title = element_text(face = "bold", size = 24),
-        axis.text = element_text(size = 16),
-        legend.position = "top")
+       x = "Fraction of samples with event in at least one subclone", y = NULL, fill = NULL) +
+  theme_classic(base_size = 26) +
+  theme(plot.title = element_text(face = "bold", size = 30),
+        axis.text = element_text(size = 22),
+        axis.title.x = element_text(size = 24, face = "bold", margin = margin(t = 12)),
+        legend.position = "top",
+        legend.text = element_text(size = 20))
 
 plot_event_assoc <- function(group_name, title_suffix) {
   group_features <- plot_features[feature_group[plot_features] == group_name]
@@ -1294,18 +1691,13 @@ if (file.exists(sc_results_path)) {
     
     row_ha <- rowAnnotation(
       Cluster = row_meta$cna_cluster,
-      Dominance = row_meta$dominance_class,
-      `Clone fraction` = row_meta$subclone_fraction,
       col = list(
-        Cluster = sc_cluster_cols,
-        Dominance = sc_dominance_cols,
-        `Clone fraction` = colorRamp2(c(0, 0.5, 1), c("white", "#FDB863", "#B2182B"))
+        Cluster = sc_cluster_cols
       ),
       annotation_name_gp = gpar(fontsize = 13, fontface = "bold"),
+      show_annotation_name = FALSE,
       annotation_legend_param = list(
-        Cluster = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12)),
-        Dominance = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12)),
-        `Clone fraction` = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12))
+        Cluster = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12))
       ),
       simple_anno_size = unit(5, "mm")
     )
@@ -1322,7 +1714,7 @@ if (file.exists(sc_results_path)) {
       column_split = factor(chr_from_arm, levels = chrom_levels),
       column_title_gp = gpar(fontsize = 11, fontface = "bold"),
       column_names_rot = 45,
-      column_names_gp = gpar(fontsize = 9),
+      column_names_gp = gpar(fontsize = 12),
       cluster_rows = FALSE,
       cluster_columns = FALSE,
       show_row_names = FALSE,
@@ -1389,6 +1781,8 @@ if (file.exists(sc_results_path)) {
         Cluster = tcga_cluster_cols
       ),
       annotation_name_gp = gpar(fontsize = 13, fontface = "bold"),
+      show_annotation_name = TRUE,
+      annotation_name_side = "bottom",
       annotation_legend_param = list(
         Cluster = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12))
       ),
@@ -1407,7 +1801,7 @@ if (file.exists(sc_results_path)) {
       column_split = factor(chr_from_arm, levels = chrom_levels),
       column_title_gp = gpar(fontsize = 11, fontface = "bold"),
       column_names_rot = 45,
-      column_names_gp = gpar(fontsize = 9),
+      column_names_gp = gpar(fontsize = 12),
       cluster_rows = FALSE,
       cluster_columns = FALSE,
       show_row_names = FALSE,
@@ -1452,14 +1846,25 @@ if (file.exists(sc_results_path)) {
   if (nrow(sc_chr8q_myc) > 0) {
     sc_group_n <- sc_chr8q_myc |>
       group_by(.data$chr8q_group) |>
-      summarise(n = n(), y = max(.data$mp__MP2, na.rm = TRUE) + 0.02, .groups = "drop")
+      summarise(n = n(), .groups = "drop")
     
-    p_gain8q_myc_sc <- ggplot(sc_chr8q_myc, aes(.data$chr8q_group, .data$mp__MP2, fill = .data$chr8q_group)) +
-      geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.7, width = 0.62) +
+    sc_chr8q_myc <- sc_chr8q_myc |>
+      left_join(sc_group_n, by = "chr8q_group") |>
+      mutate(chr8q_group_label = paste0(.data$chr8q_group, "\n(n=", .data$n, ")"))
+    
+    sc_chr8q_myc$chr8q_group_label <- factor(sc_chr8q_myc$chr8q_group_label, 
+        levels = unique(sc_chr8q_myc$chr8q_group_label[order(sc_chr8q_myc$chr8q_group)]))
+        
+    levels_sc <- levels(sc_chr8q_myc$chr8q_group_label)
+    comps_sc <- list(c(levels_sc[1], levels_sc[2]), c(levels_sc[2], levels_sc[3]), c(levels_sc[1], levels_sc[3]))
+    
+    p_gain8q_myc_sc <- ggplot(sc_chr8q_myc, aes(x = .data$chr8q_group_label, y = .data$mp__MP2, fill = .data$chr8q_group)) +
+      geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.8, width = 0.62) +
       geom_point(aes(size = .data$n_cells), position = position_jitter(width = 0.14, height = 0),
                  alpha = 0.42, color = "black") +
-      geom_text(data = sc_group_n, aes(x = .data$chr8q_group, y = .data$y, label = paste0("n=", .data$n)),
-                inherit.aes = FALSE, size = 6, fontface = "bold") +
+      ggpubr::stat_compare_means(comparisons = comps_sc, label = "p.signif", 
+                                 symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf), symbols = c("****", "***", "**", "*", "NS")),
+                                 size = 7, vjust = -0.2, step.increase = 0.12, tip.length = 0.02) +
       scale_fill_manual(values = c("8q loss" = "#2166AC", "No 8q CNA" = "grey72", "8q gain" = "#B2182B")) +
       scale_size_continuous(range = c(1.8, 6)) +
       labs(
@@ -1469,10 +1874,11 @@ if (file.exists(sc_results_path)) {
         fill = "chr8q CNA",
         size = "Cells"
       ) +
-      theme_classic(base_size = 20) +
+      theme_classic(base_size = 22) +
       theme(
-        plot.title = element_text(face = "bold", size = 20),
-        axis.text = element_text(size = 18),
+        plot.title = element_text(face = "bold", size = 26),
+        axis.text = element_text(size = 22, color = "black"),
+        axis.title = element_text(size = 24, face = "bold", color = "black"),
         legend.position = "none"
       )
   } else {
@@ -1495,14 +1901,25 @@ if (file.exists(sc_results_path)) {
   if (nrow(tcga_chr8q_myc) > 0) {
     tcga_group_n <- tcga_chr8q_myc |>
       group_by(.data$chr8q_group) |>
-      summarise(n = n(), y = max(.data$MP2, na.rm = TRUE) + 0.02, .groups = "drop")
+      summarise(n = n(), .groups = "drop")
+      
+    tcga_chr8q_myc <- tcga_chr8q_myc |>
+      left_join(tcga_group_n, by = "chr8q_group") |>
+      mutate(chr8q_group_label = paste0(.data$chr8q_group, "\n(n=", .data$n, ")"))
+      
+    tcga_chr8q_myc$chr8q_group_label <- factor(tcga_chr8q_myc$chr8q_group_label, 
+        levels = unique(tcga_chr8q_myc$chr8q_group_label[order(tcga_chr8q_myc$chr8q_group)]))
+        
+    levels_tcga <- levels(tcga_chr8q_myc$chr8q_group_label)
+    comps_tcga <- list(c(levels_tcga[1], levels_tcga[2]), c(levels_tcga[2], levels_tcga[3]), c(levels_tcga[1], levels_tcga[3]))
     
-    p_gain8q_myc_tcga <- ggplot(tcga_chr8q_myc, aes(.data$chr8q_group, .data$MP2, fill = .data$chr8q_group)) +
-      geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.7, width = 0.62) +
+    p_gain8q_myc_tcga <- ggplot(tcga_chr8q_myc, aes(x = .data$chr8q_group_label, y = .data$MP2, fill = .data$chr8q_group)) +
+      geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.8, width = 0.62) +
       geom_point(position = position_jitter(width = 0.14, height = 0),
                  alpha = 0.42, color = "black", size = 3) +
-      geom_text(data = tcga_group_n, aes(x = .data$chr8q_group, y = .data$y, label = paste0("n=", .data$n)),
-                inherit.aes = FALSE, size = 6, fontface = "bold") +
+      ggpubr::stat_compare_means(comparisons = comps_tcga, label = "p.signif", 
+                                 symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf), symbols = c("****", "***", "**", "*", "NS")),
+                                 size = 7, vjust = -0.2, step.increase = 0.12, tip.length = 0.02) +
       scale_fill_manual(values = c("8q loss" = "#2166AC", "No 8q CNA" = "grey72", "8q gain" = "#B2182B")) +
       labs(
         title = "TCGA: chr8q CNA vs MYC MP",
@@ -1510,10 +1927,11 @@ if (file.exists(sc_results_path)) {
         y = "Patient mean MP2 score",
         fill = "chr8q CNA"
       ) +
-      theme_classic(base_size = 20) +
+      theme_classic(base_size = 22) +
       theme(
-        plot.title = element_text(face = "bold", size = 20),
-        axis.text = element_text(size = 18),
+        plot.title = element_text(face = "bold", size = 26),
+        axis.text = element_text(size = 22, color = "black"),
+        axis.title = element_text(size = 24, face = "bold", color = "black"),
         legend.position = "none"
       )
   } else {
@@ -1521,7 +1939,7 @@ if (file.exists(sc_results_path)) {
   }
   
   if (!is.null(p_gain8q_myc_sc) && !is.null(p_gain8q_myc_tcga)) {
-    pdf(file.path(tiers[["figures"]], "Auto_tcga_and_scRef_gain_chr8q_myc_mp.pdf"), width = 16, height = 8, useDingbats = FALSE)
+    pdf(file.path(tiers[["figures"]], "Auto_tcga_and_scRef_gain_chr8q_myc_mp.pdf"), width = 16, height = 9, useDingbats = FALSE)
     grid.arrange(p_gain8q_myc_sc, p_gain8q_myc_tcga, ncol = 2)
     dev.off()
   }

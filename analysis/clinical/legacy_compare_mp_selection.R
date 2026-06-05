@@ -65,20 +65,20 @@ cat("Retained MPs:", paste(retained_mps, collapse = ", "), "\n")
 # Canonical MP display names
 ####################
 mp_descriptions <- c(
-  "MP1"  = "G2M_cycle",
-  "MP2"  = "MYC_prolif",
-  "MP5"  = "IFN_response",
-  "MP7"  = "S_cycle",
-  "MP8"  = "Intestinal_diff",
-  "MP9"  = "G1S_cycle",
-  "MP10" = "Columnar_diff",
-  "MP12" = "Neuro_epithelial",
-  "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial",
-  "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff",
-  "MP17" = "Squamous_transition",
-  "MP18" = "Adaptive_secretory"
+  "MP1"  = "G2M Cell Cycle",
+  "MP2"  = "MYC-related Proliferation",
+  "MP5"  = "Epithelial IFN Resp.",
+  "MP7"  = "DNA Damage Repair",
+  "MP8"  = "Intestinal Diff.",
+  "MP9"  = "G1S Cell Cycle",
+  "MP10" = "Columnar Diff.",
+  "MP12" = "Neuro-responsive Epi.",
+  "MP13" = "Hypoxic Inflam. Epi.",
+  "MP14" = "Hypoxia Adapted Epi.",
+  "MP15" = "Immune Infiltration",
+  "MP16" = "Secretory Diff. (Gastric)",
+  "MP17" = "Basal-like Transition",
+  "MP18" = "Secretory Diff. (Intest.)"
 )
 
 ####################
@@ -127,8 +127,8 @@ strategy_labels <- c(
 ####################
 # 3) Load TCGA data
 ####################
-meta_tcga <- readRDS("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/tcga_esca_meta.rds")
-tpm_df    <- data.table::fread("/rds/general/project/spatialtranscriptomics/ephemeral/TCGA/INPUT/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
+meta_tcga <- readRDS("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds")
+tpm_df    <- data.table::fread("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/TCGA/esca_gdc_reconstruction/tables/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 tpm_mat   <- as.matrix(tpm_df[, -1])
 rownames(tpm_mat) <- tpm_df$GeneSymbol
 
@@ -223,7 +223,7 @@ for (strat in strategies) {
   if (nrow(df) == 0) next
   df$MP_label <- ifelse(
     !is.na(mp_descriptions[df$MP]),
-    unname(mp_descriptions[df$MP]),
+    paste0(df$MP, " ", unname(mp_descriptions[df$MP])),
     df$MP
   )
   all_results[[strat]] <- df
@@ -270,10 +270,11 @@ make_volcano <- function(df, title_text) {
     ) +
     geom_text_repel(
       aes(label = MP_label),
-      size         = 3.2,
-      max.overlaps = 20
+      size         = 3.8,
+      max.overlaps = 30,
+      fontface     = "bold"
     ) +
-    theme_minimal(base_size = 13) +
+    theme_minimal(base_size = 14) +
     labs(
       title    = title_text,
       subtitle = sprintf(

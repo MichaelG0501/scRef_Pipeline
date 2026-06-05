@@ -35,14 +35,14 @@ BIO_STATE_ORDER = [
 ]
 
 STATE_ORDER = [
-    "Non-carcinoma",
-    "Unresolved",
-    "Hybrid",
     "Classic Proliferative",
     "Basal to Intestinal Metaplasia",
     "SMG-like Metaplasia",
     "Stress-adaptive",
     "Immune Infiltrating",
+    "Unresolved",
+    "Hybrid",
+    "Non-carcinoma",
 ]
 
 
@@ -80,21 +80,21 @@ def ordered_labels(values):
 def point_style(label, n_points, mode):
     if mode == "context":
         return {
-            "Non-carcinoma": (0.020, 0.18, 1),
-            "Unresolved": (0.055, 0.48, 2),
-            "Hybrid": (0.060, 0.54, 2),
-        }.get(label, (0.24 if n_points > 100000 else 0.42, 0.96, 3))
+            "Non-carcinoma": (0.15, 0.18, 1),
+            "Unresolved": (0.15, 0.48, 2),
+            "Hybrid": (0.15, 0.54, 2),
+        }.get(label, (0.6 if n_points > 100000 else 1.05, 0.96, 3))
     if mode == "full":
         return {
-            "Non-carcinoma": (0.030, 0.24, 1),
-            "Unresolved": (0.080, 0.54, 2),
-            "Hybrid": (0.090, 0.60, 2),
-        }.get(label, (0.34 if n_points > 100000 else 0.62, 0.98, 3))
+            "Non-carcinoma": (0.225, 0.24, 1),
+            "Unresolved": (0.225, 0.54, 2),
+            "Hybrid": (0.225, 0.60, 2),
+        }.get(label, (0.85 if n_points > 100000 else 1.55, 0.98, 3))
     return {
-        "Non-carcinoma": (0.70, 0.28, 1),
-        "Unresolved": (1.70, 0.60, 2),
-        "Hybrid": (1.95, 0.68, 2),
-    }.get(label, (5.00, 0.98, 3))
+        "Non-carcinoma": (5.0, 0.28, 1),
+        "Unresolved": (5.0, 0.60, 2),
+        "Hybrid": (5.0, 0.68, 2),
+    }.get(label, (12.5, 0.98, 3))
 
 
 def plot_state_map(ax, df, title, mode="full", rasterized=True, draw_legend=True):
@@ -125,7 +125,8 @@ def plot_state_map(ax, df, title, mode="full", rasterized=True, draw_legend=True
             loc="upper left",
             bbox_to_anchor=(1.02, 1),
             frameon=False,
-            fontsize=8,
+            fontsize=11,
+            labelspacing=1.5,
             markerscale=10 if mode != "zoom" else 3,
         )
 
@@ -342,12 +343,116 @@ def make_neighbourhood_plot(scores, output_dir):
     return pdf_path
 
 
+def make_proportion_plot(df, output_dir):
+    prop_df = df[["patient", "Auto_state_B"]].copy()
+    prop_df.columns = ["patient", "state"]
+    prop_df = prop_df[prop_df["state"] != "Non-carcinoma"]
+    
+    overall = prop_df["state"].value_counts().reset_index()
+    overall.columns = ["state", "count"]
+    overall["patient"] = "Total"
+    overall["pct"] = 100 * overall["count"] / overall["count"].sum()
+    
+    per_patient = prop_df.groupby(["patient", "state"]).size().reset_index(name="count")
+    per_patient["pct"] = 100 * per_patient["count"] / per_patient.groupby("patient")["count"].transform("sum")
+    
+    plot_df = pd.concat([per_patient, overall], ignore_index=True)
+    
+    state_levels = [s for s in STATE_ORDER if s in plot_df["state"].unique()] + [s for s in plot_df["state"].unique() if s not in STATE_ORDER]
+    
+    patient_levels = sorted([p for p in plot_df["patient"].unique() if p != "Total"]) + ["Total"]
+    plot_df["is_total"] = plot_df["patient"].apply(lambda x: "Total" if x == "Total" else "Patients")
+    
+    fig = plt.figure(figsize=(18, 8))
+    gs = fig.add_gridspec(1, 3, width_ratios=[5, 1, 2])
+    
+    ax1 = fig.add_subplot(gs[0])
+    patients_df = plot_df[plot_df["is_total"] == "Patients"]
+    pivot_patients = patients_df.pivot(index="patient", columns="state", values="pct").reindex(columns=state_levels, fill_value=0)
+    
+    bottom = np.zeros(len(pivot_patients))
+    for state in state_levels:
+        values = pivot_patients[state].values
+        color = STATE_COLORS.get(state, "#808080")
+        ax1.bar(pivot_patients.index, values, bottom=bottom, color=color, edgecolor="black", linewidth=0.2, label=state)
+        for i, val in enumerate(values):
+            if val > 3:
+                ax1.text(i, bottom[i] + val/2, f"{val:.1f}%", ha='center', va='center', fontsize=12, color="black")
+        bottom += values
+        
+    ax1.set_ylabel("% of cells", fontsize=16, weight="bold")
+    ax1.set_title("State proportions (Patients)", fontsize=18)
+    ax1.set_xticks(range(len(pivot_patients)))
+    ax1.set_xticklabels(pivot_patients.index, rotation=45, ha="right", fontsize=14)
+    ax1.set_xlim(-0.6, len(pivot_patients)-0.4)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    
+    ax2 = fig.add_subplot(gs[1])
+    total_df = plot_df[plot_df["is_total"] == "Total"]
+    pivot_total = total_df.pivot(index="patient", columns="state", values="pct").reindex(columns=state_levels, fill_value=0)
+    
+    bottom = np.zeros(len(pivot_total))
+    for state in state_levels:
+        values = pivot_total[state].values
+        color = STATE_COLORS.get(state, "#808080")
+        ax2.bar(pivot_total.index, values, bottom=bottom, color=color, edgecolor="black", linewidth=0.2)
+        for i, val in enumerate(values):
+            if val > 3:
+                ax2.text(i, bottom[i] + val/2, f"{val:.1f}%", ha='center', va='center', fontsize=12, color="black")
+        bottom += values
+        
+    ax2.set_title("Total", fontsize=18)
+    ax2.set_xticks([0])
+    ax2.set_xticklabels(["Total"], rotation=45, ha="right", fontsize=14)
+    ax2.set_xlim(-0.6, 0.6)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+    ax2.spines["left"].set_visible(False)
+    ax2.set_yticks([])
+    
+    ax3 = fig.add_subplot(gs[2])
+    pie_data = pivot_total.loc["Total"]
+    pie_data = pie_data[pie_data > 0]
+    colors = [STATE_COLORS.get(s, "#808080") for s in pie_data.index]
+    
+    wedges, texts = ax3.pie(
+        pie_data, 
+        colors=colors,
+        wedgeprops=dict(width=1, edgecolor="white")
+    )
+    
+    for i, p in enumerate(wedges):
+        ang = (p.theta2 - p.theta1)/2. + p.theta1
+        y = np.sin(np.deg2rad(ang))
+        x = np.cos(np.deg2rad(ang))
+        pct = pie_data.iloc[i]
+        if pct > 3:
+            ax3.annotate(f"{pie_data.index[i]}\n{pct:.1f}%", xy=(x*0.5, y*0.5), ha="center", va="center", color="black", weight="bold", fontsize=12)
+            
+    ax3.set_title("Overall pie", fontsize=18, weight="bold")
+    
+    handles, labels = ax1.get_legend_handles_labels()
+    fig.legend(handles[::-1], labels[::-1], loc='center right', title="State", bbox_to_anchor=(0.98, 0.5), fontsize=14, title_fontsize=16)
+    
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.80, wspace=0.1)
+    
+    pdf_path = output_dir / "Auto_xenium_state_proportions.pdf"
+    with PdfPages(pdf_path) as pdf:
+        pdf.savefig(fig, bbox_inches="tight", dpi=300)
+    fig.savefig(output_dir / "Auto_xenium_state_proportions.png", dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    return pdf_path
+
+
 def main():
     args = parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     df = load_annotations(args.annotations)
+    make_proportion_plot(df, output_dir)
     make_full_maps(df, output_dir)
     make_dense_region_maps(df, output_dir, args.dense_knn_k, args.dense_target_cells)
     scores = neighbourhood_scores(df, args.knn_k)

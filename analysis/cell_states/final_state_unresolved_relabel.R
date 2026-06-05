@@ -378,44 +378,66 @@ saveRDS(state_updated, "Auto_final_states.rds")
 ####################
 # STEP 4: updated proportion plot
 ####################
-prop_df <- data.frame(
-  state = as.character(state_updated[common_cells]),
-  study = as.character(tmdata_all$study[common_cells]),
-  stringsAsFactors = FALSE
-)
-overall <- prop_df %>% count(state) %>% mutate(study = "Overall", pct = 100 * n / sum(n))
-per_study <- prop_df %>%
-  count(study, state) %>%
-  group_by(study) %>%
-  mutate(pct = 100 * n / sum(n)) %>%
-  ungroup()
-plot_df <- bind_rows(overall, per_study)
-plot_df$state <- factor(plot_df$state, levels = state_level_order_updated)
+make_prop_and_pie <- function(state_vec, mode_label, lvls, cols) {
+  prop_df <- data.frame(
+    state = as.character(state_vec),
+    study = as.character(tmdata_all$study[common_cells]),
+    stringsAsFactors = FALSE
+  )
+  overall <- prop_df %>% count(state) %>% mutate(study = "Total", pct = 100 * n / sum(n))
+  per_study <- prop_df %>%
+    count(study, state) %>%
+    group_by(study) %>%
+    mutate(pct = 100 * n / sum(n)) %>%
+    ungroup()
+  
+  plot_df <- bind_rows(per_study, overall)
+  plot_df$state <- factor(plot_df$state, levels = lvls)
+  
+  study_levels <- c(sort(unique(per_study$study)), "Total")
+  plot_df$study <- factor(plot_df$study, levels = study_levels)
+  plot_df$is_total <- factor(ifelse(plot_df$study == "Total", "Total", "Studies"), levels = c("Studies", "Total"))
 
-p_bar <- ggplot(plot_df, aes(study, pct, fill = state)) +
-  geom_col(color = "black", linewidth = 0.2) +
-  geom_text(aes(label = sprintf("%.1f%%", pct)), position = position_stack(vjust = 0.5), size = 2.2) +
-  scale_fill_manual(values = group_cols_updated, drop = FALSE) +
-  labs(title = "Updated state proportions (5 original + pan-cancer relabeled)", x = NULL, y = "% of cells", fill = "State") +
-  theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  p_bar <- ggplot(plot_df, aes(study, pct, fill = state)) +
+    geom_col(color = "black", linewidth = 0.2) +
+    geom_text(aes(label = ifelse(pct > 3, sprintf("%.1f%%", pct), "")), position = position_stack(vjust = 0.5), size = 4.5) +
+    scale_fill_manual(values = cols, drop = FALSE) +
+    facet_grid(~ is_total, scales = "free_x", space = "free_x") +
+    labs(title = paste0(mode_label, ": state proportions"), x = NULL, y = "% of cells", fill = "State") +
+    theme_minimal(base_size = 16) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+      axis.title.y = element_text(size = 16, face = "bold"),
+      strip.background = element_blank(),
+      strip.text = element_blank(),
+      legend.position = "right",
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 16, face = "bold"),
+      panel.spacing = unit(1, "lines")
+    )
 
-pie_df <- overall %>% 
-  mutate(label = ifelse(pct < 5, "", paste0(state, "\n", sprintf("%.1f%%", pct))))
+  pie_df <- overall %>% mutate(label = paste0(state, "\n", sprintf("%.1f%%", pct)))
+  p_pie <- ggplot(pie_df, aes(x = "", y = pct, fill = state)) +
+    geom_col(width = 1, color = "white") +
+    coord_polar(theta = "y") +
+    geom_text(aes(label = ifelse(pct > 3, label, "")), position = position_stack(vjust = 0.5), size = 5, fontface = "bold") +
+    scale_fill_manual(values = cols, drop = FALSE) +
+    labs(title = paste0(mode_label, ": overall pie"), fill = "State") +
+    theme_void(base_size = 16) +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size = 18, face = "bold", hjust = 0.5)
+    )
+  list(bar = p_bar, pie = p_pie)
+}
 
-p_pie <- ggplot(pie_df, aes(x = "", y = pct, fill = state)) +
-  geom_col(width = 1, color = "white") +
-  coord_polar(theta = "y") +
-  geom_text(aes(label = label), position = position_stack(vjust = 0.5), size = 2.5) +
-  scale_fill_manual(values = group_cols_updated, drop = FALSE) +
-  labs(title = "Updated state proportions: overall pie", fill = "State") +
-  theme_void(base_size = 11)
+p_after <- make_prop_and_pie(state_updated[common_cells], "Updated state proportions (5 original + pan-cancer relabeled)", state_level_order_updated, group_cols_updated)
 
 ggsave(
   file.path(out_dir, paste0("Auto_", task_prefix, "_unresolved_relabel_proportion.pdf")),
-  p_bar + p_pie + plot_layout(widths = c(2, 1)),
-  width = 18,
-  height = 8
+  plot = p_after$bar / p_after$pie,
+  width = 10.55,
+  height = 18
 )
 
 ####################
