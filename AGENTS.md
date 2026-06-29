@@ -45,9 +45,6 @@ qsub -v sample="Walker_2025_OAC26T1" -N Walker_2025_OAC26T1 2_Clustering.sh
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
 Rscript analysis/summary/cross_sample_summary.R
-
-# For GeneNMF / UCell scripts, use the gnmf environment instead
-source activate /rds/general/user/sg3723/home/anaconda3/envs/gnmf
 ```
 
 ## HPC & File Safety Rules (from AI_RULES.md)
@@ -264,8 +261,8 @@ mp.genes <- mp.genes[!names(mp.genes) %in% bad_mp_names]
 Use `orig.ident` from the Seurat metadata to group by sample. Avoid barcode manipulation like `sub("_[^_]+$", "", ...)`.
 
 **Environment Usage**
-- `gnmf` conda env: Use for UCell scoring and GeneNMF scripts.
 - `dmtcp` conda env: Use for general Seurat and analysis tasks.
+- `gnmf` conda env: Use for GeneNMF package.
 
 **Adult oesophagus external reference**
 - `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/` is a very large Matrix Market dataset (`EoE.mtx` plus metadata), so interactive MP scoring should subset epithelial barcodes before UCell scoring and cache the sampled subset under `ref_outs/Auto_external_epi_mp_ucell/`.
@@ -463,6 +460,26 @@ can read results on the login node without loading heavy `.rds` files, create fo
 - In non-interactive shells, these commands may not be on `PATH` by default, so use the absolute path if needed.
 
 ####################
+## 22 Jun 2026 Refined MP Split Correlation Ordered Heatmap
+
+- `analysis/metaprograms/refined_mp_split_correlation_ordered_heatmap.R`
+  - Purpose: terminal correlation heatmap aligned to `refined_mp_nmf_ordered_heatmap.R`; finalized MP blocks keep the same program-resolution height/width as the ordered NMF heatmap.
+  - Critical plotting detail: rows/columns are expanded to original NMF programs and filled by split/full MP UCell correlations, so merged final MPs such as `MP2+` show all constituent pre-merge sub-MPs internally while full/single MPs such as `MP9` and `MP7j` remain single internal blocks.
+  - Styling: final MP dotted boxes and label spacing match the ordered NMF heatmap; internal split-MP boxes use thin grey borders; extra label gaps are before `MP17`, `MP7r`, `MP8c`, `MP8b`, `MP12b`, `MP15a`, and `MP15b`.
+  - Outputs: `ref_outs/Metaprogrammes_Results/mp_refinement/figures/refined_mp_split_correlation_ordered_heatmap.{pdf,png}`, final/sub-block CSVs, `intermediate/refined_mp_split_correlation_ordered_matrix.rds`, and `updates/new_updates/summaries/refined_mp_split_correlation_ordered_heatmap_summary.csv`.
+  - Methodology: `analysis/methodology/metaprograms/refined_mp_split_correlation_ordered_heatmap_methodology.md`.
+####################
+
+####################
+## 21 Jun 2026 Refined MP NMF Ordered Heatmap
+
+- `analysis/metaprograms/refined_mp_nmf_ordered_heatmap.R`
+  - Purpose: terminal plot-only heatmap that reorders the original GeneNMF programme similarity matrix by finalized merged refined MPs after `mp_refinement_submp.R` and `mp_refinement_merge_correlated_submps.R`.
+  - Strict order: `MP7j, MP9, MP1, MP2+, MP17, MP8+, MP10+, MP14, MP5+, MP7r, MP7v, MP10e, MP16+, MP18, MP8c, MP15c, MP12c, MP2v, MP8e, MP12a, MP13, MP7+, MP7h, MP8b, MP12b, MP15a, MP15b`.
+  - Critical plotting detail: dotted diagonal borders are generated from contiguous `merged_refined_mp` runs in `merged_refined_mp_assignments.rds`, so the borders reflect finalized refined MPs rather than original nMP19 clusters.
+  - Outputs: `ref_outs/Metaprogrammes_Results/mp_refinement/figures/refined_mp_nmf_ordered_heatmap.{pdf,png}`, `tables/refined_mp_nmf_ordered_blocks.csv`, `intermediate/refined_mp_nmf_ordered_similarity.rds`, and `updates/new_updates/summaries/refined_mp_nmf_ordered_heatmap_summary.csv`.
+  - Methodology: `analysis/methodology/metaprograms/refined_mp_nmf_ordered_heatmap_methodology.md`.
+####################
 
 ## 3 Jun 2026 CNA Subclone Functional Exclusivity Update
 
@@ -472,6 +489,17 @@ can read results on the login node without loading heavy `.rds` files, create fo
 - **Visualization**: Redesigned Page 1 of the cohort summary PDF (`Auto_malignant_subclone_mp_cohort_summary.pdf`) with neutral color palettes (gray/black) to avoid collisions with state-label colors. Added a "State exclusivity" percentage bar plot alongside subclone counts and MP exclusivity.
 - **Maintenance**: Ported temporary regeneration logic into the canonical pipeline script to ensure consistency in future runs.
 - **Resource Discovery**: Confirmed that `BiocParallel` workers must be restricted to 2 even if more cores are allocated, due to cluster-level environment limits (`_R_CHECK_LIMIT_CORES_`).
+
+####################
+## 5 Jun 2026 scATLAS Numbat Raw Expression Concordance
+
+- `analysis/cnv/scatlas_numbat_raw_expression_concordance.R`
+  - Purpose: compare Numbat raw expression-roll CNA values from `gexp_roll_wide.tsv.gz` against unfiltered per-sample InferCNA `_outs.rds` matrices for matched cells.
+  - Important distinction: visible structure in `exp_roll_clust.png` is raw expression-CNA structure, not necessarily an accepted Numbat final subclone. Samples with Numbat terminal statuses such as `No clones remain after filtering by size` can still have two raw-expression clusters in this validation plot.
+  - Outputs: `ref_outs/Auto_scatlas_numbat/raw_expression_concordance/` containing combined and per-sample Numbat-vs-InferCNA heatmaps, raw-expression cluster labels, and arm-level concordance summaries.
+  - PBS wrapper: `analysis/cnv/scatlas_numbat_raw_expression_concordance.sh` (`dmtcp`, 4 cores, 192 GB, 12 h, live logging).
+- Methodology: `analysis/methodology/cnv/scatlas_numbat_raw_expression_concordance_methodology.md`.
+####################
 
 ####################
 ## 2 Jun 2026 scATLAS Numbat Terminal No-Subclone Handling
@@ -655,7 +683,7 @@ can read results on the login node without loading heavy `.rds` files, create fo
 
 - `analysis/metaprograms/mp_3ca_ucell_scoring.sh`
   - PBS wrapper for `mp_3ca_ucell_scoring.R`
-  - Resources: `ncpus=8` (reduced to `ncores=2` in R), `mem=128gb`, `walltime=08:00:00`, env `gnmf`
+  - Resources: `ncpus=8` (reduced to `ncores=2` in R), `mem=128gb`, `walltime=08:00:00`, env `dmtcp`
 
 ####################
 ####################
@@ -663,7 +691,7 @@ can read results on the login node without loading heavy `.rds` files, create fo
 
 - `analysis/developmental/external_epi_mp_ucell_heatmap.R`
   - Purpose: score the filtered scATLAS nMP=19 metaprograms with UCell in three external epithelial datasets, then summarise mean MP activity per matched epithelial cell type using the same adult-epithelium / Barretts row structure as the developmental enrichment workflow.
-  - Environment: `gnmf` (uses `UCell`)
+  - Environment: `dmtcp` (uses `UCell`)
   - Inputs:
     - `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds`
     - `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Stomach/data_9_9_annotated_seurat_all_ut.rds`
@@ -849,7 +877,7 @@ Do **not** apply this to every R script. Focus on scripts that synthesize data a
 
 - `analysis/developmental/developmental_mp_enrichment_unified.R`
   - Purpose: unified developmental validation workflow for scATLAS metaprogrammes using three evidence layers: original `clusterProfiler::enricher()` overlap enrichment, original epithelial scATLAS expression-correlation enrichment, and original-style external annotated reference-celltype MP UCell scoring when annotated expression matrices are available.
-  - Runtime core: `analysis/developmental/developmental_mp_enrichment_unified_original_aligned_core.R` is sourced by the main script and keeps the original-script-aligned method logic separate from ranked-reference construction.
+  - Runtime core: The script now natively contains the original-script-aligned method logic directly alongside the ranked-reference construction.
   - Ranked gene handling: rebuilds ranked developmental reference genes from the source workbooks and writes `ref_outs/Auto_developmental_mp_enrichment_unified/tables/Auto_developmental_reference_rank_audit.csv`. Top-50 mode uses the first 50 ranked genes per term, then runs the same original enrichment/correlation logic. All-gene mode uses the original per-stage `TERM2GENE` references and validates against the original outputs.
   - Rank sources: Early embryogenesis/adult oesophagus/Barretts use source workbook marker order with available DE statistics; Organogenesis `S1D` uses marker columns labelled as DEGs ordered by z-score; Normal development long uses `fold.change`/`qval`; Normal development short is literature-marker order and is flagged as not a differential ranked list.
   - Validation outputs: `Auto_developmental_validation_overlap_all_vs_original.csv` and `Auto_developmental_validation_correlation_all_vs_original.csv` should be checked after reruns; the all-gene values are expected to have zero difference from `cluster_enrich.rds` and `Auto_MP_correlation_results_v2_MP19.rds`.
@@ -863,9 +891,31 @@ Do **not** apply this to every R script. Focus on scripts that synthesize data a
 ####################
 ## 4 Jun 2026 Developmental External Reference Downloads
 
-- `analysis/developmental/developmental_mp_enrichment_unified_original_aligned_core.R` now scores additional processed annotated method-3 references:
+- `analysis/developmental/developmental_mp_enrichment_unified.R` now scores additional processed annotated method-3 references:
   - Adult oesophagus: Broad SCP1242 downloaded under `ref_outs/Auto_developmental_mp_enrichment_unified/downloads/adult_oesophagus/` using the user-supplied temporary `generate_curl_config` URL and `curl -K cfg.txt`; `cfg.txt` is retained for provenance. The workflow streams a sampled subset from `EoE.mtx` using `EoE_meta.txt$cell_type_anno`.
   - Normal development stomach: Descartes/Fred Hutch direct public downloads under `ref_outs/Auto_developmental_mp_enrichment_unified/downloads/normal_development/`: `Stomach_gene_count.RDS`, `df_cell.RDS`, and `df_gene.RDS`. Only stomach cells are scored, with `Main_cluster_name` mapped to the 16 stomach terms in both long and short normal-development references.
   - Barretts oesophagus: Esophagus Cancer Cell Atlas high-quality combined RDS downloaded to `ref_outs/Auto_developmental_mp_enrichment_unified/downloads/barretts/alldatahighquality.rds`, scored by `cell_type_secondary`.
 - New audit output: `ref_outs/Auto_developmental_mp_enrichment_unified/tables/Auto_developmental_reference_celltype_coverage.csv` confirms expected external annotation terms are present and scored for each dataset source.
+####################
+
+####################
+## 7 Jun 2026 MP Refinement Sub-MP Workflow
+
+- `analysis/metaprograms/mp_refinement_submp.R`
+  - Purpose: optional refinement of nMP19 metaprogrammes by keeping MPs with silhouette `>= 0.2`, removing MPs with silhouette `< 0`, and splitting MPs with silhouette `> 0` and `< 0.2`.
+  - Split selection: evaluates mean silhouette for `k = 2..10`; if the raw optimum is `> 6`, the selected split is capped to `k = 5`.
+  - Critical implementation detail: GeneNMF's `normVector()` normalizes by vector sum, not L2 norm. Sub-MP gene-list derivation must keep this behavior to avoid near-empty sub-MP signatures and weak/incorrect UCell correlations.
+  - Outputs: `ref_outs/Metaprogrammes_Results/mp_refinement/` with `intermediate/`, `tables/`, `figures/`, and `logs/`. Key figures are `mp_splitting_diagnostics.pdf`, `refined_mp_correlation_heatmap.pdf`, and `refined_mp_jaccard_heatmap.pdf`.
+  - Current run: 39 final state-associated refined MPs in the terminal heatmaps; all refined gene sets are non-empty. The refined UCell cache is `75348 x 39`.
+  - Methodology: `analysis/methodology/metaprograms/mp_refinement_methodology.md`.
+####################
+
+####################
+## 25 Jun 2026 scATLAS RNA Velocity Workflow
+
+- `analysis/trajectory/scatlas_velocity_submit.sh` submits the full raw-BAM velocity chain for scATLAS samples with BAMs under `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files`.
+- Workflow structure mirrors the PDO velocity scripts: metadata/barcode export, GRCh38/RepeatMasker reference prep, epithelial barcode BAM filtering/sorting, velocyto loom generation, scVelo visualisation, and R nodeplots.
+- Direction derivation uses the five primary noreg Approach B states only: `Classic Proliferative`, `Basal to Intestinal Metaplasia`, `SMG-like Metaplasia`, `Stress-adaptive`, and `Immune Infiltrating`. Final states are retained for UMAP coloring.
+- Outputs live under `ref_outs/Auto_velocity_scATLAS/` with `tables/`, `figures/`, `logs/`, `h5ad/`, `looms/`, `coord/`, `barcodes/`, and `ref/` folders. Lightweight update summary is `updates/new_updates/summaries/Auto_scatlas_velocity_direction_summary.csv`.
+- Methodology: `analysis/methodology/trajectory/scatlas_velocity_methodology.md`.
 ####################

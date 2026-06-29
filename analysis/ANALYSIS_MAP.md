@@ -17,6 +17,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 1. Metaprogram inputs
    - `analysis/metaprograms/mp_ucell_scoring.R`
    - `analysis/metaprograms/mp_3ca_ucell_scoring.R`
+   - Optional MP refinement/splitting: `analysis/metaprograms/mp_refinement_submp.R`
 
 2. Current epithelial state definition
    - `analysis/cell_states/state_definition_approach_b_reg_noreg.R`
@@ -72,6 +73,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `shared/legacy_utils_reference.R` | legacy reference | none | none | do not source in new scripts |
 | `metaprograms/mp_ucell_scoring.R` | active upstream | `EAC_Ref_epi.rds`, `geneNMF_metaprograms_nMP_19.rds` | `Metaprogrammes_Results/UCell_nMP19_filtered.rds` | state definition, MP plots, survival |
 | `metaprograms/mp_3ca_ucell_scoring.R` | active upstream | `EAC_Ref_epi.rds`, 3CA `New_NMFs.csv` | `UCell_3CA_MPs.rds` | unresolved relabel, SCENIC |
+| `metaprograms/mp_refinement_submp.R` | active optional refinement/terminal figure | `geneNMF_metaprograms_nMP_19.rds`, `geneNMF_outs.rds`, `EAC_Ref_epi.rds` | `Metaprogrammes_Results/mp_refinement/` refined sub-MP genes, UCell scores, split diagnostics, refined correlation/Jaccard PDFs and matrix tables | exploratory refined MP interpretation; does not replace canonical nMP19 scoring unless explicitly adopted |
 | `metaprograms/delete_mp_external_scoring_superseded.R` | delete candidate | old 3CA workflow | old diagnostics | superseded by `mp_3ca_ucell_scoring.R` |
 | `metaprograms/final_mp_correlation.R` | terminal figure | MP genes, UCell scores, final states if present | final MP correlation/Jaccard PDFs | terminal |
 | `metaprograms/mp_database_correlation.R` | active upstream/terminal | `cluster_enrich.rds`, `EAC_Ref_epi.rds`, developmental per-stage references including `Adult_Epithelium` and `Barretts_Oesophagus` | ref-term UCell/correlation PDFs/RDS, Adult/Barretts reference gene-list XLSX | enrichment interpretation |
@@ -119,6 +121,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `cnv/cnv_malignant_subclone_mp_heatmap.R` | active terminal | per-sample InferCNA, epithelial RDS, UCell, state vectors | subclone MP/state PDFs and CSVs | terminal |
 | `cnv/cna_subclone_expression_correlation.R` | active terminal | CNA/subclone outputs, inferCNA per-sample matrices, OAC/OCCAMS xlsx | `ref_outs/Auto_cna_subclone_expression/` with arm CNA, consensus heatmap, recurrent event associations, largest-subclone, pairwise distance figures/tables/RDS | terminal; merged from previous v1+v2 split |
 | `cnv/cna_subclone_expression_correlation_strasser_e17a.R` | active terminal figure | `Auto_malignant_subclone_cells.csv`, `UCell_nMP19_filtered.rds` | single-sample MP/subclone boxplot PDF | terminal |
+| `cnv/scatlas_numbat_raw_expression_concordance.R` | active terminal validation | scATLAS Numbat `gexp_roll_wide.tsv.gz`, per-sample InferCNA `_outs.rds`, Numbat cell maps, optional InferCNA subclone labels | `ref_outs/Auto_scatlas_numbat/raw_expression_concordance/` with matched raw Numbat-vs-InferCNA heatmaps, per-sample plots, raw-expression cluster tables, and concordance summary | terminal Numbat-vs-InferCNA validation; uses raw expression-roll values, not final Numbat joint-post filters |
 | `cnv/mp_chromosomal_mapping.R` | untracked terminal | MP gene positions | MP chromosomal mapping figures | terminal; currently unstaged |
 | `cnv/cnv_profiling.R` | core CNV | epithelial per-sample RDS | inferCNA profiles | CNV subsetting/plotting |
 | `cnv/cnv_subsetting.R` | core CNV | inferCNA profiles | filtered CNA matrices | CNV plotting |
@@ -126,7 +129,6 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `developmental/developmental.R` | reference build | developmental xlsx files | `enrich_dev.rds`, per-stage RDS | enrichment/reference interpretation |
 | `developmental/external_epi_mp_ucell_heatmap.R` | active terminal/upstream | MP genes, adult oesophagus/stomach, Barretts references | external epithelial MP UCell heatmaps/cache | terminal |
 | `developmental/developmental_mp_enrichment_unified.R` | active terminal/upstream | MP genes/UCell, `EAC_Ref_epi.rds`, developmental ranked marker workbooks, available annotated external references | unified developmental MP overlap/correlation/reference-celltype UCell PDFs, top50-vs-all comparison, rank/external-data audit tables | terminal developmental validation |
-| `developmental/developmental_mp_enrichment_unified_original_aligned_core.R` | sourced helper | loaded by `developmental_mp_enrichment_unified.R` after ranked-reference and MP setup | original-script-aligned overlap/correlation/external-scoring tables and PDFs | helper; not run directly |
 | `developmental/developmental_mp_enrichment_unified.sh` | PBS wrapper | `developmental_mp_enrichment_unified.R` | live PBS log/output for unified developmental MP validation | run wrapper |
 | `enrichment/enrichment_analysis.R` | upstream | MP gene lists, TERM2GENE DBs | `cluster_enrich.rds` | enrichment annotation |
 | `enrichment/enrichment_annotation.R` | terminal | MP object, `cluster_enrich.rds`, reference DBs | enrichment heatmaps | terminal |
@@ -218,6 +220,29 @@ The following files or folders are intentionally not staged by agents unless the
 - `analysis/spatial/map_scatlas_states_xenium.py`
 - `analysis/spatial/map_scatlas_states_xenium.sh`
 
+####################
+## 22 Jun 2026 Refined MP Split Correlation Ordered Heatmap
+
+- `analysis/metaprograms/refined_mp_split_correlation_ordered_heatmap.R`
+  - Status: terminal plot-only/intermediate correlation figure.
+  - Purpose: create a split-MP correlation heatmap aligned to `refined_mp_nmf_ordered_heatmap.R`, with finalized refined MP blocks retaining the same program-resolution height/width as the ordered NMF heatmap.
+  - Block logic: rows/columns are expanded to original NMF-program resolution; finalized blocks follow the strict order `MP7j, MP9, MP1, MP2+, MP17, MP8+, MP10+, MP14, MP5+, MP7r, MP7v, MP10e, MP16+, MP18, MP8c, MP15c, MP12c, MP2v, MP8e, MP12a, MP13, MP7+, MP7h, MP8b, MP12b, MP15a, MP15b`; merged blocks such as `MP2+` are internally subdivided by their pre-merge `refined_submp` labels.
+  - Correlation: colours are Fisher-Z averaged per-sample Spearman correlations from `refined_ucell_scores.rds`, using `EAC_Ref_epi.rds` sample labels, cached in `refined_mp_split_display_correlation_matrices.rds`.
+  - Outputs: `ref_outs/Metaprogrammes_Results/mp_refinement/figures/refined_mp_split_correlation_ordered_heatmap.{pdf,png}`, final/sub-block tables, `intermediate/refined_mp_split_correlation_ordered_matrix.rds`, and `updates/new_updates/summaries/refined_mp_split_correlation_ordered_heatmap_summary.csv`.
+  - Methodology: `analysis/methodology/metaprograms/refined_mp_split_correlation_ordered_heatmap_methodology.md`.
+####################
+
+####################
+## 21 Jun 2026 Refined MP NMF Ordered Heatmap
+
+- `analysis/metaprograms/refined_mp_nmf_ordered_heatmap.R`
+  - Status: terminal plot-only figure.
+  - Purpose: replot the original GeneNMF programme similarity matrix after MP refinement, enforcing the finalized merged refined MP order from `analysis/metaprograms/mp_refinement_merge_correlated_submps.R`.
+  - Ordering: finalized refined MPs follow `MP7j, MP9, MP1, MP2+, MP17, MP8+, MP10+, MP14, MP5+, MP7r, MP7v, MP10e, MP16+, MP18, MP8c, MP15c, MP12c, MP2v, MP8e, MP12a, MP13, MP7+, MP7h, MP8b, MP12b, MP15a, MP15b`; programmes remain in original GeneNMF dendrogram order within each finalized MP block.
+  - Dotted borders: diagonal dotted boxes are derived from contiguous runs of `merged_refined_mp`, so they mark finalized refined MPs rather than original nMP19 clusters.
+  - Inputs: `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds`, `ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_mp_assignments.rds`, and `ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_mp_genes.rds`.
+  - Outputs: `ref_outs/Metaprogrammes_Results/mp_refinement/figures/refined_mp_nmf_ordered_heatmap.{pdf,png}`, `tables/refined_mp_nmf_ordered_blocks.csv`, `intermediate/refined_mp_nmf_ordered_similarity.rds`, and `updates/new_updates/summaries/refined_mp_nmf_ordered_heatmap_summary.csv`.
+  - Methodology: `analysis/methodology/metaprograms/refined_mp_nmf_ordered_heatmap_methodology.md`.
 ####################
 ## 15 May 2026 TCGA Reconstruction And Gender Validation
 
@@ -316,4 +341,33 @@ The following files or folders are intentionally not staged by agents unless the
   - Status: active convenience submitter.
   - Purpose: submit manifest export, container preparation, per-sample pileup/Numbat jobs, and dependent conservative re-cut.
   - Methodology: `analysis/methodology/cnv/scatlas_numbat_methodology.md`.
+####################
+
+####################
+## 25 Jun 2026 scATLAS RNA Velocity Workflow
+
+- `analysis/trajectory/scatlas_velocity_metadata.R`
+  - Purpose: export velocity metadata and per-sample QC barcode lists for only epithelial scATLAS samples with raw Cell Ranger BAMs under `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files`.
+  - Inputs: `ref_outs/EAC_Ref_epi.rds`, `ref_outs/Auto_final_states.rds`, `ref_outs/Auto_topmp_v2_noreg_states_B.rds`, and raw BAM files.
+  - Outputs: `ref_outs/Auto_velocity_scATLAS/tables/Auto_scatlas_velocity_cell_metadata.csv`, sample manifest, raw-BAM missing sample table, and `barcodes/*_qc_barcodes.tsv`.
+
+- `analysis/trajectory/scatlas_velocity_prepare_refs.py`
+  - Purpose: prepare velocyto GRCh38 gene GTF and hg38 RepeatMasker GTF, reusing a local RepeatMasker GTF when available before UCSC download fallback.
+
+- `analysis/trajectory/scatlas_velocity_filter_sort.sh`, `analysis/trajectory/scatlas_velocyto_run.py`, and `analysis/trajectory/scatlas_velocity_run_velocyto.sh`
+  - Purpose: filter raw Cell Ranger BAMs to epithelial QC barcodes, coordinate-sort them, and run velocyto per sample.
+  - Outputs: `ref_outs/Auto_velocity_scATLAS/coord/` and `ref_outs/Auto_velocity_scATLAS/looms/`.
+
+- `analysis/trajectory/scatlas_velocity_scvelo_visualise.py`
+  - Purpose: run per-sample stochastic scVelo, cache `.h5ad` files, plot velocity streams/grids, and derive source-state to target-state directions from mean velocity alignment toward target centroids.
+  - Direction states: five primary noreg Approach B states (`Classic Proliferative`, `Basal to Intestinal Metaplasia`, `SMG-like Metaplasia`, `Stress-adaptive`, `Immune Infiltrating`).
+  - Outputs: `ref_outs/Auto_velocity_scATLAS/h5ad/`, scVelo cell metadata, state node CSVs, direction edge CSVs, top-direction tables, and velocity/state-direction PDFs.
+
+- `analysis/trajectory/scatlas_velocity_nodeplots.R`
+  - Purpose: terminal R nodeplots from scVelo direction CSVs, grouped across all raw-BAM scATLAS samples and by dataset.
+  - Outputs: `ref_outs/Auto_velocity_scATLAS/figures/Auto_scatlas_velocity_nodeplot_by_dataset.pdf` and `updates/new_updates/summaries/Auto_scatlas_velocity_direction_summary.csv`.
+
+- `analysis/trajectory/scatlas_velocity_submit.sh`
+  - Purpose: submit the full PBS dependency chain with live logging: metadata/reference prep, per-sample filter/sort, per-sample velocyto, scVelo visualisation, and R nodeplots.
+  - Methodology: `analysis/methodology/trajectory/scatlas_velocity_methodology.md`.
 ####################

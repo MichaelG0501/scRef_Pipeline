@@ -315,7 +315,7 @@ ord_df <- ord_df[order(ord_df$relabeled_state, ord_df$sample, ord_df$cell_id), ,
 tmdata_sub <- tmdata_sub[, ord_df$cell_id]
 
 # --- Prepare heatmap matrix ---
-mod_mat_sub <- t(as.matrix(tmdata_sub@meta.data[, mp_tree_order_names, drop = FALSE]))
+mod_mat_sub <- t(as.matrix(ucell_scores[Cells(tmdata_sub), mp_tree_order_names, drop = FALSE]))
 rownames(mod_mat_sub) <- mp_descriptions[rownames(mod_mat_sub)]
 
 # Scale per-row (z-score across cells for each MP)
