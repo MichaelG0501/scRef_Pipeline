@@ -460,6 +460,44 @@ can read results on the login node without loading heavy `.rds` files, create fo
 - In non-interactive shells, these commands may not be on `PATH` by default, so use the absolute path if needed.
 
 ####################
+
+####################
+## 2 Jul 2026 Centred Refined State Definition Noreg
+
+- `analysis/metaprograms/centred/06_centred_refined_state_definition_noreg.R`
+  - Purpose: noreg-only state-definition script using centred merged refined MP UCell scores and the requested centred MP/state grouping.
+  - Inputs: `ref_outs/EAC_Ref_epi.rds`, optional `ref_outs/meta_full_epi.rds`, `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds`, and `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Cell_Cycle_Genes.csv`.
+  - Assignment: sample-centres and study-scales MP scores directly; no reg/cell-cycle regression branch exists. Only non-cell-cycle groups define states: Classic proliferation, Basal to intestinal metaplasia, SMG to intestinal metaplasia, Stress adaptive, and Cancer-cell immune mimicry. `MP1`, `MP5`, and `MP13+` remain plotted as `Cell cycle` MP rows only; `MP11c` and `MP18a` remain plotted as `Excluded` MP rows only. Uses Approach B thresholds: unresolved if max group score `< 0.5`, hybrid if top-minus-second gap `< 0.3`.
+  - Outputs: `ref_outs/Metaprogrammes_Results/centred/state_definition/` with state RDS, adjusted MP matrix, group max matrix, state count/sample abundance tables, per-cell heatmap, proportion/pie, CC-score boxplot, state-only per-sample abundance PDF, and compact summary `updates/new_updates/summaries/centred_refined_noreg_state_definition_summary.csv`.
+  - Current run summary: 75,348 cells, 20 plotted refined MPs, 5 non-CC state-defining groups plus `Unresolved` and `Hybrid`. The per-cell heatmap is exported wider (`24 x 13`) with row-split side labels removed to avoid overlap with MP row names.
+  - Methodology: `analysis/methodology/metaprograms/centred_refined_state_definition_noreg_methodology.md`.
+####################
+
+####################
+## 2 Jul 2026 Centred Refined MP Ordered Heatmaps
+
+- `analysis/metaprograms/centred/05_centred_refined_mp_ordered_heatmaps.R`
+  - Purpose: terminal plot-only centred refinement figure script that mirrors the uncentred ordered NMF heatmap style, final MP correlation heatmap style, and program-resolution refined MP correlation heatmap style.
+  - Inputs: `ref_outs/Metaprogrammes_Results/centred/optimal_nMP.rds`, centred `geneNMF_metaprograms_nMP_<optimal>.rds`, centred `mp_refinement/intermediate/merged_refined_mp_assignments.rds`, `merged_refined_mp_genes.rds`, `merged_refined_ucell_scores.rds`, `refined_ucell_scores.rds`, and `ref_outs/EAC_Ref_epi.rds`.
+  - Required plotting order: `MP1, MP5, MP13+, MP2+, MP14, MP3+, MP6+, MP11+, MP9+, MP10+, MP8+, MP8b, MP16, MP18b, MP17, MP2x, MP12, MP15, MP11c, MP18a`.
+  - State grouping: Cell cycle; Classic proliferation; Basal to intestinal metaplasia; SMG to intestinal metaplasia; Stress adaptive; Cancer-cell immune mimicry; Excluded. `MP11c` and `MP18a` are retained in plots but annotated as `Excluded`.
+  - MP-level correlation labels: x-axis/column labels are set to a 30-degree bottom angle, i.e. 60 degrees clockwise from the previous vertical label position.
+  - Program-resolution correlation: `centred_refined_mp_split_correlation_ordered_heatmap.{pdf,png}` expands 90 refined feature correlations to 2,583 NMF programs, using solid internal `refined_submp` boxes and dotted final-MP boxes.
+  - Outputs: centred NMF ordered heatmap, centred refined MP correlation heatmap, and centred program-resolution refined MP correlation heatmap under `ref_outs/Metaprogrammes_Results/centred/mp_refinement/figures/`, supporting tables/intermediate RDS under the same output tier structure, and a lightweight summary at `updates/new_updates/summaries/centred_refined_mp_ordered_heatmaps_summary.csv`.
+  - Methodology: `analysis/methodology/metaprograms/centred_refined_mp_ordered_heatmaps_methodology.md`.
+####################
+## 29 Jun 2026 Centred vs Uncentred GeneNMF Comparison
+
+- `analysis/metaprograms/centred_method_comparison_figures.R`
+  - Purpose: terminal side-by-side comparison of historical uncentred GeneNMF outputs against the centred GeneNMF workflow.
+  - Inputs: historical uncentred `geneNMF_metaprograms_nMP_19.rds` and `UCell_nMP19_filtered.rds` from `/rds/general/project/tumourheterogeneity1/live/temp_save/`, centred nMP/rank/refinement outputs under `ref_outs/Metaprogrammes_Results/centred/`, uncentred and centred refinement caches, and per-sample epithelial RDS files for centred initial UCell scoring.
+  - Output directory: `ref_outs/Metaprogrammes_Results/centred_comparison/` with `figures/Auto_centred_vs_uncentred_metaprogramme_comparison_all.pdf`, comparison matrices, rank metrics, and label-transfer tables.
+  - Methodology: `analysis/methodology/metaprograms/centred_method_comparison_figures_methodology.md`.
+  - PBS wrapper: `analysis/metaprograms/centred_method_comparison_figures.sh` (`gnmf` prepare step for uncentred nMP caches, then `dmtcp` rendering; live logging enabled).
+  - Label transfer rule: centred MPs keep their own MP number; if best gene-list Jaccard to an uncentred MP is at least 0.25, the uncentred description is appended for plotting.
+####################
+
+####################
 ## 22 Jun 2026 Refined MP Split Correlation Ordered Heatmap
 
 - `analysis/metaprograms/refined_mp_split_correlation_ordered_heatmap.R`

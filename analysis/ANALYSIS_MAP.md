@@ -82,6 +82,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `metaprograms/mp_pancancer_correlation.R` | terminal comparison | scRef MPs, pan-cancer MP scores | pan-cancer correlation plots | terminal |
 | `metaprograms/mp_cancer_type_coverage.R` | terminal figure | pan-cancer MP annotations | cancer-type coverage figures | terminal |
 | `metaprograms/nmf_rank_selection_diagnostics.R` | diagnostic | NMF rank metrics | rank-selection plots | no downstream dependency |
+| `metaprograms/centred_method_comparison_figures.R` | terminal comparison | historical uncentred nMP19/cache, centred nMP19/rank/refinement outputs, per-sample epithelial RDS files | `ref_outs/Metaprogrammes_Results/centred_comparison/` side-by-side comparison PDF, matrices, label-transfer tables | terminal comparison of centred vs uncentred GeneNMF workflows |
 | `metaprograms/pdo_robust_nmf_annotation.R` | optional upstream | PDO NMF outputs | PDO NMF enrichment plots | PDO-only comparisons |
 | `metaprograms/legacy_mp_correlation_sc_kmeans_state_temp.R` | legacy | `UCell_default.rds` | `state_temp.rds`, old heatmaps | no new downstream use |
 | `metaprograms/legacy_mp_correlation_pdo_kmeans_state_temp.R` | legacy | PDO UCell | old PDO k-means state heatmaps | no new downstream use |
@@ -220,6 +221,34 @@ The following files or folders are intentionally not staged by agents unless the
 - `analysis/spatial/map_scatlas_states_xenium.py`
 - `analysis/spatial/map_scatlas_states_xenium.sh`
 
+####################
+
+####################
+## 2 Jul 2026 Centred Refined State Definition Noreg
+
+- `analysis/metaprograms/centred/06_centred_refined_state_definition_noreg.R`
+  - Status: terminal noreg-only state definition and plotting script for centred refined MPs.
+  - Purpose: define per-cell states from centred merged refined MP UCell scores using the requested MP grouping, with no reg/cell-cycle regression branch, then generate the same core outputs as the noreg side of `state_definition_approach_b_reg_noreg.R` plus state-only per-sample abundance pages from `state_mp_sample_abundance.R`.
+  - Inputs: `ref_outs/EAC_Ref_epi.rds`, optional `ref_outs/meta_full_epi.rds`, `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds`, and the cell-cycle gene CSV.
+  - State logic: sample-centre and study-scale all 20 plotted centred refined MPs, but define state group scores only from non-cell-cycle MPs. `MP1`, `MP5`, and `MP13+` are plotted as `Cell cycle` rows only; `MP11c` and `MP18a` are plotted as `Excluded` rows only. Assign non-CC groups by max adjusted MP score; threshold `< 0.5` to `Unresolved`; top-minus-second gap `< 0.3` to `Hybrid`.
+  - Outputs: `ref_outs/Metaprogrammes_Results/centred/state_definition/` with `intermediate/centred_refined_noreg_{states,mp_adj,group_max}.rds`, state count and sample abundance CSVs, heatmap/proportion/CC-score/sample-abundance PDFs, run summary log, and `updates/new_updates/summaries/centred_refined_noreg_state_definition_summary.csv`.
+  - Current run: 75,348 cells; states assigned across Classic proliferation, Basal to intestinal metaplasia, SMG to intestinal metaplasia, Stress adaptive, Cancer-cell immune mimicry, Unresolved, and Hybrid. The per-cell heatmap is exported at 24 x 13 inches with row-split side labels removed to avoid overlap with MP row names.
+  - Methodology: `analysis/methodology/metaprograms/centred_refined_state_definition_noreg_methodology.md`.
+####################
+
+####################
+## 2 Jul 2026 Centred Refined MP Ordered Heatmaps
+
+- `analysis/metaprograms/centred/05_centred_refined_mp_ordered_heatmaps.R`
+  - Status: terminal plot-only script for the centred GeneNMF refinement workflow.
+  - Purpose: replot the centred NMF program similarity heatmap ordered by final centred refined MPs, plot the centred refined MP UCell Fisher-Z correlation heatmap with state color bar annotations, and plot the centred program-resolution refined MP correlation heatmap.
+  - Inputs: centred `optimal_nMP.rds`, centred `geneNMF_metaprograms_nMP_<optimal>.rds`, centred merged refined MP assignments/genes/UCell caches, centred `refined_ucell_scores.rds`, and `ref_outs/EAC_Ref_epi.rds` for `orig.ident` sample labels.
+  - Plot order: `MP1, MP5, MP13+, MP2+, MP14, MP3+, MP6+, MP11+, MP9+, MP10+, MP8+, MP8b, MP16, MP18b, MP17, MP2x, MP12, MP15, MP11c, MP18a`.
+  - State groups: Cell cycle, Classic proliferation, Basal to intestinal metaplasia, SMG to intestinal metaplasia, Stress adaptive, Cancer-cell immune mimicry, and Excluded. Established scRef state colors are reused where applicable.
+  - Correlation label update: `centred_refined_mp_correlation_heatmap` uses 30-degree bottom column labels, a 60-degree clockwise rotation from the previous vertical labels.
+  - Program-resolution correlation: `centred_refined_mp_split_correlation_ordered_heatmap` expands the 90 refined feature correlations to 2,583 NMF programs, with solid internal `refined_submp` boxes and dotted final-MP boxes.
+  - Outputs: `ref_outs/Metaprogrammes_Results/centred/mp_refinement/figures/centred_refined_mp_nmf_ordered_heatmap.{pdf,png}`, `centred_refined_mp_correlation_heatmap.{pdf,png}`, `centred_refined_mp_split_correlation_ordered_heatmap.{pdf,png}`, tables for grouping/blocks/correlation matrices, `intermediate/centred_refined_mp_ordered_heatmaps.rds`, `intermediate/centred_refined_mp_split_correlation_ordered_matrix.rds`, and `updates/new_updates/summaries/centred_refined_mp_ordered_heatmaps_summary.csv`.
+  - Methodology: `analysis/methodology/metaprograms/centred_refined_mp_ordered_heatmaps_methodology.md`.
 ####################
 ## 22 Jun 2026 Refined MP Split Correlation Ordered Heatmap
 

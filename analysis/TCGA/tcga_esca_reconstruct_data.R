@@ -279,63 +279,10 @@ message("GDC metadata rows: ", nrow(gdc_meta))
 ####################
 # 4) Pull cBioPortal patient and sample clinical attributes
 ####################
-fetch_cbio_clinical <- function(clinical_type, page_size = 10000) {
-  page_number <- 0
-  rows <- list()
-  repeat {
-    url <- paste0(cbio_base, "/studies/", study_id, "/clinical-data")
-    response <- request(url) |>
-      req_url_query(
-        clinicalDataType = clinical_type,
-        projection = "DETAILED",
-        pageSize = page_size,
-        pageNumber = page_number
-      ) |>
-      req_retry(max_tries = 4) |>
-      req_perform()
-    page_rows <- resp_body_json(response, simplifyVector = FALSE)
-    if (length(page_rows) == 0) break
-    rows <- c(rows, page_rows)
-    if (length(page_rows) < page_size) break
-    page_number <- page_number + 1
-  }
-  rows
-}
+# bypassing API due to 503 errors; using local TSV
+cbio_df <- fread("/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/clinical_cbioportal.tsv", sep="\t", header=TRUE, data.table=FALSE)
+colnames(cbio_df) <- gsub("[^A-Za-z0-9_]", "_", colnames(cbio_df))
 
-clinical_long_tbl <- function(rows, clinical_type) {
-  bind_rows(lapply(rows, function(item) {
-    attr <- item$clinicalAttribute %||% list()
-    tibble(
-      clinical_type = clinical_type,
-      patientId = item$patientId %||% NA_character_,
-      sampleId = item$sampleId %||% NA_character_,
-      clinicalAttributeId = item$clinicalAttributeId %||% NA_character_,
-      displayName = attr$displayName %||% NA_character_,
-      datatype = attr$datatype %||% NA_character_,
-      value = item$value %||% NA_character_
-    )
-  }))
-}
-
-clinical_wide_tbl <- function(long_tbl, id_cols) {
-  long_tbl |>
-    select(all_of(id_cols), clinicalAttributeId, value) |>
-    filter(!is.na(clinicalAttributeId), !is.na(value)) |>
-    distinct(across(all_of(c(id_cols, "clinicalAttributeId"))), .keep_all = TRUE) |>
-    pivot_wider(names_from = clinicalAttributeId, values_from = value)
-}
-
-patient_long <- clinical_long_tbl(fetch_cbio_clinical("PATIENT"), "PATIENT")
-sample_long <- clinical_long_tbl(fetch_cbio_clinical("SAMPLE"), "SAMPLE")
-patient_wide <- clinical_wide_tbl(patient_long, "patientId")
-sample_wide <- clinical_wide_tbl(sample_long, c("patientId", "sampleId"))
-
-write.csv(patient_long, file.path(raw_dir, "Auto_cbioportal_patient_clinical_long.csv"), row.names = FALSE)
-write.csv(sample_long, file.path(raw_dir, "Auto_cbioportal_sample_clinical_long.csv"), row.names = FALSE)
-write.csv(patient_wide, file.path(raw_dir, "Auto_cbioportal_patient_clinical_wide.csv"), row.names = FALSE)
-write.csv(sample_wide, file.path(raw_dir, "Auto_cbioportal_sample_clinical_wide.csv"), row.names = FALSE)
-message("cBioPortal patient clinical rows: ", nrow(patient_long))
-message("cBioPortal sample clinical rows: ", nrow(sample_long))
 
 ####################
 # 5) Download missing GDC files
@@ -403,73 +350,50 @@ gdc_meta <- gdc_meta |>
 ####################
 # 6) Build harmonized cBioPortal/GDC metadata
 ####################
-patient_wide <- add_missing_cols(
-  patient_wide,
-  c(
-    "DISEASE_TYPE", "VITAL_STATUS", "OS_STATUS", "OS_MONTHS", "DFS_MONTHS", "DFS_STATUS",
-    "SEX", "AGE", "AGE_AT_DIAGNOSIS", "PATH_STAGE", "AJCC_PATHOLOGIC_STAGE", "TUMOR_GRADE",
-    "GRADE", "PATH_T_STAGE", "AJCC_PATHOLOGIC_T_STAGE", "PATH_N_STAGE",
-    "AJCC_PATHOLOGIC_N_STAGE", "PATH_M_STAGE", "AJCC_PATHOLOGIC_M_STAGE", "RACE",
-    "RACE_CATEGORY", "ETHNICITY", "ETHNICITY_CATEGORY", "PRIOR_MALIGNANCY",
-    "PRIOR_TREATMENT", "YEAR_OF_DIAGNOSIS"
-  )
-)
-
-sample_wide <- add_missing_cols(
-  sample_wide,
-  c(
-    "CANCER_TYPE", "CANCER_TYPE_DETAILED", "ONCOTREE_CODE", "SAMPLE_TYPE",
-    "MUTATION_COUNT", "FRACTION_GENOME_ALTERED", "TMB_NONSYNONYMOUS",
-    "TMB_NONSYNONYMOUS_PER_MB", "ALCOHOL_HISTORY_DOCUMENTED", "PACK_YEARS_SMOKED",
-    "PERSON_CIGARETTE_SMOKING_HISTORY_PACK_YEAR_VALUE", "PRIMARY_DIAGNOSIS",
-    "PATIENT_PRIMARY_TUMOR_SITE"
-  )
-)
-
-patient_clin <- patient_wide |>
-  mutate(across(everything(), clean_missing)) |>
+patient_clin <- cbio_df %>%
+  mutate(across(everything(), clean_missing)) %>%
   transmute(
-    case_barcode = patientId,
-    Disease_Type = DISEASE_TYPE,
-    vital_status = coalesce_clean(VITAL_STATUS, ifelse(str_detect(OS_STATUS, "^1:"), "Dead", "Alive")),
-    OS_months = clean_numeric(OS_MONTHS),
-    OS_status = OS_STATUS,
+    case_barcode = Patient_ID,
+    Disease_Type = Disease_Type,
+    vital_status = coalesce_clean(Patient_s_Vital_Status, ifelse(str_detect(Overall_Survival_Status, "^1:"), "Dead", "Alive")),
+    OS_months = clean_numeric(Overall_Survival__Months_),
+    OS_status = Overall_Survival_Status,
     OS_time = OS_months * 30.4375,
     OS_event = ifelse(str_detect(tolower(OS_status), "deceased|dead") | tolower(vital_status) == "dead", 1L, 0L),
-    DFS_months = clean_numeric(DFS_MONTHS),
-    DFS_status = DFS_STATUS,
-    Gender = normalise_sex(SEX),
-    Age_at_diagnosis = clean_numeric(coalesce_clean(AGE, AGE_AT_DIAGNOSIS)),
-    Stage = coalesce_clean(PATH_STAGE, AJCC_PATHOLOGIC_STAGE),
+    DFS_months = clean_numeric(Disease_Free__Months_),
+    DFS_status = Disease_Free_Status,
+    Gender = normalise_sex(Sex),
+    Age_at_diagnosis = clean_numeric(Diagnosis_Age),
+    Stage = AJCC_Pathologic_Stage,
     Stage_Simple = normalise_stage(Stage),
-    Grade = coalesce_clean(TUMOR_GRADE, GRADE),
-    AJCC_pathologic_T = coalesce_clean(PATH_T_STAGE, AJCC_PATHOLOGIC_T_STAGE),
-    AJCC_pathologic_N = coalesce_clean(PATH_N_STAGE, AJCC_PATHOLOGIC_N_STAGE),
-    AJCC_pathologic_M = coalesce_clean(PATH_M_STAGE, AJCC_PATHOLOGIC_M_STAGE),
-    Race = coalesce_clean(RACE, RACE_CATEGORY),
-    Ethnicity = coalesce_clean(ETHNICITY, ETHNICITY_CATEGORY),
-    Prior_malignancy = PRIOR_MALIGNANCY,
-    Prior_treatment = PRIOR_TREATMENT,
-    Year_of_diagnosis = clean_numeric(YEAR_OF_DIAGNOSIS)
-  )
+    Grade = NA_character_,
+    AJCC_pathologic_T = AJCC_Pathologic_T_Stage,
+    AJCC_pathologic_N = AJCC_Pathologic_N_Stage,
+    AJCC_pathologic_M = AJCC_Pathologic_M_Stage,
+    Race = Race_Category,
+    Ethnicity = Ethnicity_Category,
+    Prior_malignancy = Prior_Malignancy,
+    Prior_treatment = Prior_Treatment,
+    Year_of_diagnosis = clean_numeric(Year_of_Diagnosis)
+  ) %>% distinct(case_barcode, .keep_all = TRUE)
 
-sample_clin <- sample_wide |>
-  mutate(across(everything(), clean_missing)) |>
+sample_clin <- cbio_df %>%
+  mutate(across(everything(), clean_missing)) %>%
   transmute(
-    case_barcode = patientId,
-    cbio_sample_id = sampleId,
-    Cancer_Type = CANCER_TYPE,
-    Cancer_Type_Detailed = CANCER_TYPE_DETAILED,
-    Oncotree_Code = ONCOTREE_CODE,
-    Sample_Type_cBioPortal = SAMPLE_TYPE,
-    Mutation_count = clean_numeric(MUTATION_COUNT),
-    Fraction_genome_altered = clean_numeric(FRACTION_GENOME_ALTERED),
-    TMB_nonsynonymous = clean_numeric(coalesce_clean(TMB_NONSYNONYMOUS, TMB_NONSYNONYMOUS_PER_MB)),
-    Alcohol_history = ALCOHOL_HISTORY_DOCUMENTED,
-    Smoking_pack_years = clean_numeric(coalesce_clean(PACK_YEARS_SMOKED, PERSON_CIGARETTE_SMOKING_HISTORY_PACK_YEAR_VALUE)),
-    Primary_Diagnosis = PRIMARY_DIAGNOSIS,
-    Patient_Primary_Tumor_Site = PATIENT_PRIMARY_TUMOR_SITE
-  )
+    case_barcode = Patient_ID,
+    cbio_sample_id = Sample_ID,
+    Cancer_Type = Cancer_Type,
+    Cancer_Type_Detailed = Cancer_Type_Detailed,
+    Oncotree_Code = Oncotree_Code,
+    Sample_Type_cBioPortal = Sample_Type,
+    Mutation_count = clean_numeric(Mutation_Count),
+    Fraction_genome_altered = clean_numeric(Fraction_Genome_Altered),
+    TMB_nonsynonymous = clean_numeric(TMB__nonsynonymous_),
+    Alcohol_history = Alcohol_History_Documented,
+    Smoking_pack_years = clean_numeric(Person_Cigarette_Smoking_History_Pack_Year_Value),
+    Primary_Diagnosis = Primary_Diagnosis,
+    Patient_Primary_Tumor_Site = Patient_Primary_Tumor_Site
+  ) %>% distinct(case_barcode, cbio_sample_id, .keep_all = TRUE)
 
 meta <- gdc_meta |>
   left_join(patient_clin, by = "case_barcode") |>
