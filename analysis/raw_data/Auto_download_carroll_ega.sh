@@ -18,7 +18,7 @@ module load tools/dev
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 source activate /rds/general/user/sg3723/home/anaconda3/envs/egaenv
 
-RAW_ROOT="${RAW_ROOT:-/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat}"
+RAW_ROOT="${RAW_ROOT:-/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files}"
 STUDY_DIR="${RAW_ROOT}/Carroll_2023"
 DOWNLOAD_DIR="${STUDY_DIR}/ega_download"
 LOG_DIR="${STUDY_DIR}/logs"

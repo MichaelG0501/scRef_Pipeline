@@ -125,7 +125,7 @@ standardize_rank_file <- function(path, method_name) {
 
 load_l1000_reference <- function() {
   ref_cfg_path <- file.path(base_dir, "asgard_reference", "Auto_asgard_reference_paths.csv")
-  default_ref_dir <- "/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/asgard_l1000/DrugReference"
+  default_ref_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/asgard_l1000/DrugReference"
   if (file.exists(ref_cfg_path)) {
     ref_cfg <- fread(ref_cfg_path)
     rank_path <- ref_cfg$AUTO_ASGARD_DRUG_RESPONSE[1]
@@ -189,7 +189,7 @@ get_drug_gene_profile <- function(norm_mat, instance_map, drug_key, genes) {
 load_drugbank_targets <- function(drug_keys) {
   drugbank_path <- Sys.getenv(
     "AUTO_DRUGBANK_TARGETS",
-    "/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/all_drug_targets_drug_bank.txt"
+    "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/all_drug_targets_drug_bank.txt"
   )
   if (!file.exists(drugbank_path)) return(tibble())
 
@@ -420,7 +420,7 @@ if (nrow(profile_all) > 0) {
 # PPI targeted-hub overlay (REFINED: show full DEG web)
 ####################
 
-ppi_path <- Sys.getenv("AUTO_SCDRUGPRIO_PPI", "/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/ppi.txt")
+ppi_path <- Sys.getenv("AUTO_SCDRUGPRIO_PPI", "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/ppi.txt")
 
 if (file.exists(ppi_path) && nrow(audit_candidates) > 0) {
   target_tbl <- load_drugbank_targets(audit_candidates$drug_key)

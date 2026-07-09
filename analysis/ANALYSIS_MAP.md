@@ -327,22 +327,22 @@ The following files or folders are intentionally not staged by agents unless the
 - `analysis/raw_data/Auto_download_alcindor_srr.sh` and `analysis/raw_data/Auto_download_alcindor_srr_array.sh`
   - Status: active upstream PBS downloader.
   - Purpose: redownload Alcindor 2025 raw FASTQs for `SRR27335925` through `SRR27335944` using the same `fasterq-dump --split-files --include-technical` approach as the original SRR fetch script. The array wrapper is for recovery/acceleration of unfinished accessions and uses `pigz` compression when available.
-  - Outputs: `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/Alcindor_2025/fastq/`.
+  - Outputs: `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files/Alcindor_2025/fastq/`.
 
 - `analysis/raw_data/Auto_download_carroll_ega.sh`
   - Status: active upstream PBS downloader.
   - Purpose: redownload Carroll 2023 raw FASTQs from EGA dataset `EGAD00001009401` via `pyega3`; credentials are supplied by `EGA_CREDENTIAL_JSON` and are not copied into the repo.
-  - Outputs: `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/Carroll_2023/ega_download/`.
+  - Outputs: `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files/Carroll_2023/ega_download/`.
 
 - `analysis/raw_data/Auto_cellranger_alcindor_bam.sh`, `analysis/raw_data/Auto_cellranger_carroll_bam.sh`, and `analysis/raw_data/Auto_cellranger_carroll_bam_single.sh`
   - Status: active upstream PBS preprocessors.
   - Purpose: rerun Cell Ranger with `--create-bam=true` so Numbat can run SNP pileup/phasing, while preserving the original `cellranger count --id=<sample> --fastqs=<sample_dir> --transcriptome=<GRCh38-2024-A> --chemistry=auto` processing logic. Alcindor SRA FASTQs are staged as non-destructive 10x-style symlinks under `fastq_cellranger/` before Cell Ranger because raw `fasterq-dump` names are not accepted by Cell Ranger 8. Carroll samples sequenced across multiple flowcells pass a comma-separated `--sample` list of all flowcell-specific FASTQ prefixes; the single wrapper is for targeted recovery of individual failed/cancelled array elements.
-  - Outputs: `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/<dataset>/cellranger/<sample>/outs/`.
+  - Outputs: `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files/<dataset>/cellranger/<sample>/outs/`.
 
 - `analysis/raw_data/Auto_stage_validate_scatlas_cellranger_outputs.R` and `.sh`
   - Status: active upstream validation.
   - Purpose: copy new `filtered_feature_bc_matrix` outputs into the same `matrix_all/<sample>_filtered` structure as the historical workflow, optionally export dense count CSVs using the original `write.sh` `Read10X()`/`fwrite(as.matrix())` logic, and require exact sparse-matrix identity to the live historical matrices before Numbat.
-  - Outputs: `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/{Alcindor_2025,Carroll_2023}/matrix_all/`, validation CSVs under `/validation/`, and optional `/00_counts_matrix_all/`.
+  - Outputs: `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files/{Alcindor_2025,Carroll_2023}/matrix_all/`, validation CSVs under `/validation/`, and optional `/00_counts_matrix_all/`.
 
 - `analysis/raw_data/Auto_submit_scatlas_raw_rebuild.sh`
   - Status: active convenience submitter.

@@ -137,7 +137,7 @@ gene_info_path <- Sys.getenv("AUTO_ASGARD_GENE_INFO", "")
 drug_info_path <- Sys.getenv("AUTO_ASGARD_DRUG_INFO", "")
 
 reference_config <- file.path("Auto_drug_reversal", "asgard_reference", "Auto_asgard_reference_paths.csv")
-default_ref_dir <- "/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/asgard_l1000/DrugReference"
+default_ref_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/asgard_l1000/DrugReference"
 if (!nzchar(drug_ref_rds) &&
     (!file.exists(drug_response_path) || !file.exists(gene_info_path) || !file.exists(drug_info_path)) &&
     file.exists(reference_config)) {

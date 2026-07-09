@@ -8,9 +8,9 @@
 ####################
 
 ####################
-# Auto_six_state_markers.R
+# Auto_five_state_markers.R
 #
-# Rebuild a six-state epithelial embedding from the finalized states,
+# Rebuild a five-state epithelial embedding from the finalized states,
 # then derive robust state markers using a sample-aware recurrent DGE workflow.
 #
 # Inputs:
@@ -18,21 +18,21 @@
 #   ref_outs/Auto_final_states.rds
 #
 # Outputs:
-#   ref_outs/Auto_six_state_markers/Auto_six_state_umap.pdf
-#   ref_outs/Auto_six_state_markers/Auto_six_state_umap_embeddings.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_cluster_state_table.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_global_marker_screen.csv.gz
-#   ref_outs/Auto_six_state_markers/Auto_six_state_sample_state_eligibility.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_per_sample_dge.csv.gz
-#   ref_outs/Auto_six_state_markers/Auto_six_state_marker_summary.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_markers_ranked.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_markers_final.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_markers_top5_recurrence_summary.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_markers_top5_sample_support.csv.gz
-#   ref_outs/Auto_six_state_markers/Auto_six_state_markers_top5_study_support.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_markers_heatmap_top.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_marker_heatmap_matrix.csv
-#   ref_outs/Auto_six_state_markers/Auto_six_state_marker_heatmap.pdf
+#   ref_outs/Auto_five_state_markers/Auto_five_state_umap.pdf
+#   ref_outs/Auto_five_state_markers/Auto_five_state_umap_embeddings.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_cluster_state_table.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_global_marker_screen.csv.gz
+#   ref_outs/Auto_five_state_markers/Auto_five_state_sample_state_eligibility.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_per_sample_dge.csv.gz
+#   ref_outs/Auto_five_state_markers/Auto_five_state_marker_summary.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_ranked.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_final.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_top5_recurrence_summary.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_top5_sample_support.csv.gz
+#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_top5_study_support.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_heatmap_top.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_marker_heatmap_matrix.csv
+#   ref_outs/Auto_five_state_markers/Auto_five_state_marker_heatmap.pdf
 #   analysis/methodology/cell_states/final_state_marker_discovery_methodology.md
 ####################
 
@@ -57,13 +57,13 @@ suppressPackageStartupMessages({
 ####################
 # setup
 ####################
-project_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
-out_dir <- "Auto_six_state_markers"
+out_dir <- "Auto_five_state_markers"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-cache_dir <- file.path(out_dir, "cache")
+cache_dir <- file.path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs", out_dir, "cache")
 dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 
 set.seed(1234)
@@ -72,21 +72,19 @@ set.seed(1234)
 # constants
 ####################
 state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "SMG to intestinal metaplasia",
+  "Stress adaptive",
+  "Cancer-cell immune mimicry"
 )
 
 state_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive" = "#984EA3",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#666666"
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 params <- list(
@@ -242,7 +240,7 @@ run_sample_state_markers <- function(sample_id, sample_cells, obj, state_levels,
 message("Loading Seurat object and finalized state labels.")
 
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
-state_labels <- readRDS("Auto_final_states.rds")
+state_labels <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
 
 DefaultAssay(tmdata_all) <- "RNA"
 
@@ -251,7 +249,7 @@ state_labels <- as.character(state_labels[common_cells])
 keep_cells <- common_cells[state_labels %in% state_order]
 state_labels <- state_labels[state_labels %in% state_order]
 
-message("Building a lean six-state count matrix.")
+message("Building a lean five-state count matrix.")
 
 meta_state6 <- tmdata_all@meta.data[keep_cells, c("orig.ident", "study"), drop = FALSE]
 meta_state6$final_state_full <- state_labels
@@ -282,15 +280,15 @@ sample_counts <- tmdata_state6@meta.data %>%
   count(final_state6, orig.ident, study, name = "n_cells")
 
 ####################
-# six-state embedding
+# five-state embedding
 ####################
 tmdata_state6_cache <- file.path(cache_dir, "tmdata_state6_embedded.rds")
 
 if (file.exists(tmdata_state6_cache)) {
-  message("Loading cached six-state embedded Seurat object.")
+  message("Loading cached five-state embedded Seurat object.")
   tmdata_state6 <- readRDS(tmdata_state6_cache)
 } else {
-  message("Rebuilding six-state embedding and clustering.")
+  message("Rebuilding five-state embedding and clustering.")
 
   tmdata_state6 <- NormalizeData(tmdata_state6, verbose = FALSE)
   tmdata_state6 <- FindVariableFeatures(
@@ -326,7 +324,7 @@ if (file.exists(tmdata_state6_cache)) {
     verbose = FALSE
   )
   
-  message("Caching six-state embedded Seurat object.")
+  message("Caching five-state embedded Seurat object.")
   saveRDS(tmdata_state6, tmdata_state6_cache)
 }
 
@@ -342,7 +340,7 @@ umap_df <- Embeddings(tmdata_state6, reduction = "umap") %>%
 
 fwrite(
   umap_df,
-  file.path(out_dir, "Auto_six_state_umap_embeddings.csv")
+  file.path(out_dir, "Auto_five_state_umap_embeddings.csv")
 )
 
 cluster_state_table <- tmdata_state6@meta.data %>%
@@ -353,7 +351,7 @@ cluster_state_table <- tmdata_state6@meta.data %>%
 
 fwrite(
   cluster_state_table,
-  file.path(out_dir, "Auto_six_state_cluster_state_table.csv")
+  file.path(out_dir, "Auto_five_state_cluster_state_table.csv")
 )
 
 p_state <- DimPlot(
@@ -366,7 +364,7 @@ p_state <- DimPlot(
 ) +
   guides(colour = guide_legend(override.aes = list(size = 2, alpha = 1))) +
   labs(
-    title = "Finalized six-state epithelial UMAP",
+    title = "Finalized five-state epithelial UMAP",
     subtitle = paste0(
       ncol(tmdata_state6),
       " cells across ",
@@ -392,14 +390,14 @@ p_cluster <- DimPlot(
   raster = TRUE
 ) +
   labs(
-    title = "Unsupervised clusters on the six-state subset",
+    title = "Unsupervised clusters on the five-state subset",
     subtitle = paste0("resolution = ", params$cluster_resolution)
   ) +
   theme_classic(base_size = 12) +
   theme(plot.title = element_text(face = "bold"))
 
 ggsave(
-  filename = file.path(out_dir, "Auto_six_state_umap.pdf"),
+  filename = file.path(out_dir, "Auto_five_state_umap.pdf"),
   plot = p_state + p_cluster + plot_layout(widths = c(1.05, 1)),
   width = 16,
   height = 7,
@@ -415,7 +413,7 @@ if (file.exists(global_markers_cache)) {
   message("Loading cached global marker screen.")
   global_markers <- readRDS(global_markers_cache)
 } else {
-  message("Running pooled six-state descriptive enrichment screen.")
+  message("Running pooled five-state descriptive enrichment screen.")
 
   expr_global <- GetAssayData(tmdata_state6, assay = "RNA", slot = "data")
 
@@ -448,7 +446,7 @@ if (file.exists(global_markers_cache)) {
 
 fwrite(
   global_markers,
-  file.path(out_dir, "Auto_six_state_global_marker_screen.csv.gz")
+  file.path(out_dir, "Auto_five_state_global_marker_screen.csv.gz")
 )
 
 candidate_map <- global_markers %>%
@@ -513,7 +511,7 @@ if (file.exists(sample_dge_cache)) {
 # Always write the eligibility CSV for downstream reference
 fwrite(
   eligibility_df,
-  file.path(out_dir, "Auto_six_state_sample_state_eligibility.csv")
+  file.path(out_dir, "Auto_five_state_sample_state_eligibility.csv")
 )
 
 per_sample_dge <- per_sample_dge %>%
@@ -526,7 +524,7 @@ per_sample_dge <- per_sample_dge %>%
 
 fwrite(
   per_sample_dge,
-  file.path(out_dir, "Auto_six_state_per_sample_dge.csv.gz")
+  file.path(out_dir, "Auto_five_state_per_sample_dge.csv.gz")
 )
 
 state_coverage <- eligibility_df %>%
@@ -683,7 +681,7 @@ marker_summary <- marker_summary %>%
 
 fwrite(
   marker_summary,
-  file.path(out_dir, "Auto_six_state_marker_summary.csv")
+  file.path(out_dir, "Auto_five_state_marker_summary.csv")
 )
 
 ####################
@@ -716,7 +714,7 @@ ranked_markers <- marker_summary %>%
 
 fwrite(
   ranked_markers,
-  file.path(out_dir, "Auto_six_state_markers_ranked.csv")
+  file.path(out_dir, "Auto_five_state_markers_ranked.csv")
 )
 
 final_markers <- ranked_markers %>%
@@ -726,7 +724,7 @@ final_markers <- ranked_markers %>%
 
 fwrite(
   final_markers,
-  file.path(out_dir, "Auto_six_state_markers_final.csv")
+  file.path(out_dir, "Auto_five_state_markers_final.csv")
 )
 
 ####################
@@ -776,7 +774,7 @@ top_marker_recurrence_summary <- final_markers %>%
 
 fwrite(
   top_marker_recurrence_summary,
-  file.path(out_dir, "Auto_six_state_markers_top5_recurrence_summary.csv")
+  file.path(out_dir, "Auto_five_state_markers_top5_recurrence_summary.csv")
 )
 
 top_marker_sample_support <- per_sample_dge %>%
@@ -802,7 +800,7 @@ top_marker_sample_support <- per_sample_dge %>%
 
 fwrite(
   top_marker_sample_support,
-  file.path(out_dir, "Auto_six_state_markers_top5_sample_support.csv.gz")
+  file.path(out_dir, "Auto_five_state_markers_top5_sample_support.csv.gz")
 )
 
 top_marker_study_support <- top_marker_sample_support %>%
@@ -820,7 +818,7 @@ top_marker_study_support <- top_marker_sample_support %>%
 
 fwrite(
   top_marker_study_support,
-  file.path(out_dir, "Auto_six_state_markers_top5_study_support.csv")
+  file.path(out_dir, "Auto_five_state_markers_top5_study_support.csv")
 )
 
 ####################
@@ -840,14 +838,14 @@ top_marker_state_recurrence_summary <- top_marker_recurrence_summary %>%
 
 fwrite(
   top_marker_state_recurrence_summary,
-  file.path(out_dir, "Auto_six_state_markers_top5_state_recurrence_summary.csv")
+  file.path(out_dir, "Auto_five_state_markers_top5_state_recurrence_summary.csv")
 )
 
 heatmap_markers <- final_markers
 
 fwrite(
   heatmap_markers,
-  file.path(out_dir, "Auto_six_state_markers_heatmap_top.csv")
+  file.path(out_dir, "Auto_five_state_markers_heatmap_top.csv")
 )
 
 ####################
@@ -884,7 +882,7 @@ heatmap_matrix_out <- as.data.frame(heatmap_expr) %>%
 
 fwrite(
   heatmap_matrix_out,
-  file.path(out_dir, "Auto_six_state_marker_heatmap_matrix.csv")
+  file.path(out_dir, "Auto_five_state_marker_heatmap_matrix.csv")
 )
 
 heatmap_state_factor <- factor(heatmap_markers$state, levels = state_order)
@@ -959,7 +957,7 @@ ht <- Heatmap(
 )
 
 pdf(
-  file.path(out_dir, "Auto_six_state_marker_heatmap.pdf"),
+  file.path(out_dir, "Auto_five_state_marker_heatmap.pdf"),
   width = 11.5,
   height = 12, 
   useDingbats = FALSE
@@ -971,7 +969,7 @@ pushViewport(viewport(layout = grid.layout(nrow = 2, ncol = 1, heights = unit(c(
 # Title block
 pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1))
 grid.text(
-  "Recurrent state markers across six finalized epithelial states",
+  "Recurrent state markers across five finalized epithelial states",
   x = unit(0.5, "npc"),
   y = unit(0.70, "npc"), 
   gp = gpar(fontsize = 16, fontface = "bold")
@@ -1026,7 +1024,7 @@ threeca_recurrence_tbl <- top_marker_recurrence_summary %>%
 threeca_recurrence_print <- capture.output(print(threeca_recurrence_tbl, row.names = FALSE))
 
 method_lines <- c(
-  "# Auto Six-State Marker Methodology",
+  "# Auto Five-State Marker Methodology",
   "",
   paste0("Generated: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")),
   "",
@@ -1036,21 +1034,21 @@ method_lines <- c(
   "",
   "**Core Inputs:**",
   "- `ref_outs/EAC_Ref_epi.rds`: The main epithelial Seurat object (75,348 cells).",
-  "- `ref_outs/Auto_final_states.rds`: Finalized six-state labels, with `Unresolved` and `Hybrid` excluded.",
+  "- `ref_outs/Auto_final_states.rds`: Finalized five-state labels, with `Unresolved` and `Hybrid` excluded.",
   "",
   "**Finalized States Retained:**",
   paste0("- `", state_order, "`"),
   "",
   "---",
   "",
-  "## 2. Six-State Subset and Re-embedding",
+  "## 2. Five-State Subset and Re-embedding",
   "",
   "To ensure marker analysis is focused on the finalized transcriptional landscape, a clean subset and re-embedding are performed.",
   "",
   "### 2.1 Cell and Feature Selection",
   "1. The global epithelial count matrix is subset to cells present in both inputs.",
   "2. Cells with `Unresolved` or `Hybrid` labels are removed.",
-  paste0("3. Genes detected in fewer than **", params$min_cells_feature, " cells** within this six-state subset are discarded."),
+  paste0("3. Genes detected in fewer than **", params$min_cells_feature, " cells** within this five-state subset are discarded."),
   "",
   "### 2.2 Re-embedding Pipeline",
   "The subsetted object is processed through a standard Seurat pipeline:",
@@ -1105,7 +1103,7 @@ method_lines <- c(
   "",
   "1. For every gene in the marker summary, the mean expression is calculated within the target state for every sample eligible for that state.",
   "2. The **median of these sample-level means** is computed, representing the \"typical\" expression of that gene in that state.",
-  "3. This is repeated for all six states.",
+  "3. This is repeated for all five states.",
   "4. **Specificity Gap:** The typical expression in the target state minus the maximum typical expression seen in any of the other five states.",
   "5. A gene is considered a \"best state match\" only if the target state has the highest median expression.",
   "",
@@ -1150,7 +1148,7 @@ method_lines <- c(
   "## 8. Heatmap Construction",
   "",
   "- **Data:** Median of sample-level means per state (as computed in Section 5).",
-  "- **Z-scoring:** Values are Z-scored per row across the six states to highlight state-specific enrichment.",
+  "- **Z-scoring:** Values are Z-scored per row across the five states to highlight state-specific enrichment.",
   "",
   "## 9. Current 3CA recurrence profile",
   "",
@@ -1172,14 +1170,14 @@ method_lines <- c(
   "",
   "## 12. Output Files",
   "",
-  "- `Auto_six_state_markers_final.csv`: The final top 5 markers per state with their ranking and recurrence stats.",
-  "- `Auto_six_state_markers_ranked.csv`: The full table of candidate genes ranked by the workflow.",
-  "- `Auto_six_state_markers_top5_recurrence_summary.csv`: Summary of hit counts and support classes.",
-  "- `Auto_six_state_markers_top5_sample_support.csv.gz`: per-sample support table for the final top-5 markers.",
-  "- `Auto_six_state_markers_top5_study_support.csv`: per-study support table for the final top-5 markers.",
-  "- `Auto_six_state_markers_top5_state_recurrence_summary.csv`: state-level sensitivity summary for the final top-5 markers.",
-  "- `Auto_six_state_marker_heatmap.pdf`: final publication-facing heatmap.",
-  "- `Auto_six_state_umap.pdf`: UMAP visualizations of the six-state subset.",
+  "- `Auto_five_state_markers_final.csv`: The final top 5 markers per state with their ranking and recurrence stats.",
+  "- `Auto_five_state_markers_ranked.csv`: The full table of candidate genes ranked by the workflow.",
+  "- `Auto_five_state_markers_top5_recurrence_summary.csv`: Summary of hit counts and support classes.",
+  "- `Auto_five_state_markers_top5_sample_support.csv.gz`: per-sample support table for the final top-5 markers.",
+  "- `Auto_five_state_markers_top5_study_support.csv`: per-study support table for the final top-5 markers.",
+  "- `Auto_five_state_markers_top5_state_recurrence_summary.csv`: state-level sensitivity summary for the final top-5 markers.",
+  "- `Auto_five_state_marker_heatmap.pdf`: final publication-facing heatmap.",
+  "- `Auto_five_state_umap.pdf`: UMAP visualizations of the five-state subset.",
   ""
 )
 
@@ -1195,7 +1193,7 @@ message("Building specificity dot plot for Basal and SMG markers...")
 
 library(ggtext)
 
-target_states <- c("Basal to Intestinal Metaplasia", "SMG-like Metaplasia")
+target_states <- c("Basal to intestinal metaplasia", "SMG to intestinal metaplasia")
 dotplot_markers <- final_markers %>% filter(state %in% target_states)
 
 all_marker_genes <- dotplot_markers$gene
@@ -1498,7 +1496,7 @@ plot_coexpr_scatter <- function(expr_mat, gene1, gene2, state_title) {
 # ============================
 # Basal to IM: CEACAM6 vs DUOX2
 # ============================
-basal_cells <- colnames(tmdata_state6)[tmdata_state6$final_state6 == "Basal to Intestinal Metaplasia"]
+basal_cells <- colnames(tmdata_state6)[tmdata_state6$final_state6 == "Basal to intestinal metaplasia"]
 basal_expr <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[c("CEACAM6", "DUOX2"), basal_cells]
 basal_c       <- sum(basal_expr["CEACAM6", ] > 0 & basal_expr["DUOX2", ] == 0)
 basal_d       <- sum(basal_expr["DUOX2", ] > 0  & basal_expr["CEACAM6", ] == 0)
@@ -1510,13 +1508,13 @@ cat("CEACAM6 only:", basal_c, "\nDUOX2 only:", basal_d,
     "\nBoth:", basal_both, "\nNeither:", basal_neither, "\n")
 
 p_basal_venn    <- plot_coexpr_venn("CEACAM6", "DUOX2", basal_c, basal_d, basal_both, basal_neither,
-                                    "Basal to Intestinal Metaplasia")
+                                    "Basal to intestinal metaplasia")
 p_basal_scatter <- plot_coexpr_scatter(basal_expr, "CEACAM6", "DUOX2", "Basal to IM")
 
 # ============================
 # SMG-like: AQP5 vs WFDC2
 # ============================
-smg_cells <- colnames(tmdata_state6)[tmdata_state6$final_state6 == "SMG-like Metaplasia"]
+smg_cells <- colnames(tmdata_state6)[tmdata_state6$final_state6 == "SMG to intestinal metaplasia"]
 smg_expr <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[c("AQP5", "WFDC2"), smg_cells]
 smg_a       <- sum(smg_expr["AQP5", ] > 0  & smg_expr["WFDC2", ] == 0)
 smg_w       <- sum(smg_expr["WFDC2", ] > 0 & smg_expr["AQP5", ] == 0)
@@ -1528,8 +1526,8 @@ cat("AQP5 only:", smg_a, "\nWFDC2 only:", smg_w,
     "\nBoth:", smg_both, "\nNeither:", smg_neither, "\n")
 
 p_smg_venn    <- plot_coexpr_venn("AQP5", "WFDC2", smg_a, smg_w, smg_both, smg_neither,
-                                  "SMG-like Metaplasia")
-p_smg_scatter <- plot_coexpr_scatter(smg_expr, "AQP5", "WFDC2", "SMG-like Metaplasia")
+                                  "SMG to intestinal metaplasia")
+p_smg_scatter <- plot_coexpr_scatter(smg_expr, "AQP5", "WFDC2", "SMG to intestinal metaplasia")
 
 # ============================
 # Combine: 2 rows × 2 cols  (Venn | Scatter)
@@ -1551,4 +1549,220 @@ p_coexpr_combined <- (
 out_coexpr_pdf <- file.path(out_dir, "Auto_basal_smg_marker_coexpression.pdf")
 ggsave(out_coexpr_pdf, p_coexpr_combined, width = 14, height = 12, useDingbats = FALSE)
 message("Saved co-expression PDF to: ", out_coexpr_pdf)
+
+####################
+# ============ EXCEL OUTPUT ============
+####################
+message("Building Excel output for top markers and complete marker lists...")
+
+suppressPackageStartupMessages(library(openxlsx))
+
+wb <- createWorkbook()
+
+# Define common styles
+header_style <- createStyle(fontName = "Arial", fontSize = 10, textDecoration = "bold",
+                            halign = "center", valign = "center", wrapText = TRUE,
+                            border = "TopBottomLeftRight", borderStyle = "thin",
+                            borderColour = "#2C3E50", bgFill = "#ECF0F1")
+sc_header_style <- createStyle(fontName = "Arial", fontSize = 11, textDecoration = "bold",
+                               halign = "center", valign = "center", fontColour = "#FFFFFF",
+                               fgFill = "#34495E", border = "TopBottomLeftRight", borderColour = "#2C3E50")
+expr_sc_header_style <- createStyle(fontName = "Arial", fontSize = 11, textDecoration = "bold",
+                                    halign = "center", valign = "center", fontColour = "#FFFFFF",
+                                    fgFill = "#2980B9", border = "TopBottomLeftRight", borderColour = "#2C3E50")
+sep_style <- createStyle(bgFill = "#ECF0F1")
+pct_fmt <- createStyle(numFmt = "0.0%")
+num3 <- createStyle(numFmt = "0.000")
+num1 <- createStyle(numFmt = "0.0")
+
+# Helper function to build a formatted worksheet
+build_marker_sheet <- function(wb, sheet_name, df, state_cols_map, state_expr_mat, state_order) {
+  addWorksheet(wb, sheet_name)
+  
+  excel_df <- data.frame()
+  state_block_rows <- list()
+  current_excel_row <- 3
+  row_colors <- character()
+  is_data_row <- logical()
+  
+  states_present <- intersect(state_order, unique(df$state))
+  
+  for (i in seq_along(states_present)) {
+    st <- states_present[i]
+    st_df <- df %>% filter(state == st) %>% arrange(desc(ranking_score))
+    if (nrow(st_df) == 0) next
+    
+    st_genes <- st_df$gene
+    
+    st_data <- data.frame(
+      StateLabel = rep(as.character(st), length(st_genes)),
+      Gene = st_genes, 
+      stringsAsFactors = FALSE
+    )
+    
+    # Recurrence & Specificity & Pct
+    rec_data <- st_df %>% 
+      select(gene, 
+             sample_recurrence = hit_sample_pct, 
+             study_recurrence = hit_study_n, 
+             median_log2FC = median_log2FC_hit,
+             specificity_gap,
+             ranking_score,
+             pct_target = global_pct_state,
+             pct_other = global_pct_other)
+    
+    st_data <- left_join(st_data, rec_data, by = c("Gene" = "gene"))
+    
+    # Separator
+    st_data$Sep <- ""
+    
+    # Expression Group
+    sc_e <- state_expr_mat[match(st_genes, rownames(state_expr_mat)), state_order, drop = FALSE]
+    colnames(sc_e) <- state_order
+    st_data <- cbind(st_data, sc_e)
+    
+    block_start <- current_excel_row
+    block_end <- current_excel_row + length(st_genes) - 1
+    state_block_rows[[as.character(st)]] <- c(block_start, block_end)
+    
+    excel_df <- rbind(excel_df, st_data)
+    
+    st_col <- state_cols_map[as.character(st)]
+    if (is.na(st_col)) st_col <- "#000000"
+    row_colors <- c(row_colors, rep(st_col, nrow(st_data)))
+    is_data_row <- c(is_data_row, rep(TRUE, nrow(st_data)))
+    
+    current_excel_row <- block_end + 1
+    
+    # Empty Row separator
+    if (i < length(states_present)) {
+      empty_row <- as.data.frame(matrix(NA, nrow=1, ncol=ncol(st_data)))
+      colnames(empty_row) <- colnames(st_data)
+      empty_row$StateLabel <- ""
+      empty_row$Gene <- ""
+      empty_row$Sep <- ""
+      excel_df <- rbind(excel_df, empty_row)
+      row_colors <- c(row_colors, NA)
+      is_data_row <- c(is_data_row, FALSE)
+      current_excel_row <- current_excel_row + 1
+    }
+  }
+  
+  if (nrow(excel_df) == 0) {
+    writeData(wb, sheet_name, "No markers found", startCol=1, startRow=1)
+    return()
+  }
+  
+  # Column indices
+  gene_col <- 2
+  recur_cols <- 3:9
+  sep_col <- 10
+  expr_start <- 11
+  expr_end <- 10 + length(state_order)
+  
+  # Row 1 Headers
+  writeData(wb, sheet_name, "State", startCol=1, startRow=1)
+  mergeCells(wb, sheet_name, cols=1, rows=1:2)
+  writeData(wb, sheet_name, "Gene", startCol=2, startRow=1)
+  mergeCells(wb, sheet_name, cols=2, rows=1:2)
+  
+  writeData(wb, sheet_name, "Recurrence & Specificity", startCol=recur_cols[1], startRow=1)
+  mergeCells(wb, sheet_name, cols=recur_cols, rows=1)
+  addStyle(wb, sheet_name, sc_header_style, rows=1, cols=recur_cols, gridExpand=TRUE, stack=TRUE)
+  
+  writeData(wb, sheet_name, "Mean Expression (Sample Median)", startCol=expr_start, startRow=1)
+  mergeCells(wb, sheet_name, cols=expr_start:expr_end, rows=1)
+  addStyle(wb, sheet_name, expr_sc_header_style, rows=1, cols=expr_start:expr_end, gridExpand=TRUE, stack=TRUE)
+  
+  # Row 2 Headers
+  headers2 <- c("State", "Gene", 
+                "Sample\nRecurrence", "Study\nRecurrence", "Median\nlog2FC", 
+                "Specificity\nGap", "Ranking\nScore", "% Target\nExpr", "% Other\nExpr", 
+                "")
+  headers2 <- c(headers2, state_order)
+  
+  if (length(states_present) == 1) {
+    target_idx <- which(state_order == states_present[1])
+    if (length(target_idx) == 1) {
+      headers2[expr_start - 1 + target_idx] <- paste0(headers2[expr_start - 1 + target_idx], "\n(TARGET)")
+    }
+  }
+
+  writeData(wb, sheet_name, t(headers2), startCol=1, startRow=2, colNames=FALSE)
+  addStyle(wb, sheet_name, header_style, rows=2, cols=1:ncol(excel_df), gridExpand=TRUE, stack=TRUE)
+  addStyle(wb, sheet_name, sc_header_style, rows=2, cols=recur_cols, gridExpand=TRUE, stack=TRUE)
+  addStyle(wb, sheet_name, expr_sc_header_style, rows=2, cols=expr_start:expr_end, gridExpand=TRUE, stack=TRUE)
+  
+  # Data
+  writeData(wb, sheet_name, excel_df, startCol=1, startRow=3, colNames=FALSE)
+  
+  # Styling for Column 1 and 2
+  for (st_name in names(state_block_rows)) {
+    rows <- state_block_rows[[st_name]]
+    mergeCells(wb, sheet_name, cols=1, rows=rows[1]:rows[2])
+    
+    st_col_hex <- state_cols_map[st_name]
+    if (is.na(st_col_hex)) st_col_hex <- "#000000"
+    
+    vert_style <- createStyle(textRotation = 90, halign = "center", valign = "center", textDecoration = "bold",
+                              fontColour = "#FFFFFF", fgFill = st_col_hex, border = "TopBottomLeftRight")
+    addStyle(wb, sheet_name, vert_style, rows=rows[1]:rows[2], cols=1, stack=TRUE)
+  }
+  
+  for (r in seq_len(nrow(excel_df))) {
+    if (is_data_row[r]) {
+      st_col_hex <- row_colors[r]
+      gene_st_style <- createStyle(textDecoration = "bold", fontName = "Consolas", fontColour = st_col_hex)
+      addStyle(wb, sheet_name, gene_st_style, rows=r+2, cols=2, stack=TRUE)
+    }
+  }
+  
+  # Metric formatting
+  addStyle(wb, sheet_name, pct_fmt, rows=3:(nrow(excel_df)+2), cols=c(3, 8, 9), gridExpand=TRUE, stack=TRUE)
+  addStyle(wb, sheet_name, num1, rows=3:(nrow(excel_df)+2), cols=c(5, 6, 7), gridExpand=TRUE, stack=TRUE)
+  addStyle(wb, sheet_name, createStyle(numFmt = "0"), rows=3:(nrow(excel_df)+2), cols=4, gridExpand=TRUE, stack=TRUE)
+  addStyle(wb, sheet_name, num3, rows=3:(nrow(excel_df)+2), cols=expr_start:expr_end, gridExpand=TRUE, stack=TRUE)
+  
+  # Separator and borders
+  addStyle(wb, sheet_name, sep_style, rows=1:(nrow(excel_df)+2), cols=sep_col, stack=TRUE)
+  border_style_med <- createStyle(border = "Left", borderStyle = "medium", borderColour = "#2C3E50")
+  addStyle(wb, sheet_name, border_style_med, rows=1:(nrow(excel_df)+2), cols=c(2, 3, sep_col, expr_start), gridExpand=TRUE, stack=TRUE)
+  
+  # Conditional formatting for expression
+  expr_vals <- unlist(excel_df[is_data_row, expr_start:expr_end])
+  expr_vals <- expr_vals[is.finite(expr_vals)]
+  if (length(expr_vals) > 0) {
+    q_low <- quantile(expr_vals, 0.05, na.rm=TRUE)
+    q_mid <- quantile(expr_vals, 0.40, na.rm=TRUE)
+    q_high <- quantile(expr_vals, 0.85, na.rm=TRUE)
+    conditionalFormatting(wb, sheet_name, cols=expr_start:expr_end, rows=3:(nrow(excel_df)+2),
+                          style=c("#FFFFFF", "#FB8A8A", "#B22222"), rule=c(q_low, q_mid, q_high), type="colourScale")
+  }
+  
+  # Layout
+  setColWidths(wb, sheet_name, cols=1, widths=5)
+  setColWidths(wb, sheet_name, cols=2, widths=20)
+  setColWidths(wb, sheet_name, cols=recur_cols, widths=13)
+  setColWidths(wb, sheet_name, cols=sep_col, widths=3)
+  setColWidths(wb, sheet_name, cols=expr_start:expr_end, widths=16)
+  freezePane(wb, sheet_name, firstActiveRow=3, firstActiveCol=3)
+}
+
+# 1. Build Top 5 Markers sheet
+top5_df <- ranked_markers %>% filter(gene %in% final_markers$gene)
+build_marker_sheet(wb, "Top 5 Markers", top5_df, state_cols, state_expr_mat, state_order)
+
+# 2. Build individual sheets for all markers per state
+# Note: Excel worksheet names are limited to 31 chars, so we truncate if necessary
+for (st in state_order) {
+  st_df <- ranked_markers %>% filter(state == st)
+  if (nrow(st_df) > 0) {
+    sheet_name_st <- substr(as.character(st), 1, 31)
+    build_marker_sheet(wb, sheet_name_st, st_df, state_cols, state_expr_mat, state_order)
+  }
+}
+
+out_xlsx_final <- file.path(out_dir, "Auto_five_state_markers_all.xlsx")
+saveWorkbook(wb, out_xlsx_final, overwrite = TRUE)
+message("Saved Excel to: ", out_xlsx_final)
 

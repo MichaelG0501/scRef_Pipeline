@@ -151,7 +151,7 @@ mp_desc <- c(
   "MP2x" = "Wnt-active glandular stem/progenitor",
   "MP18a" = "MP18a",
   "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP13+" = "Fanconi/HR repair-active glandular progenitor",
+  "MP13+" = "replication-stress-associated cell cycling",
   "MP11c" = "MP11c",
   "MP15" = "T/NK-like cancer-cell immune mimicry",
   "MP8b" = "Metabolic intestinal metaplasia",

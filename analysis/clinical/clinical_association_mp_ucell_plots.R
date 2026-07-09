@@ -44,13 +44,13 @@ library(scales)
 library(patchwork)
 library(ggnewscale)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 ####################
 # 1) Load data
 ####################
 meta_full_epi <- readRDS("meta_full_epi.rds")
-ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
+ucell_scores <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds")
 geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
 
 clinical_sheet <- read_excel(

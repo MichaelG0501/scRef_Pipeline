@@ -28,7 +28,7 @@ suppressPackageStartupMessages({
   library(dplyr)
 })
 
-raw_root <- Sys.getenv("SCATLAS_RAW_ROOT", "/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat")
+raw_root <- Sys.getenv("SCATLAS_RAW_ROOT", "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files")
 live_root <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all"
 datasets <- c("Alcindor_2025", "Carroll_2023")
 export_count_csv <- identical(toupper(Sys.getenv("SCATLAS_EXPORT_COUNT_CSV", "FALSE")), "TRUE")

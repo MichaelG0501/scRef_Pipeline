@@ -156,7 +156,7 @@ parse_targets <- function(x) {
 load_drugbank_targets <- function(drug_keys) {
   drugbank_path <- Sys.getenv(
     "AUTO_DRUGBANK_TARGETS",
-    "/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/all_drug_targets_drug_bank.txt"
+    "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/all_drug_targets_drug_bank.txt"
   )
   if (!file.exists(drugbank_path)) return(tibble())
 
@@ -190,7 +190,7 @@ score_scale <- function(x) {
 
 load_l1000_reference <- function() {
   ref_cfg_path <- file.path(base_dir, "asgard_reference", "Auto_asgard_reference_paths.csv")
-  default_ref_dir <- "/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/asgard_l1000/DrugReference"
+  default_ref_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/asgard_l1000/DrugReference"
   if (file.exists(ref_cfg_path)) {
     ref_cfg <- fread(ref_cfg_path)
     rank_path <- ref_cfg$AUTO_ASGARD_DRUG_RESPONSE[1]

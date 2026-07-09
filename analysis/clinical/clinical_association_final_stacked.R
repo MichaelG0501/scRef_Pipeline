@@ -25,16 +25,10 @@ library(scales)
 library(readxl)
 library(stringr)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 meta_full_epi <- readRDS("meta_full_epi.rds")
-state_path <- if (file.exists("Auto_final_states.rds")) {
-  "Auto_final_states.rds"
-} else if (file.exists("Auto_topmp_v2_noreg_states_B.rds")) {
-  "Auto_topmp_v2_noreg_states_B.rds"
-} else {
-  "Auto_topmp_v2_reg_states_B.rds"
-}
+state_path <- "Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds"
 state_vec <- readRDS(state_path)
 
 clinical_sheet <- read_excel(
@@ -71,13 +65,13 @@ cell_df <- data.frame(
   )
 
 core_state_levels <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating"
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "SMG to intestinal metaplasia",
+  "Stress adaptive",
+  "Cancer-cell immune mimicry"
 )
-preferred_extra_states <- c("3CA_EMT_and_Protein_maturation")
+preferred_extra_states <- c()
 trailing_state_levels <- c("Unresolved", "Hybrid")
 present_states <- unique(as.character(cell_df$state))
 other_extra_states <- setdiff(present_states, c(core_state_levels, preferred_extra_states, trailing_state_levels))
@@ -89,15 +83,15 @@ state_levels <- c(
 )
 
 state_colors <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive" = "#984EA3",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#666666",
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8",
   "Unresolved" = "grey80",
-  "Hybrid" = "grey60"
+  "Hybrid" = "black"
 )
+
 missing_color_states <- setdiff(state_levels, names(state_colors))
 if (length(missing_color_states) > 0) {
   state_colors <- c(state_colors, setNames(scales::hue_pal()(length(missing_color_states)), missing_color_states))

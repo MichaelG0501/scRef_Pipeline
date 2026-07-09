@@ -106,7 +106,7 @@ row_ann <- rowAnnotation(
 mp_desc_map <- c(
   "MP1" = "G2/M cell cycle",
   "MP5" = "G1/S cell cycle",
-  "MP13+" = "Fanconi/HR repair-active glandular progenitor",
+  "MP13+" = "replication-stress-associated cell cycling",
   "MP2+" = "MYC driven biosynthesis",
   "MP14" = "Squamoid/basal transition",
   "MP3+" = "Basal-columnar invasive epithelium",

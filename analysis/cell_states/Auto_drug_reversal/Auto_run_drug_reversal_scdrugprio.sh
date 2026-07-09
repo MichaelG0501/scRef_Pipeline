@@ -15,8 +15,8 @@ else
   source activate /rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/PDOs_Pipeline/PDOs_outs/Auto_drug_reversal/conda/Auto_drug_reversal
 fi
 cd $WD
-export AUTO_SCDRUGPRIO_PPI=/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/ppi.txt
-export AUTO_SCDRUGPRIO_DRUG_TARGETS=/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/all_drug_targets_drug_bank.txt
-export AUTO_SCDRUGPRIO_PHARMA_EFFECT=/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/all_drug_targets_drug_bank.txt
+export AUTO_SCDRUGPRIO_PPI=/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/ppi.txt
+export AUTO_SCDRUGPRIO_DRUG_TARGETS=/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/all_drug_targets_drug_bank.txt
+export AUTO_SCDRUGPRIO_PHARMA_EFFECT=/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/all_drug_targets_drug_bank.txt
 Rscript analysis/cell_states/Auto_drug_reversal/Auto_drug_reversal_scdrugprio.R
 echo $(date +%T)

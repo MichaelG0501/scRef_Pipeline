@@ -59,12 +59,12 @@ dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 mp_path <- "Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds"
 cluster_enrich_path <- "cluster_enrich.rds"
 developmental_ref_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/per_stage"
-adult_stomach_path <- "/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Stomach/data_9_9_annotated_seurat_all_ut.rds"
-barretts_path <- "/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Barretts/alldatahighquality.rds"
-oesophagus_meta_path <- "/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/metadata/EoE_meta.txt"
-oesophagus_cell_path <- "/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/expression/63f53992d91a88956d36dc4f/EoE_cell.tsv"
-oesophagus_gene_path <- "/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/expression/63f53992d91a88956d36dc4f/EoE_gene.tsv"
-oesophagus_mtx_path <- "/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/expression/63f53992d91a88956d36dc4f/EoE.mtx"
+adult_stomach_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/data_9_9_annotated_seurat_all_ut.rds"
+barretts_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/alldatahighquality.rds"
+oesophagus_meta_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/EoE_meta.txt"
+oesophagus_cell_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/EoE_cell.tsv"
+oesophagus_gene_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/EoE_gene.tsv"
+oesophagus_mtx_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/EoE.mtx"
 
 ####################
 # Load and filter MPs using the standard silhouette rule

@@ -16,7 +16,7 @@ echo $(date +%T)
 module purge
 module load tools/dev
 
-RAW_ROOT="${RAW_ROOT:-/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat}"
+RAW_ROOT="${RAW_ROOT:-/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files}"
 STUDY_DIR="${RAW_ROOT}/Alcindor_2025"
 FASTQ_DIR="${STUDY_DIR}/fastq"
 CR_FASTQ_ROOT="${STUDY_DIR}/fastq_cellranger"

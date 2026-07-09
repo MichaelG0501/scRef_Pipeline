@@ -53,8 +53,8 @@ These rules are **mandatory** for any agent operating in this repo:
 
 1. **Working directory**: All outputs go to `ref_outs/`. Never write outside project paths.
 2. **Conda init**: Always run `eval "$(~/miniforge3/bin/conda shell.bash hook)"` before activating envs.
-3. **Interactive first**: Tasks under 8 cores / 64 GB → write only the `.R` script, no `.sh` wrapper. User runs interactively.
-4. **PBS required**: Heavy tasks → must create PBS `.sh` script with `#PBS` resource headers.
+3. **No Heavy Workloads on Login Nodes (MANDATORY)**: Strictly prohibit running any computationally, memory, or IO intensive workloads on the login nodes, as it adversely affects other users. Any even slightly larger workloads MUST be submitted to the batch queue via PBS `qsub`.
+4. **PBS required**: All analytical and heavy tasks → must create PBS `.sh` script with `#PBS` resource headers and submit to the queue. Interactive scripts on login nodes are only permitted for very light, trivial tasks.
 5. **Live Logging**: Always use live streaming log file mode by adding `#PBS -koed` to the submission script. This ensures standard out and standard error are written to their final destination as the job is running, allowing for real-time monitoring from login nodes.
 6. **Output file naming**: New persistent generated outputs should keep the historical `Auto_` prefix when useful for provenance. New analysis script filenames should instead be descriptive and follow the `analysis/ANALYSIS_MAP.md` naming rules.
 7. **Modifying existing files**: New code MUST be wrapped in 20-hash comment blocks:
@@ -66,6 +66,7 @@ These rules are **mandatory** for any agent operating in this repo:
 8. **No deleting/modifying** existing lines outside 20-hash blocks without permission.
 9. **Test scripts**: Name `delete_<desc>.R` and delete immediately after use.
 10. **Max concurrent PBS jobs**: 46 (throttled via `while [[ $(qstat | grep sg3723 | wc -l) -gt 46 ]]`).
+11. **Storage policy — live vs ephemeral**: All scripts, final outputs (RDS data objects, figures, tables, logs, reports), and inputs required for replotting must be read from and written to the `live` project path (`/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/`). **Exception**: large intermediate/cache files (typically under `intermediate/` output tiers) should continue to be stored under the corresponding `ephemeral` path (`/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/`). Scripts must `dir.create(..., recursive = TRUE, showWarnings = FALSE)` for ephemeral intermediate paths if they do not exist.
 
 ### PBS Job Template
 ```bash
@@ -79,7 +80,7 @@ module purge
 module load tools/dev
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
-WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 cd $WD
 Rscript <script>.R
 echo $(date +%T)
@@ -265,7 +266,7 @@ Use `orig.ident` from the Seurat metadata to group by sample. Avoid barcode mani
 - `gnmf` conda env: Use for GeneNMF package.
 
 **Adult oesophagus external reference**
-- `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/` is a very large Matrix Market dataset (`EoE.mtx` plus metadata), so interactive MP scoring should subset epithelial barcodes before UCell scoring and cache the sampled subset under `ref_outs/Auto_external_epi_mp_ucell/`.
+- `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/` is a very large Matrix Market dataset (`EoE.mtx` plus metadata), so interactive MP scoring should subset epithelial barcodes before UCell scoring and cache the sampled subset under `ref_outs/Auto_external_epi_mp_ucell/`.
 
 **Metaprogram Resolution**
 The pipeline explores nMP range 8 to 30. **nMP=19** is the current selected working resolution.
@@ -554,12 +555,12 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - `Auto_cellranger_alcindor_bam.sh` and `Auto_cellranger_carroll_bam.sh`: rerun Cell Ranger with `--create-bam=true` for Numbat pileup while otherwise matching the historical `cellranger count` logic.
   - `Auto_stage_validate_scatlas_cellranger_outputs.R/.sh`: stage new `filtered_feature_bc_matrix` outputs into historical `matrix_all/<sample>_filtered` structure, optionally export dense count CSVs using the original `write.sh` logic, and require exact sparse-matrix identity to the live historical matrices.
   - `Auto_submit_scatlas_raw_rebuild.sh`: submits download jobs first, then dependent Cell Ranger jobs.
-- Raw FASTQs and BAM-producing Cell Ranger outputs are staged under `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/` by explicit user request for this workflow.
+- BAM-producing Cell Ranger outputs under `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files/<dataset>/cellranger/<sample>/outs/`.
 - scATLAS Numbat scripts now live in `analysis/cnv/`:
   - `Auto_scatlas_numbat_export_inputs.R`: writes `ref_outs/Auto_scatlas_numbat/Auto_scatlas_numbat_manifest.csv`.
   - `Auto_prepare_scatlas_numbat_container.sh`, `Auto_run_scatlas_numbat_pileup.sh`, `Auto_scatlas_numbat_run_sample.R`, and `Auto_run_scatlas_numbat_sample.sh`: mirror the PDO Numbat settings (`max_iter=2`, `gamma=20`, `init_k=3`, `min_cells=50`).
   - `Auto_scatlas_numbat_conservative_recut.R`: default direct validation cut is `SCATLAS_NUMBAT_CONSERVATIVE_N_CUT=3`, with minor clones below `max(20 cells, 3%)` merged into major clones.
-  - `Auto_00_submit_scatlas_numbat.sh`: submits the full Numbat dependency chain, but now refuses to run until `/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat/validation/Auto_scatlas_cellranger_matrix_validation.csv` exists and contains only `ok` rows.
+  - `Auto_00_submit_scatlas_numbat.sh`: submits the full Numbat dependency chain, but now refuses to run until `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files/validation/Auto_scatlas_cellranger_matrix_validation.csv` exists and contains only `ok` rows.
 - Methodology files:
   - `analysis/methodology/raw_data/scatlas_raw_redownload_numbat_methodology.md`
   - `analysis/methodology/cnv/scatlas_numbat_methodology.md`
@@ -732,12 +733,12 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - Environment: `dmtcp` (uses `UCell`)
   - Inputs:
     - `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds`
-    - `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Stomach/data_9_9_annotated_seurat_all_ut.rds`
-    - `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Barretts/alldatahighquality.rds`
-    - `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/metadata/EoE_meta.txt`
-    - `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/expression/63f53992d91a88956d36dc4f/EoE.mtx`
-    - `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/expression/63f53992d91a88956d36dc4f/EoE_cell.tsv`
-    - `/rds/general/project/spatialtranscriptomics/ephemeral/EAC_data/Adult_Oesophagus/expression/63f53992d91a88956d36dc4f/EoE_gene.tsv`
+    - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/data_9_9_annotated_seurat_all_ut.rds`
+    - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/alldatahighquality.rds`
+    - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/EoE_meta.txt`
+    - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/EoE.mtx`
+    - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/EoE_cell.tsv`
+    - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/EoE_gene.tsv`
   - Outputs:
     - `ref_outs/Auto_external_epi_mp_ucell/Auto_external_epi_mp_ucell_summary.csv`
     - `ref_outs/Auto_external_epi_mp_ucell/Auto_external_epi_mp_ucell_summary.rds`

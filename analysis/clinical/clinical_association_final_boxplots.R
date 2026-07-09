@@ -46,13 +46,13 @@ library(ggplot2)
 library(readxl)
 library(scales)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 ####################
 # 1) Load data
 ####################
 meta_full_epi <- readRDS("meta_full_epi.rds")
-final_states <- readRDS("Auto_final_states.rds")
+final_states <- readRDS("intermediate/centred_refined_noreg_states.rds")
 ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
 geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
 ucell_3ca <- readRDS("UCell_3CA_MPs.rds")

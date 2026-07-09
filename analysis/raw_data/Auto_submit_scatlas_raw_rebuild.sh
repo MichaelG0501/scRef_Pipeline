@@ -16,7 +16,7 @@ module purge
 module load tools/dev
 
 WD="/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
-RAW_ROOT="${RAW_ROOT:-/rds/general/project/spatialtranscriptomics/ephemeral/scRef_raw_numbat}"
+RAW_ROOT="${RAW_ROOT:-/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files}"
 EGA_CREDENTIAL_JSON="${EGA_CREDENTIAL_JSON:-/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Carroll_2023/ega.json}"
 CELLRANGER_BIN="${CELLRANGER_BIN:-/rds/general/project/tumourheterogeneity1/live/ITH_sc/cellranger-8.0.1/bin/cellranger}"
 TRANSCRIPTOME="${TRANSCRIPTOME:-/rds/general/project/tumourheterogeneity1/live/ITH_sc/refdata-gex-GRCh38-2024-A}"

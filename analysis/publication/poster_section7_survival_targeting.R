@@ -152,7 +152,7 @@ if (file.exists(top_overlap_file)) {
   top_overlap <- read_csv(top_overlap_file, show_col_types = FALSE)
   
   load_l1000_reference <- function() {
-    default_ref_dir <- "/rds/general/project/spatialtranscriptomics/ephemeral/Auto_drug_reversal_refs/asgard_l1000/DrugReference"
+    default_ref_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Auto_drug_reversal/asgard_l1000/DrugReference"
     rank_dt <- fread(file.path(default_ref_dir, "stomach_rankMatrix.txt"))
     gene_dt <- fread(file.path(default_ref_dir, "stomach_gene_info.txt"))
     drug_dt <- fread(file.path(default_ref_dir, "stomach_drug_info.txt"))
