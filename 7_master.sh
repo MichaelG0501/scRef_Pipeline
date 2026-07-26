@@ -2,10 +2,11 @@
 #PBS -l select=1:ncpus=1:mem=2gb
 #PBS -l walltime=8:00:00
 #PBS -N master
+#PBS -koed
 
 echo $(date +%T)
 
-WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 
 cd $WD
 

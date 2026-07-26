@@ -5,15 +5,15 @@ library(tidyr)
 library(ggplot2)
 library(readxl)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
-sample_dirs <- list.dirs(path = "by_samples/", full.names = FALSE, recursive = FALSE)
+sample_dirs <- list.dirs(path = "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/by_samples/", full.names = FALSE, recursive = FALSE)
 sample_dirs <- sample_dirs[grepl("^[^/]+_[^/]+_[^/]+$", sample_dirs)]  # match *_*_*
 
 tmdata_list <- list()
 
 for (sample in sample_dirs) {
-  rds_path <- file.path("by_samples/", sample, paste0(sample, ".rds"))
+  rds_path <- file.path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/by_samples/", sample, paste0(sample, ".rds"))
   if (file.exists(rds_path)) {
     tmdata_list[[sample]] <- readRDS(rds_path)
     if (ncol(tmdata_list[[sample]]) < 50) {
@@ -339,6 +339,8 @@ for (sample in sample_dirs) {
   
   tmdata$celltype_update <- as.character(cl_map[as.character(tmdata$seurat_clusters)])
   
+  out_dir <- paste0("by_samples/", sample)
+  if (!dir.exists(out_dir)) { dir.create(out_dir, recursive = TRUE) }
   saveRDS(tmdata, paste0("by_samples/", sample, "/", sample, "_anno.rds"))
   
   # 4a) per-sample % table

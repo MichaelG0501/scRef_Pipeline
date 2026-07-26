@@ -9,7 +9,7 @@ library(tidyr)
 library(readxl)
 library(stringr)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 args <- commandArgs(trailingOnly = TRUE)
 sample <- args[1]

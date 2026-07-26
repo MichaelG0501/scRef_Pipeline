@@ -2,14 +2,15 @@
 #PBS -l select=1:ncpus=1:mem=2gb
 #PBS -l walltime=8:00:00
 #PBS -N master
+#PBS -koed
 
 echo $(date +%T)
 
-WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 
 cd $WD
 
-for sample_folder in ref_outs/by_samples/*_*_*/; do
+for sample_folder in /rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/by_samples/*_*_*/; do
   while [[ $(qstat | grep sg3723 | wc -l) -gt 46 ]]; do
     sleep 180
   done

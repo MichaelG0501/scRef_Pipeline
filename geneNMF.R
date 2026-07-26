@@ -5,7 +5,7 @@ library(fgsea)
 library(UCell)
 library(Seurat)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 tmdata_annotated <- list()
 
@@ -26,7 +26,7 @@ for (sample in sample_dirs) {
   tmdata_annotated[[sample]] <- tmdata
 }
 
-geneNMF.programs <- multiNMF(tmdata_annotated, assay="RNA", k=4:9, min.exp = 0.05)
+geneNMF.programs <- multiNMF(tmdata_annotated, assay="RNA", k=4:9, min.exp = 0.05, center = TRUE)
 saveRDS(geneNMF.programs, file="geneNMF_outs.rds")
 
 geneNMF.metaprograms <- getMetaPrograms(geneNMF.programs,
