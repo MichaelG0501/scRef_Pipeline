@@ -11,7 +11,7 @@
 # Submit NMF jobs for all non-malignant cell types
 # Usage: bash analysis/non_malignant_nmf/submit_geneNMF_all.sh
 
-WD=/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 cd $WD
 
 # Note: R script expects "nk.cell" (not "nk") as the celltype key

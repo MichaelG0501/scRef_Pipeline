@@ -66,7 +66,7 @@ These rules are **mandatory** for any agent operating in this repo:
 8. **No deleting/modifying** existing lines outside 20-hash blocks without permission.
 9. **Test scripts**: Name `delete_<desc>.R` and delete immediately after use.
 10. **Max concurrent PBS jobs**: 46 (throttled via `while [[ $(qstat | grep sg3723 | wc -l) -gt 46 ]]`).
-11. **Storage policy — live vs ephemeral**: All scripts, final outputs (RDS data objects, figures, tables, logs, reports), and inputs required for replotting must be read from and written to the `live` project path (`/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/`). **Exception**: large intermediate/cache files (typically under `intermediate/` output tiers) should continue to be stored under the corresponding `ephemeral` path (`/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/`). Scripts must `dir.create(..., recursive = TRUE, showWarnings = FALSE)` for ephemeral intermediate paths if they do not exist.
+11. **Storage policy — live vs ephemeral**: All scripts, final outputs (RDS data objects, figures, tables, logs, reports), and **all critical inputs required for replotting** must be read from and written to the `live` project path (`/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/`). **Exception**: exceptionally large intermediate/cache files (typically under `intermediate/` output tiers) should continue to be stored under the corresponding `ephemeral` path (`/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/`). **CRITICAL**: The `live` storage must be completely self-sufficient for final presentations; even if the `ephemeral` directory is completely deleted, you must still be able to easily reproduce all plots and critical information using only the files saved in `live/`. Scripts must `dir.create(..., recursive = TRUE, showWarnings = FALSE)` for ephemeral intermediate paths if they do not exist.
 
 ### PBS Job Template
 ```bash
@@ -206,17 +206,21 @@ Scripts may source these helper files when the dependency is documented in the s
 | Object | Path | Notes |
 | :--- | :--- | :--- |
 | Main epithelial Seurat | `ref_outs/EAC_Ref_epi.rds` | merged OAC epithelial reference |
-| MP object nMP=19 | `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds` | primary MP gene set object |
-| Filtered MP UCell | `ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds` | silhouette-filtered MP scores |
-| 3CA MP UCell | `ref_outs/UCell_3CA_MPs.rds` | pan-cancer MP scores |
 | Epithelial metadata | `ref_outs/meta_full_epi.rds` | per-cell clinical/sample metadata |
-| Approach B noreg states | `ref_outs/Auto_topmp_v2_noreg_states_B.rds` | preferred upstream state definition |
-| Approach B noreg MP matrix | `ref_outs/Auto_topmp_v2_noreg_mp_adj.rds` | z-normalised state-definition MP matrix |
-| Final state vector | `ref_outs/Auto_final_states.rds` | preferred downstream state object |
-| Enrichment results | `ref_outs/cluster_enrich.rds` | MP x database enrichment object |
+| 3CA MP UCell | `ref_outs/UCell_3CA_MPs.rds` | pan-cancer MP scores |
+| Centred Refined MP genes | `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds` | Updated primary MP gene set object |
+| Centred Refined UCell | `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds` | Updated centred MP UCell scores |
+| Centred Refined States | `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds` | Updated downstream state vector |
+| Centred Refined MP matrix | `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds` | Updated z-normalised MP matrix |
 | Final MP SCENIC directory | `ref_outs/final_mp_scenic/` | selected cells, regulons, networks |
+| Legacy MP object nMP=19 | `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds` | legacy, superseded by centred MPs |
+| Legacy Filtered MP UCell | `ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds` | legacy, superseded by centred UCell |
+| Legacy Approach B states | `ref_outs/Auto_topmp_v2_noreg_states_B.rds` | legacy upstream state definition |
+| Legacy Approach B matrix | `ref_outs/Auto_topmp_v2_noreg_mp_adj.rds` | legacy z-normalised MP matrix |
+| Legacy Final state vector | `ref_outs/Auto_final_states.rds` | legacy downstream state object |
+| Enrichment results | `ref_outs/cluster_enrich.rds` | legacy MP x database enrichment object |
 
-Do not use `ref_outs/state_temp.rds`, `ref_outs/Auto_topmp_states.rds`, `ref_outs/Auto_cluster_states.rds`, or `ref_outs/Auto_topmp_v2_states_B.rds` for new downstream work.
+Do not use `ref_outs/state_temp.rds`, `ref_outs/Auto_topmp_states.rds`, `ref_outs/Auto_cluster_states.rds`, `ref_outs/Auto_topmp_v2_noreg_states_B.rds`, or `ref_outs/Auto_final_states.rds` for new downstream work. Instead, use the centred refined state paths.
 
 ### Current Run Order
 
@@ -461,8 +465,6 @@ can read results on the login node without loading heavy `.rds` files, create fo
 - In non-interactive shells, these commands may not be on `PATH` by default, so use the absolute path if needed.
 
 ####################
-
-####################
 ## 2 Jul 2026 Centred Refined State Definition Noreg
 
 - `analysis/metaprograms/centred/06_centred_refined_state_definition_noreg.R`
@@ -486,6 +488,35 @@ can read results on the login node without loading heavy `.rds` files, create fo
   - Program-resolution correlation: `centred_refined_mp_split_correlation_ordered_heatmap.{pdf,png}` expands 90 refined feature correlations to 2,583 NMF programs, using solid internal `refined_submp` boxes and dotted final-MP boxes.
   - Outputs: centred NMF ordered heatmap, centred refined MP correlation heatmap, and centred program-resolution refined MP correlation heatmap under `ref_outs/Metaprogrammes_Results/centred/mp_refinement/figures/`, supporting tables/intermediate RDS under the same output tier structure, and a lightweight summary at `updates/new_updates/summaries/centred_refined_mp_ordered_heatmaps_summary.csv`.
   - Methodology: `analysis/methodology/metaprograms/centred_refined_mp_ordered_heatmaps_methodology.md`.
+####################
+
+####################
+## 14 Jul 2026 Centred State Region Comparison
+
+- `analysis/clinical/centred_state_region_boxplots.R`
+  - Purpose: sample-level regional comparison of final centred MP activity in cells assigned to Basal to intestinal metaplasia or SMG to intestinal metaplasia, plus abundance of those two state assignments.
+  - Final MP sets: Basal to intestinal metaplasia (`MP14`, `MP3+`, `MP6+`, `MP11+`, `MP9+`, `MP10+`); SMG to intestinal metaplasia (`MP8+`, `MP8b`, `MP16`, `MP18b`, `MP17`, `MP2x`). These are copied from `analysis/metaprograms/centred/tcga_mp_survival_volcano_centred.R`.
+  - Region source: sheet 3 `Tumor Location` in `Concise_Summary_EAC_Ref.xlsx`; exact raw values and unmapped samples are retained in QC CSVs rather than silently reassigned.
+  - Outputs: `ref_outs/Metaprogrammes_Results/centred/state_region_boxplots/` with figures, sample-level tables, global/pairwise regional statistics, and logs. The lightweight update summary is `updates/new_updates/summaries/centred_state_region_boxplots_summary.csv`.
+- `analysis/clinical/centred_state_region_boxplots.sh`
+  - PBS wrapper for the region workflow (`ncpus=4`, `mem=32gb`, `walltime=2h`, `dmtcp`).
+####################
+
+####################
+## 14 Jul 2026 TCGA-STAD Centred Bulk Location Analysis
+
+- `analysis/clinical/centred_stomach_bulk_location_gsva.R`
+  - Purpose: compare updated centred MP and state-union GSVA expression among TCGA-STAD primary-tumour stomach locations using the downloaded bulk TPM matrix and its sample-level `tumor_location` metadata.
+  - Definitions: individual MPs are scored from final centred genes. State expression uses a GSVA score over the union of its member MP genes, so overlapping genes are not duplicated. This is expression activity, not cell-state abundance.
+  - Cohort: primary tumours only (`sample_type_code == "01"`). Location categories with fewer than 10 tumours remain in QC tables but are excluded from inferential plots/tests.
+  - Binary regional comparison: `Cardia, NOS` is proximal cardia; gastric antrum, body, and fundus are resolved distal non-cardia. `Stomach, NOS` and lesser-curvature NOS remain unclassified and are excluded rather than guessed.
+  - Outputs: `ref_outs/Metaprogrammes_Results/centred/bulk_tcga_stad_location_gsva/`; source TCGA-STAD data remain in `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/stomach_bulk/`.
+- `analysis/clinical/centred_stomach_bulk_location_gsva.sh`
+  - PBS wrapper for the bulk GSVA location workflow (`ncpus=4`, `mem=64gb`, `walltime=4h`, `dmtcp`).
+- `analysis/clinical/Auto_stage_tcga_stad_bulk_location_outputs.sh`
+  - One-off PBS staging wrapper that moves the completed output tree into the live `ref_outs` location, refusing to overwrite an existing destination.
+- `analysis/clinical/Auto_download_tcga_stad_bulk.R` and `analysis/clinical/Auto_download_tcga_stad_bulk.sh`
+  - TCGA-STAD bulk downloader code and PBS wrapper; the scripts are stored under `analysis/clinical/`, while only downloaded data/metadata/matrices/logs remain under `EAC_Ref_all/00_merged/stomach_bulk/`.
 ####################
 ## 29 Jun 2026 Centred vs Uncentred GeneNMF Comparison
 
@@ -613,6 +644,15 @@ can read results on the login node without loading heavy `.rds` files, create fo
 
 - `analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh`
   - PBS wrapper for `mp_cross_celltype_correlations.R` (`ncpus=8`, `mem=128gb`, `walltime=8h`, `dmtcp` env) for the direct `EAC_Ref_merged_strict.rds` run; optional PBS variable `cutoff` is forwarded as the first R argument (for example `qsub -v cutoff=0.2 analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh`).
+####################
+
+####################
+## 20 Jul 2026 Non-Malignant Whole-Celltype Direct-Annotation Modes
+
+- `analysis/non_malignant_nmf/mp_cross_celltype_correlations.R` additionally creates `05_cancer_mps_vs_whole_celltypes` and `06_cancer_states_vs_whole_celltypes` after the existing MP-resolved modes. Each correlates individual cancer MPs or cancer states with the direct per-sample abundance of a final non-epithelial `celltype_update` annotation, rather than its individual NMF MPs.
+- Whole-celltype abundance is `100 * target final-annotation cells / confidently annotated atlas cells` per cancer-scored sample. The denominator excludes missing/empty labels and labels beginning with `unresolved`; it otherwise retains all final celltype annotations. The aggregate T-cell compartment is `t.cell`, matching Annotation.R/Expr_filtering.R rather than recreating CD4/CD8 splits. No UCell score, marker list, or threshold is used.
+- Outputs are under `ref_outs/non_malignant_mp_correlations/05_cancer_mps_vs_whole_celltypes/` and `06_cancer_states_vs_whole_celltypes/`. They use the same output contract and plotting helpers as modes `01`--`04`: adjusted-score exports, node/shared-sample/cutoff tables, all/positive/negative correlation tables, bubble/network/focal-dotmap PDFs, Excel workbooks, and per-mode summaries. Each direct annotation is a single non-malignant node; `t.cell` replaces the CD4/CD8 split. All cross-compartment pairs are retained (123 MP-mode tests; 45 state-mode tests). LR output filenames are retained with an explicit `not_applicable` status because a direct celltype abundance has no MP gene set.
+- Positive associations require Pearson `> 0` and Spearman `P < 0.05`; negative associations require Pearson `< 0` and Spearman `P < 0.05`. No further score or `-log10(P)` cutoff applies to these direct-abundance modes. `nk.cell` is retained as the internal NK label so it matches the plotting order and cannot be rendered as an `NA` axis category.
 ####################
 ####################
 ## 25 Mar 2026 GEO Bulk Survival Update
@@ -957,4 +997,175 @@ Do **not** apply this to every R script. Focus on scripts that synthesize data a
 - Direction derivation uses the five primary noreg Approach B states only: `Classic Proliferative`, `Basal to Intestinal Metaplasia`, `SMG-like Metaplasia`, `Stress-adaptive`, and `Immune Infiltrating`. Final states are retained for UMAP coloring.
 - Outputs live under `ref_outs/Auto_velocity_scATLAS/` with `tables/`, `figures/`, `logs/`, `h5ad/`, `looms/`, `coord/`, `barcodes/`, and `ref/` folders. Lightweight update summary is `updates/new_updates/summaries/Auto_scatlas_velocity_direction_summary.csv`.
 - Methodology: `analysis/methodology/trajectory/scatlas_velocity_methodology.md`.
+####################
+
+####################
+## 15 Jul 2026 Visium HD Annotation, CNA, And Diagnostics Update
+
+- `analysis/spatial/visiumhd_annotation_diagnostics.R`
+  - Purpose: per-sample spatial and expression-UMAP quality-control plots for canonical Visium HD annotations and malignancy tiers.
+  - Inputs: canonical annotation tables, optional InferCNA tables, and the corresponding binned/segmented Visium HD H5 input. Reuses Space Ranger UMAP projections when present and caches Seurat UMAP coordinates otherwise.
+  - Outputs: `ref_outs/visium_hd_outs/figures/annotation_diagnostics/`, cached coordinates under `intermediate/`, and lightweight summaries under `updates/new_updates/summaries/`.
+####################
+- The notebook's raw-UMI manual-score gates were retired on 20 Jul 2026 because their scale is not transferable between segmented cells and 16 um bins. Raw marker means remain audit fields only. Both manual representations now use CP10K/log1p module scores plus cluster-versus-rest marker enrichment and the same selected effect/prevalence thresholds.
+- The Visium HD hierarchy always evaluates supported non-epithelial/non-fibroblast lineages first. Fibroblast is then a differential ECM-marker specificity call; only after fibroblast fails may epithelial use positive control-adjusted CP10K module evidence plus co-detection of at least two epithelial markers in at least 10% of the cluster. Insufficient evidence remains `unresolved`, and neither abundant compartment can override a supported first-stage call.
+####################
+- Visium HD InferCNA uses two distinct normal cell types among endothelial, macrophage, and fibroblast, with at least 20 RCTD/manual-gated cells per type; CNA-unresolved epithelial observations may be promoted to `malignant_level_2` only by the `cancer_signatures.txt` score procedure from `Malignancy.R`; both level 1 and level 2 cells are eligible for scATLAS state mapping.
+- The Visium HD level-1 gate uses both CNA metrics at reference mean plus one SD (`--cna-sd-k 1`), not the scATLAS single-cell pipeline's two-SD threshold, because segmented-cell normal references have much broader technical scatter than 16 um bins.
+- Segmented CNA-non-malignant cells can only receive the level-2 rescue when they are cancer-signature positive and their nearest epithelial 16 um bin is CNA-malignant; the output retains matched-bin barcode, distance, and evidence fields.
+- RCTD epithelial bin annotations must not be overwritten as keratinocyte. Local segmented keratinocyte fraction `>= 0.5` identifies observations requiring full-CNA profile assessment in the malignancy layer; it retains the RCTD label and CNA audit fields.
+- Final binned keratinocyte normal/malignant status must come from the cached full InferCNA profile, not the scalar scatter or cancer signature alone: compare to non-keratinocyte malignant and normal-reference CNA centroids, then retain only bins exceeding both normal-reference-derived tumour-correlation thresholds as malignant.
+- `analysis/spatial/visiumhd_keratinocyte_evidence_audit.R` is the plot-only audit for scalar CNA, cancer-signature, and full-CNA-profile overlap between keratinocyte-dominant and non-keratinocyte malignant bins. It saves `Auto_visiumhd_keratinocyte_vs_epithelial_evidence_audit.pdf` under `ref_outs/visium_hd_outs/malignancy/figures/`.
+####################
+
+####################
+## 20 Jul 2026 Custom Visium HD Binned Annotation
+
+####################
+- `process_visium_hd.py --mode custom` uses the binned 16 um matrix but retains RCTD labels only for non-singlet bins. All RCTD singlets and all segmented observations use the same hierarchical CP10K rule: panels with >=3 genes require two supported markers, one/two-gene panels require one, non-epithelial/non-fibroblast types are tested first, fibroblast next requires differential ECM-marker specificity, and epithelial is the final absolute module/co-detection residual call. Raw-UMI score gates are retired because they are not comparable between bins and segmented cells. Custom retains resolution-6 clustering for rare-bin resolution; segmented retains resolution 1.
+- `analysis/spatial/visiumhd_manual_annotation_threshold_calibration.py` selects one shared marker effect/prevalence threshold set using spatial cross-resolution agreement and RCTD-singlet agreement only as external audits. RCTD singlet types never become final custom labels. A candidate must retain at least two normal InferCNA reference types with at least 20 observations in every sample and representation.
+- Superseded calibration note: the initial shared gate was marker log2FC `>= 0.25`, within-cluster detection `>= 0.10`, and detection increase `>= 0.05`. After every RCTD singlet was retained, the final recalibration selected the stricter gate recorded in the later correction block below. The complete calibration grid and validation metrics are retained in `ref_outs/visium_hd_outs/tables/Auto_visiumhd_manual_threshold_*.csv`.
+####################
+- Custom outputs preserve `Auto_rctd_first_type`, `Auto_rctd_second_type`, `Auto_rctd_spot_class`, manual-QC status, and manual clusters. Non-singlets remain excluded from CNA/state mapping; manually called keratinocytes are non-epithelial before CNA rather than receiving a post-CNA label.
+- `SCREF_RUN_MODE=custom` in `analysis/spatial/run_visium_hd_states.sh` regenerates the custom annotation, InferCNA/malignancy, scATLAS state maps, spatial plots, UMAP plots, summaries, and caches while reusing the existing RCTD doublet tables.
+- `SCREF_RUN_MODE=segmented_map_diagnostics` reuses completed segmented InferCNA tables and regenerates only state mapping plus spatial/UMAP diagnostics; use it after a map/plot-only failure instead of repeating InferCNA.
+- Final common-binned InferCNA peaked near 129 GB and must request 192 GB; a 128 GB request was killed during FFPEA1 reference correction. Segmented custom peaked near 105 GB and uses 128 GB. Custom binned reuses the validated common binned matrices and peaked near 35 GB in the final run. Mapping plus diagnostics alone used about 2.5 GB and can use the `segmented_map_diagnostics` recovery mode above.
+- A custom sample with fewer than two manually called endothelial/macrophage/fibroblast reference types remains stopped before InferCNA state mapping, but the launcher now continues custom spatial/UMAP diagnostics for all samples and maps any completed samples. The custom InferCNA summary is the authoritative per-sample stop/statistics record.
+####################
+
+####################
+## 16 Jul 2026 Final MP SCENIC Excel Summaries
+
+- `analysis/cell_states/final_mp_scenic.R` now writes two live Excel workbooks after SCENIC completes: `ref_outs/final_mp_scenic/Auto_final_mp_scenic_regulons_by_mp.xlsx` and `ref_outs/final_mp_scenic/Auto_final_mp_scenic_regulons_by_state.xlsx`.
+- Each workbook contains an all-regulon RSS overview and ranked per-MP or per-state worksheets with RSS, RSS rank, mean AUCell activity, and SCENIC target summaries. Both outputs use scATLAS only; PDO data are not included.
+####################
+
+####################
+## 16 Jul 2026 SCENIC Parse Timepoint Comparison
+
+- `analysis/cell_states/final_mp_scenic_parse_overlap.R` now compares *within-run* regulon-enrichment signatures, rather than treating raw RSS values from independently inferred scRef and Parse SCENIC networks as directly comparable.
+- The primary metric is the positive cosine similarity of per-TF RSS z-scores (RSS z-scored over labels within each dataset); supporting metrics are signed Spearman profile correlation and weighted Jaccard overlap of the top enriched TF regulons. The Parse balanced-2,600-cells-per-timepoint RSS is used when present, with the full Parse RSS only as a fallback.
+- Target-gene overlap is not a timepoint-similarity metric: the Parse workflow learns one combined regulon network, so target sets do not vary by timepoint. The old global min-max raw-RSS/Jaccard combined score is therefore retired.
+- Main output: `ref_outs/final_mp_scenic/parse_overlap/figures/{mp,state}_timepoint_regulon_enrichment_similarity_heatmap.pdf`; detailed drivers are in `tables/*_leading_concordant_regulons.csv` and the compact update summary is `updates/new_updates/summaries/final_mp_scenic_parse_overlap_summary.csv`.
+- The two primary heatmaps deliberately show only the positive enrichment cosine and a black outline for the closest timepoint. Supporting metrics stay in the tables. Separate multi-page evidence-profile PDFs (`{mp,state}_timepoint_regulon_match_evidence_profiles.pdf`) show the leading per-regulon within-run RSS z-scores across the scRef entity and all Parse timepoints, with the matched timepoint outlined.
+- Weighted Jaccard overlap is also exported as separate `{mp,state}_timepoint_top_regulon_jaccard_heatmap.pdf` supporting-evidence figures. It is never combined with the primary cosine score and its outlined maximum is not labelled as the primary match.
+####################
+
+####################
+## 20 Jul 2026 Visium HD Three-Method Comparison Correction
+
+- The three methods are named `Binned RCTD`, `Binned custom`, and `Segmented custom`. Custom manual annotation uses the same biological hierarchy and marker panels for binned singlets and segmented cells; only Leiden resolution and measurement-specific QC differ.
+- The final shared manual thresholds, recalibrated after retaining every custom RCTD singlet, are marker log2FC `>= 1.0`, within-cluster detection `>= 0.10`, detection increase `>= 0.05`, and BH-adjusted `P <= 0.05`. The production hierarchy is protected differential calls, fibroblast differential call, epithelial absolute residual, protected raw-score fallback (`> 0.10`), then epithelial/fibroblast raw-score fallback. The fallback occurs only after the spillover-protected stages and produces complete cluster labels.
+- Custom binned annotation must not apply the segmented-cell 200-UMI/15%-mitochondrial exclusion to RCTD singlets. Every RCTD singlet is manually clustered and annotated; otherwise excluded bins reappear as artificial `unresolved` labels.
+- Binned RCTD and binned custom InferCNA runs use the same RCTD-singlet observation universe and the same RCTD-derived two-compartment normal reference per sample. This ensures identical binned barcodes have identical CNA scatter coordinates and thresholds; annotations change the epithelial subset, not the CNA coordinate system. Custom reuses the validated finalized binned InferCNA matrix and recomputes annotation-dependent gates. Segmented custom remains independently referenced because segmented cells are a different measurement unit.
+- `analysis/spatial/visiumhd_compare_annotation_infercna.R` creates the final common-axis three-method InferCNA comparison PDF and paired binned-coordinate summary. Its PBS wrapper is `analysis/spatial/visiumhd_compare_annotation_infercna.sh`.
+- `SCREF_RUN_MODE=binned_downstream` rebuilds binned RCTD annotation, common-reference InferCNA, state maps, and diagnostics, then exits before the segmented branch.
+- `SCREF_REUSE_CUSTOM_ANNOTATION=TRUE` skips custom reclustering in `SCREF_RUN_MODE=custom` after a successful calibrated annotation-only run; custom CNA then reuses the validated finalized binned InferCNA matrix.
+- The final three-method comparison has paired binned CNA signal/correlation `r = 1.0` and maximum absolute difference `0` in every sample. The comparison PDF is `ref_outs/visium_hd_outs/malignancy/figures/Auto_visiumhd_three_method_infercna_comparison.pdf`.
+- Full-CNA keratinocyte profiling treats zero mapped keratinocyte targets as a valid `no_keratinocyte_targets` status and leaves malignancy unchanged. Final targets were SUR1231 `1,551`, FFPEA1 `0`, and FFPED1 `1,481`.
+####################
+
+
+####################
+## 22 Jul 2026 Visium HD Spatial Spillover Annotation
+
+- `analysis/spatial/visiumhd_spatial_spillover_annotation.py` adds the `spatial` method on segmented cells. It uses a sparse donor-normalised Gaussian centroid graph, calibrates sigma and contamination fraction from residual neighbour dependence plus source-signal retention, subtracts expected marker-gene UMIs with a zero floor, then annotates global Leiden clusters from corrected marker enrichment.
+- Calibration is label-free and per sample. Sigma is expressed relative to the median cell-centroid nearest-neighbour distance; raw donor UMIs provide transcript-abundance calibration, so no second global-mean multiplier is used. Full grids and selected sparse kernels are retained under `ref_outs/visium_hd_outs/{tables,intermediate}/`.
+- Cell-type score and ambiguity thresholds are selected by within-cluster bootstrap stability. Multiple supported types are retained with `|`; unsupported clusters remain `unresolved`. Exact epithelial calls alone enter InferCNA and centred state mapping.
+- `analysis/spatial/visiumhd_spatial_spillover_workflow.sh` provides an `SCREF_RUN_MODE=annotation_only` checkpoint and the full InferCNA, state, spatial/UMAP diagnostic, and four-method comparison workflow. Methodology: `analysis/methodology/spatial/visiumhd_spatial_spillover_annotation_methodology.md`.
+- Final calibration selected `sigma_multiplier=0.75` and `contamination_fraction=0.30` in all samples, with high-source retention 0.967--0.994. Minimum annotation z-score was 0 (above the tissue-wide corrected panel mean); ambiguity gaps were 0.50 for SUR1231/FFPEA1 and 0.15 for FFPED1, with marker support required for every non-top competitor.
+- Final FFPED1 spatial calls include fibroblast 4,225, endothelial 1,943, macrophage 855, NK 376, and `t.cell|b.cell` 963. InferCNA completed for all samples using fibroblast plus endothelial references; malignant epithelial totals were SUR1231 5,925, FFPEA1 7,537, and FFPED1 5,884. The four-method comparison is `ref_outs/visium_hd_outs/malignancy/figures/Auto_visiumhd_four_method_infercna_comparison.pdf`.
+- Raw-versus-corrected annotation audit (23 Jul 2026): holding clusters and annotation parameters fixed, correction changed 0% of SUR1231 labels, 1.66% of FFPEA1 labels (one epithelial-to-lymph cluster), and 0% of FFPED1 labels. Median fibroblast-score reductions were 4.0%, 5.0%, and 8.5%, respectively. Pages 1--2 of each `Auto_<sample>_spatial_spillover_diagnostics.pdf` now compare uncorrected versus corrected labels on spatial coordinates and the same whole-transcriptome UMAP; transition tables are saved beside annotation outputs.
+####################
+####################
+## 23 Jul 2026 Final Visium HD Annotation
+
+- `analysis/spatial/visium_hd_samples.tsv` is the canonical Visium HD input
+  manifest. The verified Frozen samples are `OCT-SUR1122` and `OCT-SUR1231`;
+  Space Ranger metadata confirms the former is `SUR1122`, not `SUR1121`.
+- `analysis/spatial/visium_hd_rctd_doublet_detection.R` uses RCTD only as a
+  16 um singlet/non-singlet gate and can import matching completed caches from
+  the live `ref_outs/visium_hd_outs/legacy_visiumhd/rctd/` archive.
+- `analysis/spatial/visium_hd_celltype_annotation.py` is the final shared
+  binned/segmented cell-type annotator. Both representations use the same
+  normalisation, Leiden resolution, cluster-versus-rest marker DGE thresholds,
+  hierarchical protected-lineage rule and coexpression filter.
+- DGE is intentionally uncorrected for spatial spillover. Epithelial or
+  fibroblast coexpression with any other lineage is permitted; unrelated
+  protected-lineage coexpression is filtered.
+- Submit `analysis/spatial/run_visium_hd_annotation.sh`. Outputs are written to
+  `ref_outs/visium_hd_outs/`; the old multi-method workflow is retained only
+  under `analysis/spatial/legacy_visiumhd/`.
+- Methodology:
+  `analysis/methodology/spatial/visium_hd_final_annotation_methodology.md`.
+####################
+
+####################
+## 23 Jul 2026 Final Visium HD Annotation Run
+
+- Final PBS job `3413263` completed with exit status 0. Canonical outputs are
+  under `ref_outs/visium_hd_outs/{rctd,intermediate,tables,figures,logs}/`.
+- The shared annotator performs one targeted reclustering pass whenever an
+  initial cluster supports more than one protected lineage. This recovered
+  FFPED1 segmented macrophages that were otherwise masked by stronger plasma
+  evidence in the same initial cluster.
+- Final FFPED1 segmented singlet calls include fibroblast 7,991, epithelial
+  6,324, keratinocyte 2,648, endothelial 2,440, plasma 1,813, T cell 382,
+  macrophage 140, B cell 101, and NK cell 54.
+- `OCT-SUR1122` is exceptionally shallow: the fixed 200-UMI gate retains only
+  156 binned observations for RCTD (149 singlets) and 107 segmented cells.
+  Treat this sample as low-coverage for downstream CNA/state analysis unless a
+  separately justified lower-depth workflow is developed.
+####################
+
+####################
+## 24 Jul 2026 Final Visium HD Annotation Refinement
+
+- RCTD now uses its native 100-UMI minimum for 16 um bins. The completed
+  forced rebuild is cached under `ref_outs/visium_hd_outs/rctd/`.
+- Both binned singlets and segmented cells use annotation-specific Leiden
+  overclustering at resolution 6.0. This prevents rare-lineage marker evidence
+  from being diluted within large epithelial/fibroblast clusters; final labels
+  merge clusters with the same supported cell type.
+- Marker support requires a cluster of at least 20 observations, at least a
+  2-percentage-point detection increase over the rest of the sample, greater
+  cluster mean CP10K expression, and two supported genes for panels containing
+  three or more genes. There is no separate absolute prevalence floor.
+- Clusters supporting multiple protected lineages receive one local Leiden
+  refinement at resolution 1.0. Whole-transcriptome Wilcoxon DGE excludes any
+  residual singleton because singleton-versus-rest statistics are undefined.
+- This refinement recovered supported SUR1231 T-cell calls (60 binned
+  singlets and 35 segmented cells). FFPED1 segmented calls include macrophage
+  2,295, NK 595, T cell 529, B cell 286, mast 1,196, and dendritic 91.
+- SUR1122 remains exceptionally shallow even at the native RCTD minimum:
+  346 binned observations pass 100 UMIs, of which 289 are RCTD singlets; 234
+  segmented cells pass the shared QC. Do not lower the UMI floor within this
+  RCTD workflow.
+- Final annotation-only rerun PBS job `3417268` completed with exit status 0.
+  Parameter audit:
+  `ref_outs/visium_hd_outs/tables/Auto_visiumhd_annotation_parameters.csv`.
+####################
+
+####################
+## 26 Jul 2026 Visium HD UMAP And Interactive Audit
+
+- Final annotation diagnostics now use a presentation-only legacy-style UMAP:
+  observations require 200 UMIs for embedding, genes require detection in at
+  least 10 embedded observations, `total_counts` and `pct_counts_mt` are
+  regressed from 3,000 HVGs, scaled values are capped at 10, and PCA/15-cosine
+  neighbour UMAP uses `min_dist=0.5`, `spread=1.0`, and seed 0. Annotation
+  clusters and the 100-UMI annotation universe are unchanged.
+- SUR1231 segmented has 23,368 cells in the legacy-quality embedding. Its new
+  coordinates have Procrustes similarity 0.976 to the archived spatial
+  spillover UMAP. The final plot shows 23,241 because 127 incompatible
+  coexpression calls fail the display filter.
+- Root script `visium_hd_annotation.R` is a strictly linear interactive audit
+  for one selected sample and method. It exposes all RCTD, QC, graph,
+  marker-evidence, refinement, hierarchy, coexpression, UMAP, and plotting
+  parameters; it defines no helper functions and does not write by default.
+- The audit script calls native `leidenbase` directly because Seurat's
+  `algorithm=4` wrapper requires an unavailable Python `leidenalg` module in
+  the dmtcp environment. A full SUR1122 segmented validation completed with
+  exit status 0.
+- Production replot PBS job `3441437` completed with exit status 0.
 ####################

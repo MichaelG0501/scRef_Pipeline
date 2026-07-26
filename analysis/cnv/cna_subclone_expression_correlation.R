@@ -21,8 +21,8 @@
 #   ref_outs/Auto_malignant_subclone_mp/Auto_malignant_subclone_summary.csv
 #   ref_outs/Auto_malignant_subclone_mp/Auto_malignant_subclone_mp_subclone_tests.csv
 #   ref_outs/by_samples/<sample>/<sample>_outs.rds
-#   ref_outs/OAC_CNV.xlsx
-#   ref_outs/41588_2018_331_MOESM3_ESM.xlsx
+#   /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/OAC_CNV_summary.xlsx
+#   /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/OAC_CNV_all.xlsx
 #
 # Outputs:
 #   ref_outs/Auto_cna_subclone_expression/
@@ -52,24 +52,30 @@ suppressPackageStartupMessages({
 options(stringsAsFactors = FALSE)
 set.seed(42)
 
+args <- commandArgs(trailingOnly = TRUE)
+robust_effect_size_threshold <- if (length(args) >= 1 && nzchar(args[1])) as.numeric(args[1]) else 1.0
+
 replot_only <- identical(Sys.getenv("SCREF_REPLOT_ONLY"), "TRUE")
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
-out_dir <- "Auto_cna_subclone_expression"
+out_dir <- file.path("Auto_cna_subclone_expression", paste0("threshold_", robust_effect_size_threshold))
 table_dir <- file.path(out_dir, "tables")
 figure_dir <- file.path(out_dir, "figures")
-rds_dir <- file.path(out_dir, "rds")
+ephemeral_out_dir <- file.path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_cna_subclone_expression", paste0("threshold_", robust_effect_size_threshold))
+rds_dir <- file.path(ephemeral_out_dir, "rds")
+
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(figure_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(rds_dir, recursive = TRUE, showWarnings = FALSE)
 
-subclone_dir <- "Auto_malignant_subclone_mp"
+subclone_dir <- file.path("Auto_malignant_subclone_mp", paste0("threshold_", robust_effect_size_threshold))
 cell_path <- file.path(subclone_dir, "Auto_malignant_subclone_cells.csv")
 summary_path <- file.path(subclone_dir, "Auto_malignant_subclone_summary.csv")
 mp_subclone_path <- file.path(subclone_dir, "Auto_malignant_subclone_mp_subclone_tests.csv")
-oac_cnv_path <- "OAC_CNV.xlsx"
-occams_path <- "41588_2018_331_MOESM3_ESM.xlsx"
+oac_cnv_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/OAC_CNV_summary.xlsx"
+occams_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/OAC_CNV_all.xlsx"
 
 required_paths <- c(cell_path, summary_path, mp_subclone_path, oac_cnv_path, occams_path)
 missing_paths <- required_paths[!file.exists(required_paths)]
@@ -100,62 +106,72 @@ centromere_pos <- c(
 )
 
 mp_descriptions <- c(
-  "MP1" = "G2M Cell Cycle",
-  "MP7" = "DNA Damage Repair",
-  "MP9" = "G1S Cell Cycle",
-  "MP2" = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5" = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8" = "Intestinal Diff.",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP12" = "Neuro-responsive Epi",
-  "MP15" = "Immune Infiltration"
+  "MP1" = "G2/M cell cycle",
+  "MP5" = "G1/S cell cycle",
+  "MP13+" = "replication-stress-associated cell cycling",
+  "MP2+" = "MYC driven biosynthesis",
+  "MP14" = "Squamoid/basal transition",
+  "MP3+" = "Basal-columnar invasive epithelium",
+  "MP6+" = "Stress-reactive columnar epithelium",
+  "MP11+" = "Epithelial antiviral interferon response",
+  "MP9+" = "Metabolic columnar epithelium",
+  "MP10+" = "Intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP18b" = "Mucous-secretory differentiation",
+  "MP17" = "Immune-interactive glandular progenitor",
+  "MP2x" = "Wnt-active glandular stem/progenitor",
+  "MP12" = "Hypoxic inflammatory adaptive plasticity",
+  "MP15" = "T/NK-like cancer-cell immune mimicry",
+  "MP11c" = "Excluded",
+  "MP18a" = "Excluded"
 )
 
-mp_order <- c("MP1", "MP7", "MP9", "MP2", "MP17", "MP14", "MP5", "MP10",
-              "MP8", "MP18", "MP16", "MP13", "MP12", "MP15")
+mp_order <- c("MP1", "MP5", "MP13+", "MP2+", "MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+",
+              "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x", "MP12", "MP15")
 
 state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
-  "Stress-adaptive",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation",
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "SMG to intestinal metaplasia",
+  "Stress adaptive",
+  "Cancer-cell immune mimicry",
   "Unresolved",
   "Hybrid"
 )
 
 state_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Stress-adaptive" = "#984EA3",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#666666",
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8",
   "Unresolved" = "grey80",
   "Hybrid" = "black"
 )
 
 mp_cols <- c(
   "MP1" = "#B0B0B0",
-  "MP7" = "#999999",
-  "MP9" = "#C0C0C0",
-  "MP2" = "#E41A1C",
-  "MP17" = "#4DAF4A",
+  "MP5" = "#C0C0C0",
+  "MP13+" = "#999999",
+  "MP2+" = "#E41A1C",
   "MP14" = "#8DA0CB",
-  "MP5" = "#66C2A5",
-  "MP10" = "#A6D854",
-  "MP8" = "#FC8D62",
-  "MP18" = "#FF7F00",
+  "MP3+" = "#4DAF4A",
+  "MP6+" = "#66C2A5",
+  "MP11+" = "#A6D854",
+  "MP9+" = "#FC8D62",
+  "MP10+" = "#FF7F00",
+  "MP8+" = "#FFD92F",
+  "MP8b" = "#E78AC3",
   "MP16" = "#FFD92F",
-  "MP13" = "#984EA3",
-  "MP12" = "#E78AC3",
-  "MP15" = "#377EB8"
+  "MP18b" = "#FF7F00",
+  "MP17" = "#4DAF4A",
+  "MP2x" = "#E41A1C",
+  "MP12" = "#984EA3",
+  "MP15" = "#377EB8",
+  "MP11c" = "grey80",
+  "MP18a" = "grey80"
 )
 
 safe_mean <- function(x) {
@@ -262,12 +278,11 @@ subclone_colours <- function(values) {
 }
 
 state_display <- c(
-  "Classic Proliferative" = "state__Classic_Proliferative",
-  "Basal to Intestinal Metaplasia" = "state__Basal_to_Intestinal_Metaplasia",
-  "SMG-like Metaplasia" = "state__SMG_like_Metaplasia",
-  "Stress-adaptive" = "state__Stress_adaptive",
-  "Immune Infiltrating" = "state__Immune_Infiltrating",
-  "3CA EMT/Protein maturation" = "state__3CA_EMT_and_Protein_maturation"
+  "Classic proliferation" = "state__Classic_proliferation",
+  "Basal to intestinal metaplasia" = "state__Basal_to_intestinal_metaplasia",
+  "SMG to intestinal metaplasia" = "state__SMG_to_intestinal_metaplasia",
+  "Stress adaptive" = "state__Stress_adaptive",
+  "Cancer-cell immune mimicry" = "state__Cancer_cell_immune_mimicry"
 )
 
 event_label <- function(event_id, known_genes = NULL) {
@@ -559,7 +574,7 @@ features <- cell_summary %>%
   left_join(state_prop, by = "subclone_id") %>%
   left_join(top_mp_prop, by = "subclone_id")
 
-cc_mp_cols <- intersect(paste0("mp__", c("MP1", "MP7", "MP9")), colnames(features))
+cc_mp_cols <- intersect(paste0("mp__", c("MP1", "MP5", "MP13+")), colnames(features))
 if (length(cc_mp_cols) > 0) {
   features$cell_cycle_mp_mean <- rowMeans(features[, cc_mp_cols, drop = FALSE], na.rm = TRUE)
 }
@@ -634,16 +649,16 @@ features <- features %>%
 write_table(dominance_df, "Auto_dominant_clone_summary.csv")
 write_table(features, "Auto_subclone_feature_summary_with_dominance.csv")
 
-classic_state_col <- paste0("state__", clean_feature_name("Classic Proliferative"))
-basal_state_col <- paste0("state__", clean_feature_name("Basal to Intestinal Metaplasia"))
-smg_state_col <- paste0("state__", clean_feature_name("SMG-like Metaplasia"))
-stress_state_col <- paste0("state__", clean_feature_name("Stress-adaptive"))
-immune_state_col <- paste0("state__", clean_feature_name("Immune Infiltrating"))
+classic_state_col <- paste0("state__", clean_feature_name("Classic proliferation"))
+basal_state_col <- paste0("state__", clean_feature_name("Basal to intestinal metaplasia"))
+smg_state_col <- paste0("state__", clean_feature_name("SMG to intestinal metaplasia"))
+stress_state_col <- paste0("state__", clean_feature_name("Stress adaptive"))
+immune_state_col <- paste0("state__", clean_feature_name("Cancer-cell immune mimicry"))
 hybrid_state_col <- paste0("state__", clean_feature_name("Hybrid"))
 unresolved_state_col <- paste0("state__", clean_feature_name("Unresolved"))
 
 target_features <- unique(c(
-  paste0("mp__", c("MP1", "MP7", "MP9", "MP2", "MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16", "MP13", "MP12", "MP15")),
+  paste0("mp__", mp_order),
   "cell_cycle_mp_mean",
   classic_state_col,
   basal_state_col,
@@ -1609,25 +1624,7 @@ legacy_event_call_threshold <- 0.10
 max_plot_cells <- 1200L
 cna_colour_limit <- 0.15
 
-mp_descriptions <- c(
-  "MP1" = "G2M Cell Cycle",
-  "MP7" = "DNA Damage Repair",
-  "MP9" = "G1S Cell Cycle",
-  "MP2" = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5" = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8" = "Intestinal Diff.",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP12" = "Neuro-responsive Epi",
-  "MP15" = "Immune Infiltration"
-)
 
-mp_order <- c("MP1", "MP7", "MP9", "MP2", "MP17", "MP14", "MP5", "MP10",
-              "MP8", "MP18", "MP16", "MP13", "MP12", "MP15")
 mp_features <- paste0("mp__", mp_order)
 mp_features <- mp_features[mp_features %in% colnames(features)]
 
@@ -1909,7 +1906,7 @@ event_feature_tests_v2 <- bind_rows(lapply(recurrent_events, function(ev) {
   mutate(
     paired_p_adj_global = p.adjust(.data$paired_p_value, method = "BH"),
     unpaired_p_adj_global = p.adjust(.data$unpaired_p_value, method = "BH"),
-    sig_label = p_to_stars(.data$unpaired_p_adj_group),
+    sig_label = ifelse(.data$feature_group == "Metaprogrammes" & abs(.data$unpaired_median_delta) < 1.00, "", p_to_stars(.data$unpaired_p_adj_group)),
     neglog10_fdr = pmin(-log10(pmax(.data$unpaired_p_adj_group, 1e-12)), 12),
     primary_delta = .data$unpaired_median_std_delta,
     primary_p_adj_group = .data$unpaired_p_adj_group
@@ -1962,7 +1959,7 @@ dominant_tests_v2 <- dominant_deltas_v2 %>%
   ungroup() %>%
   mutate(
     wilcox_p_adj_global = p.adjust(.data$wilcox_p_value, method = "BH"),
-    sig_label = p_to_stars(.data$wilcox_p_adj_group),
+    sig_label = ifelse(.data$feature_group == "Metaprogrammes" & abs(.data$median_delta) < 1.00, "", p_to_stars(.data$wilcox_p_adj_group)),
     neglog10_fdr = pmin(-log10(pmax(.data$wilcox_p_adj_group, 1e-12)), 12)
   )
 
@@ -2363,7 +2360,7 @@ plot_event_boxplots <- function(group_name, title_suffix, event_ids) {
     left_join(
       df %>%
         group_by(.data$event_id, .data$feature) %>%
-        summarise(star_y = max(.data$feature_z, na.rm = TRUE) + 0.25, .groups = "drop"),
+        summarise(star_y = max(.data$feature_z, na.rm = TRUE) + 1.00, .groups = "drop"),
       by = c("event_id", "feature")
     )
   ggplot(df, aes(x = .data$feature_label, y = .data$feature_z, fill = .data$event_group)) +
@@ -2488,7 +2485,7 @@ dev.off()
 chr8q_myc <- arm_long %>%
   filter(.data$arm == "chr8q") %>%
   select(.data$sample, .data$subclone, .data$subclone_id, .data$cna_call) %>%
-  left_join(features %>% select(.data$sample, .data$subclone, .data$subclone_id, .data$mp__MP2, .data$n_cells),
+  left_join(features %>% select(.data$sample, .data$subclone, .data$subclone_id, .data[["mp__MP2+"]], .data$n_cells),
             by = c("sample", "subclone", "subclone_id")) %>%
   mutate(
     chr8q_group = case_when(
@@ -2501,8 +2498,8 @@ chr8q_myc <- arm_long %>%
 if (nrow(chr8q_myc) > 0) {
   group_n <- chr8q_myc %>%
     group_by(.data$chr8q_group) %>%
-    summarise(n = n(), y = max(.data$mp__MP2, na.rm = TRUE) + 0.02, .groups = "drop")
-  p_gain8q_myc <- ggplot(chr8q_myc, aes(.data$chr8q_group, .data$mp__MP2, fill = .data$chr8q_group)) +
+    summarise(n = n(), y = max(.data[["mp__MP2+"]], na.rm = TRUE) + 0.02, .groups = "drop")
+  p_gain8q_myc <- ggplot(chr8q_myc, aes(.data$chr8q_group, .data[["mp__MP2+"]], fill = .data$chr8q_group)) +
     geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.7, width = 0.62) +
     geom_point(aes(size = .data$n_cells), position = position_jitter(width = 0.14, height = 0),
                alpha = 0.42, color = "black") +

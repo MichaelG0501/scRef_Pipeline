@@ -38,7 +38,7 @@ cells_e17a <- cells %>% filter(sample == "Strasser_2025_E17A")
 if(nrow(cells_e17a) == 0) stop("No cells found for Strasser_2025_E17A")
 
 message("Loading UCell scores...")
-ucell_path <- file.path(SCREF_REF_OUTS_DIR, "Metaprogrammes_Results", "UCell_nMP19_filtered.rds")
+ucell_path <- file.path(SCREF_REF_OUTS_DIR, "Metaprogrammes_Results", "centred", "mp_refinement", "intermediate", "merged_refined_ucell_scores.rds")
 ucell <- readRDS(ucell_path)
 
 common_cells <- intersect(rownames(ucell), cells_e17a$cell)
@@ -47,7 +47,7 @@ cells_e17a <- cells_e17a %>% filter(cell %in% common_cells)
 message("Z-scoring UCell scores across the cohort...")
 ucell_scaled <- as.data.frame(scale(ucell))
 
-requested_mps <- paste0("MP", c(1, 2, 8, 16, 13, 15))
+requested_mps <- c("MP1", "MP2+", "MP8+", "MP16", "MP12", "MP15")
 missing_mps <- setdiff(requested_mps, colnames(ucell_scaled))
 if(length(missing_mps) > 0) stop("Missing MPs in UCell object: ", paste(missing_mps, collapse = ", "))
 
@@ -78,20 +78,26 @@ e17a_tests <- tests_df %>%
   )
 
 mp_descriptions <- c(
-  "MP1" = "G2M Cell Cycle",
-  "MP7" = "DNA Damage Repair",
-  "MP9" = "G1S Cell Cycle",
-  "MP2" = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5" = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8" = "Intestinal Diff.",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP12" = "Neuro-responsive Epi",
-  "MP15" = "Immune Infiltration"
+  "MP1" = "G2/M cell cycle",
+  "MP5" = "G1/S cell cycle",
+  "MP13+" = "replication-stress-associated cell cycling",
+  "MP2+" = "MYC driven biosynthesis",
+  "MP14" = "Squamoid/basal transition",
+  "MP3+" = "Basal-columnar invasive epithelium",
+  "MP6+" = "Stress-reactive columnar epithelium",
+  "MP11+" = "Epithelial antiviral interferon response",
+  "MP9+" = "Metabolic columnar epithelium",
+  "MP10+" = "Intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP18b" = "Mucous-secretory differentiation",
+  "MP17" = "Immune-interactive glandular progenitor",
+  "MP2x" = "Wnt-active glandular stem/progenitor",
+  "MP12" = "Hypoxic inflammatory adaptive plasticity",
+  "MP15" = "T/NK-like cancer-cell immune mimicry",
+  "MP11c" = "Excluded",
+  "MP18a" = "Excluded"
 )
 
 # Replace MP names with descriptions, formatted for plotting

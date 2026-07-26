@@ -15,3 +15,7 @@ Spatial scripts must document:
 - output locations
 - whether they overwrite previous mapping results
 - whether they can replot from cached mapped scores
+
+## Visium HD Annotation And CNA Gate
+
+`visiumhd_rctd_annotation.R`, `visiumhd_infercna_malignancy.R`, and the gated stages in `process_visium_hd.py` are documented in `analysis/methodology/spatial/visium_hd_annotation_cnv_methodology.md`. They annotate each modality before state mapping, retain only epithelial observations, define malignancy from InferCNA using two within-sample normal reference compartments, and map states only in malignant epithelial observations.

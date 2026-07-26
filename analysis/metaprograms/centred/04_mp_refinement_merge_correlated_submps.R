@@ -13,7 +13,7 @@
 #   programs using the same GeneNMF-style consensus method as mp_refinement_submp.R.
 #
 # Inputs:
-#   - ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
+#   - ref_outs/Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_19.rds
 #   - ref_outs/geneNMF_outs.rds
 #   - ref_outs/EAC_Ref_epi.rds
 #   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/split_results.rds

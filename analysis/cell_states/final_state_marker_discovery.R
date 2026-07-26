@@ -1494,40 +1494,40 @@ plot_coexpr_scatter <- function(expr_mat, gene1, gene2, state_title) {
 }
 
 # ============================
-# Basal to IM: CEACAM6 vs DUOX2
+# Basal to IM: CEACAM6 vs KRT17
 # ============================
 basal_cells <- colnames(tmdata_state6)[tmdata_state6$final_state6 == "Basal to intestinal metaplasia"]
-basal_expr <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[c("CEACAM6", "DUOX2"), basal_cells]
-basal_c       <- sum(basal_expr["CEACAM6", ] > 0 & basal_expr["DUOX2", ] == 0)
-basal_d       <- sum(basal_expr["DUOX2", ] > 0  & basal_expr["CEACAM6", ] == 0)
-basal_both    <- sum(basal_expr["CEACAM6", ] > 0 & basal_expr["DUOX2", ] > 0)
-basal_neither <- sum(basal_expr["CEACAM6", ] == 0 & basal_expr["DUOX2", ] == 0)
+basal_expr <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[c("CEACAM6", "KRT17"), basal_cells]
+basal_c       <- sum(basal_expr["CEACAM6", ] > 0 & basal_expr["KRT17", ] == 0)
+basal_d       <- sum(basal_expr["KRT17", ] > 0  & basal_expr["CEACAM6", ] == 0)
+basal_both    <- sum(basal_expr["CEACAM6", ] > 0 & basal_expr["KRT17", ] > 0)
+basal_neither <- sum(basal_expr["CEACAM6", ] == 0 & basal_expr["KRT17", ] == 0)
 
-cat("\n--- Basal to IM (CEACAM6 vs DUOX2) ---\n")
-cat("CEACAM6 only:", basal_c, "\nDUOX2 only:", basal_d,
+cat("\n--- Basal to IM (CEACAM6 vs KRT17) ---\n")
+cat("CEACAM6 only:", basal_c, "\nKRT17 only:", basal_d,
     "\nBoth:", basal_both, "\nNeither:", basal_neither, "\n")
 
-p_basal_venn    <- plot_coexpr_venn("CEACAM6", "DUOX2", basal_c, basal_d, basal_both, basal_neither,
+p_basal_venn    <- plot_coexpr_venn("CEACAM6", "KRT17", basal_c, basal_d, basal_both, basal_neither,
                                     "Basal to intestinal metaplasia")
-p_basal_scatter <- plot_coexpr_scatter(basal_expr, "CEACAM6", "DUOX2", "Basal to IM")
+p_basal_scatter <- plot_coexpr_scatter(basal_expr, "CEACAM6", "KRT17", "Basal to IM")
 
 # ============================
-# SMG-like: AQP5 vs WFDC2
+# SMG-like: OLFM4 vs PPP1R1B
 # ============================
 smg_cells <- colnames(tmdata_state6)[tmdata_state6$final_state6 == "SMG to intestinal metaplasia"]
-smg_expr <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[c("AQP5", "WFDC2"), smg_cells]
-smg_a       <- sum(smg_expr["AQP5", ] > 0  & smg_expr["WFDC2", ] == 0)
-smg_w       <- sum(smg_expr["WFDC2", ] > 0 & smg_expr["AQP5", ] == 0)
-smg_both    <- sum(smg_expr["AQP5", ] > 0  & smg_expr["WFDC2", ] > 0)
-smg_neither <- sum(smg_expr["AQP5", ] == 0 & smg_expr["WFDC2", ] == 0)
+smg_expr <- GetAssayData(tmdata_state6, assay = "RNA", slot = "counts")[c("OLFM4", "PPP1R1B"), smg_cells]
+smg_a       <- sum(smg_expr["OLFM4", ] > 0  & smg_expr["PPP1R1B", ] == 0)
+smg_w       <- sum(smg_expr["PPP1R1B", ] > 0 & smg_expr["OLFM4", ] == 0)
+smg_both    <- sum(smg_expr["OLFM4", ] > 0  & smg_expr["PPP1R1B", ] > 0)
+smg_neither <- sum(smg_expr["OLFM4", ] == 0 & smg_expr["PPP1R1B", ] == 0)
 
-cat("\n--- SMG-like (AQP5 vs WFDC2) ---\n")
-cat("AQP5 only:", smg_a, "\nWFDC2 only:", smg_w,
+cat("\n--- SMG-like (OLFM4 vs PPP1R1B) ---\n")
+cat("OLFM4 only:", smg_a, "\nPPP1R1B only:", smg_w,
     "\nBoth:", smg_both, "\nNeither:", smg_neither, "\n")
 
-p_smg_venn    <- plot_coexpr_venn("AQP5", "WFDC2", smg_a, smg_w, smg_both, smg_neither,
+p_smg_venn    <- plot_coexpr_venn("OLFM4", "PPP1R1B", smg_a, smg_w, smg_both, smg_neither,
                                   "SMG to intestinal metaplasia")
-p_smg_scatter <- plot_coexpr_scatter(smg_expr, "AQP5", "WFDC2", "SMG to intestinal metaplasia")
+p_smg_scatter <- plot_coexpr_scatter(smg_expr, "OLFM4", "PPP1R1B", "SMG to intestinal metaplasia")
 
 # ============================
 # Combine: 2 rows × 2 cols  (Venn | Scatter)

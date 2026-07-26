@@ -4,7 +4,18 @@
 #   Script: analysis/metaprograms/centred/tcga_mp_survival_volcano_centred.R
 #   Methodology: adaptation of analysis/clinical/tcga_mp_state_survival_reg_noreg.R
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below.
+#
+# Description:
+#   Computes GSVA scores for centred metaprograms and state-union gene sets on
+#   TCGA ESCA (EAC) primary tumours. Runs univariate Cox proportional hazards
+#   models on the scores against Overall Survival (OS), generating volcano plots.
+#
+# Inputs:
+#   - ref_outs/TCGA/esca_gdc_reconstruction/tables/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
+#
+# Outputs:
+#   - ref_outs/Metaprogrammes_Results/centred/survival/
 ####################
 
 library(data.table)
@@ -16,7 +27,7 @@ library(gridExtra)
 library(survival)
 library(GSVA)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 task_prefix <- "task2_centred_mp"
 out_dir <- "Metaprogrammes_Results/centred/survival"

@@ -94,6 +94,7 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `cell_states/basal_smg_mp_signature_heatmap.R` | terminal figure/table | noreg states, noreg MP matrix, MP genes, cell-cycle genes | basal/SMG signature heatmap and bubble plots | terminal |
 | `cell_states/final_state_marker_discovery.R` | terminal report/table | `EAC_Ref_epi.rds`, `Auto_final_states.rds` | six-state markers, heatmaps, tables | terminal and marker interpretation |
 | `cell_states/final_mp_scenic.R` | heavy terminal workflow | final states, scRef/3CA UCell, MP genes, cisTarget DBs | SCENIC selected cells, regulons, networks | terminal |
+| `cell_states/final_mp_scenic_parse_overlap.R` | terminal workflow | final MP/state SCENIC RSS; balanced Parse timepoint RSS (full RSS fallback) | primary enrichment-cosine heatmaps, separate top-regulon Jaccard heatmaps, per-entity regulon-evidence profile PDFs, pairwise evidence/leading-TF tables, replot RDS, compact update summary | terminal cross-dataset comparison; raw RSS/min-max score retired because independent SCENIC RSS scales are not comparable |
 | `cell_states/pseudotime_top_diverse_samples.R` | heavy terminal/intermediate | final or noreg states, noreg MP matrix | Monocle pseudotime RDS/PDF summaries | terminal; reusable pseudotime objects |
 | `cell_states/pseudotime_state_distance_matrix.R` | heavy intermediate/terminal | `EAC_Ref_epi.rds`, noreg states | state-distance matrix RDS/CSV/PDF | input for distance nodeplot |
 | `cell_states/hybrid_pairwise_distance_nodeplot.R` | terminal figure | noreg states/group max, state-distance matrices | distance-aware hybrid nodeplots | terminal |
@@ -149,6 +150,21 @@ This document is the canonical map for `analysis/`. Update it whenever a script 
 | `spatial/export_scatlas_visium_signatures.R` | active export | MP object | Visium signature CSVs | spatial mapping |
 | `spatial/map_scatlas_states_visium.py` | active spatial | Visium data/signatures | mapped scATLAS states | terminal spatial |
 | `spatial/map_scatlas_states_xenium.py` | untracked spatial | Xenium data/signatures | mapped scATLAS states | terminal spatial; currently unstaged |
+| `spatial/export_scatlas_visiumhd_signatures.R` | active export | centred refined MP gene RDS | ranked MP/state CSV signatures | prerequisite for Visium HD gated mapping |
+| `spatial/visiumhd_rctd_annotation.R` | active spatial annotation | 16 um Visium HD bins, EAC merged reference | RCTD calls/weights, singlet epithelial gate tables | first binned gate before InferCNA/state mapping |
+| `spatial/process_visium_hd.py` | active spatial annotation/mapping | RCTD-binned, custom-binned, or segmented cells; RCTD/manual annotations, InferCNA calls, MP signatures | canonical annotation tables, cluster marker-evidence tables, and malignant epithelial state/MP tables/maps | shared hierarchy: non-epithelial/non-fibroblast differential calls first, fibroblast differential ECM call second, epithelial absolute module/co-detection residual last; custom uses RCTD labels only for non-singlet bins; state mapping only after malignancy gate |
+| `spatial/visiumhd_manual_annotation_threshold_calibration.py` | active spatial annotation calibration | custom and segmented annotation plus cluster-gene evidence tables | shared-threshold grid, cross-resolution/RCTD validation, reference counts, selected threshold CSV | RCTD singlet types are audit labels only; selection requires two normal reference types in every sample/mode |
+| `spatial/visiumhd_manual_annotation_threshold_calibration.sh` | active PBS wrapper | calibration Python script and completed evidence tables | live calibration tables and compact update summary | `ncpus=1`, `mem=8gb`, `walltime=1h`, jupyter env, live logging |
+| `spatial/visiumhd_spatial_spillover_annotation.py` | active spatial annotation | segmented counts and cell centroids | calibrated spillover-corrected annotations, raw-versus-corrected cluster evidence/transitions, comparison-first diagnostic PDFs, kernel/calibration audits | global clustering with raw-UMI Gaussian background correction |
+| `spatial/visiumhd_spatial_spillover_workflow.sh` | active PBS workflow | spatial annotation plus existing InferCNA/state scripts | complete fourth-method annotation, malignancy, state, spatial/UMAP, and comparison outputs | `annotation_only` checkpoint supported; live logging |
+| `spatial/visiumhd_compare_annotation_infercna.R` | terminal spatial comparison | completed binned, custom, segmented, and spatial InferCNA cell tables | four-method common-axis scatter PDF and paired binned correlation summary | plot-only comparison; one page per sample |
+| `spatial/visiumhd_compare_annotation_infercna.sh` | active PBS wrapper | four-method comparison R script | comparison PDF/table/update summary | `ncpus=1`, `mem=16gb`, `walltime=1h`, dmtcp env, live logging |
+| `spatial/visiumhd_infercna_malignancy.R` | active spatial CNA | canonical Visium HD annotations and raw count matrices | per-sample CNA matrices/scatters/malignancy tables | binned RCTD and binned custom share the RCTD-singlet CNA universe/reference; segmented custom and spatial each use two abundant eligible normal compartments from their own annotations |
+| `spatial/visiumhd_annotation_diagnostics.R` | active spatial diagnostics | canonical annotation tables, optional malignancy tables, and Visium HD count matrices | cached UMAP coordinates plus per-sample spatial/UMAP annotation and malignancy plots | uses Space Ranger UMAP when present, otherwise caches a Seurat UMAP |
+| `spatial/visiumhd_reclassify_binned_keratinocyte_normals.R` | active spatial malignancy correction | cached binned InferCNA tables and segmented manual annotations | corrected binned malignancy calls/scatters and keratinocyte-normal summary | retains RCTD epithelial annotation; normalises only keratinocyte-dominant bins in the malignancy layer |
+| `spatial/visiumhd_profile_classify_keratinocyte_bins.R` | active spatial malignancy correction | cached binned InferCNA matrices/cell tables with segmented keratinocyte composition | keratinocyte CNA-profile calls, diagnostics, and corrected binned malignancy outputs | distinguishes profile-supported malignant, normal-like, and indeterminate keratinocyte bins without relabelling RCTD; records valid `no_keratinocyte_targets` samples |
+| `spatial/visiumhd_keratinocyte_evidence_audit.R` | active spatial audit | final binned malignancy tables with segmented keratinocyte and CNA-profile fields | concise multipage PDF comparing keratinocyte-dominant and non-keratinocyte malignant evidence distributions | plot-only audit of overlap and AUC effect sizes |
+| `spatial/run_visium_hd_states.sh` | active PBS workflow | all Visium HD annotation/CNA/state inputs | ordered RCTD/manual/CNA/state run | submit with qsub; live logging enabled |
 
 ## Superseded Or No-Downstream Scripts
 
@@ -220,6 +236,20 @@ The following files or folders are intentionally not staged by agents unless the
 - `analysis/cnv/mp_chromosomal_mapping.R`
 - `analysis/spatial/map_scatlas_states_xenium.py`
 - `analysis/spatial/map_scatlas_states_xenium.sh`
+
+####################
+## TCGA-STAD Centred Bulk Location Analysis
+
+- `analysis/clinical/tcga_stad_bulk_download_and_gsva.R`
+  - Status: active.
+  - Purpose: Download TCGA-STAD bulk RNA-seq STAR-count files and per-sample metadata. Score updated centred MPs and state-union gene sets in TCGA-STAD primary-tumour bulk RNA-seq, then compare anatomical stomach locations and proximal cardia versus resolved distal non-cardia tumours.
+  - Inputs: GDC API TCGA-STAD RNA-seq `STAR - Counts`; cBioPortal API study `stad_tcga_gdc`; plus final centred MP genes.
+  - Outputs: TCGA-STAD source data, matrices and logs remain under `EAC_Ref_all/00_merged/stomach_bulk/`. Analysis outputs under `ref_outs/Metaprogrammes_Results/centred/bulk_tcga_stad_location_gsva/` with GSVA scores, sample-level/statistical tables, location and binary cardia-vs-distal boxplots, and a run summary.
+  - Methodology: `analysis/methodology/clinical/centred_stomach_bulk_location_gsva_methodology.md`.
+
+- `analysis/clinical/tcga_stad_bulk_download_and_gsva.sh`
+  - PBS wrapper: 4 CPUs, 64 GB, 16 hours, `dmtcp`.
+####################
 
 ####################
 
@@ -399,4 +429,38 @@ The following files or folders are intentionally not staged by agents unless the
 - `analysis/trajectory/scatlas_velocity_submit.sh`
   - Purpose: submit the full PBS dependency chain with live logging: metadata/reference prep, per-sample filter/sort, per-sample velocyto, scVelo visualisation, and R nodeplots.
   - Methodology: `analysis/methodology/trajectory/scatlas_velocity_methodology.md`.
+####################
+
+####################
+## 20 Jul 2026 Non-Malignant Whole-Celltype Direct-Annotation Extension
+
+- `analysis/non_malignant_nmf/mp_cross_celltype_correlations.R`
+  - Additional terminal outputs: `ref_outs/non_malignant_mp_correlations/05_cancer_mps_vs_whole_celltypes/` and `06_cancer_states_vs_whole_celltypes/`.
+  - Purpose: correlate cancer MPs or cancer states with the direct per-sample abundance of each final non-epithelial `celltype_update` annotation, rather than individual NMF MPs.
+  - Outputs: the same standard bundle as modes `01`--`04` (adjusted-score exports, node/shared-sample/cutoff tables, all/positive/negative correlations, bubble/network/focal-dotmap PDFs, Excel workbooks, and mode summaries), with a direct-annotation abundance CSV alongside it. Whole T-cell abundance replaces CD4/CD8 nodes. LR filenames are retained with an explicit `not_applicable` status because direct abundance has no MP gene set.
+  - Methodology: `analysis/methodology/non_malignant_nmf/mp_cross_celltype_correlations_methodology.md`.
+####################
+
+####################
+## Final MP SCENIC Workbook Outputs
+
+- `analysis/cell_states/final_mp_scenic.R`
+  - Status: terminal SCENIC reporting.
+  - Additional outputs: `ref_outs/final_mp_scenic/Auto_final_mp_scenic_regulons_by_mp.xlsx` and `ref_outs/final_mp_scenic/Auto_final_mp_scenic_regulons_by_state.xlsx`.
+  - Contents: all-regulon RSS overview plus ranked worksheets for each final MP or final state with RSS, RSS rank, mean-AUCell activity, and SCENIC target summaries. These are scATLAS-only summaries.
+####################
+####################
+## Final Visium HD two-method annotation (23 Jul 2026)
+
+| Script | Status | Inputs | Outputs | Role |
+| :--- | :--- | :--- | :--- | :--- |
+| `spatial/visium_hd_samples.tsv` | active manifest | verified Space Ranger output paths | sample/method input mapping | canonical input manifest for SUR1122, SUR1231, FFPEA1, and FFPED1 |
+| `spatial/visium_hd_rctd_doublet_detection.R` | active spatial annotation | 16 um bins, scATLAS merged reference, optional live legacy cache | RCTD objects, singlet/non-singlet tables and summaries | doublet-mode gate; RCTD cell type is not used for singlet annotation |
+| `spatial/visium_hd_celltype_annotation.py` | active spatial annotation | RCTD singlet bins and segmented cells | matched annotations, DGE evidence, UMAP caches, spatial/UMAP diagnostics | one fixed cluster/DGE hierarchy and coexpression rule for both final methods |
+| `spatial/run_visium_hd_annotation.sh` | active PBS workflow | manifest and the two annotation scripts | final two-method annotation outputs under `ref_outs/visium_hd_outs/` | `ncpus=8`, `mem=256gb`, `walltime=36h`, live logging |
+| `../visium_hd_annotation.R` | active interactive audit | one manifest-selected binned or segmented sample; optional scATLAS RCTD reference | in-session QC, graph, marker evidence, assignments and plots; optional `interactive_audit/` exports | strictly linear step-by-step R audit with all parameters exposed and no user-defined functions |
+
+Methodology: `analysis/methodology/spatial/visium_hd_final_annotation_methodology.md`.
+The older four-method and spillover-correction workflows remain archived under
+`analysis/spatial/legacy_visiumhd/` and are not part of this final annotation.
 ####################

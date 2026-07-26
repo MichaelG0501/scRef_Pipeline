@@ -50,7 +50,8 @@ library(readr)
 library(igraph)
 library(patchwork)
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+live_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs"
+setwd(live_dir)
 
 ####################
 # Output directories and constants
@@ -59,23 +60,23 @@ out_dir <- "state_distance_pseudotime"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(out_dir, "sample_state_trajectories"), recursive = TRUE, showWarnings = FALSE)
 
-summary_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/updates/new_updates/summaries"
+summary_dir <- file.path(live_dir, "../updates/new_updates/summaries")
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
 primary_states <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating"
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "Stress adaptive",
+  "SMG to intestinal metaplasia",
+  "Cancer-cell immune mimicry"
 )
 
 group_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive" = "#984EA3",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Immune Infiltrating" = "#377EB8"
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "Stress adaptive" = "#984EA3",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 ####################
@@ -336,8 +337,8 @@ extract_graph_bits <- function(cds) {
 # Load data and align cells
 ####################
 message("Loading data ...")
-tmdata_all <- readRDS("EAC_Ref_epi.rds")
-state_vec <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+tmdata_all <- readRDS(file.path(live_dir, "EAC_Ref_epi.rds"))
+state_vec <- readRDS(file.path(live_dir, "Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds"))
 
 common_cells <- intersect(Cells(tmdata_all), names(state_vec))
 tmdata_all <- tmdata_all[, common_cells]
@@ -536,7 +537,7 @@ for (sample_id in valid_samples) {
 
   if (nrow(sample_root_rows) == 0) next
 
-  basal_root_cells <- sample_meta$cell[sample_meta$state == "Basal to Intestinal Metaplasia"]
+  basal_root_cells <- sample_meta$cell[sample_meta$state == "Basal to intestinal metaplasia"]
   if (length(basal_root_cells) >= ROOT_MIN_CELLS) {
     basal_ordered_cds <- tryCatch(
       order_cells(cds, root_cells = basal_root_cells),

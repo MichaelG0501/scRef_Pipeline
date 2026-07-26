@@ -14,7 +14,7 @@
 # ligand-receptor support, and export reproducible summary tables.
 #
 # Inputs:
-#   ref_outs/EAC_Ref_merged_strict.rds
+#   ref_outs/EAC_Ref_merged.rds
 #   ref_outs/meta_full_epi.rds
 #   ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
 #   ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
@@ -53,6 +53,7 @@ library(openxlsx)
 
 resolve_project_dir <- function() {
   candidate_dirs <- c(
+    "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
     "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
     "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
   )
@@ -77,13 +78,13 @@ summary_dir <- file.path(project_dir, "updates", "new_updates", "summaries")
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
 args <- commandArgs(trailingOnly = TRUE)
-ucell_cutoff <- if (length(args) >= 1 && nzchar(args[1])) as.numeric(args[1]) else 0.25
+z_score_multiplier <- if (length(args) >= 1 && nzchar(args[1])) as.numeric(args[1]) else 1.0
 
-if (!is.finite(ucell_cutoff) || ucell_cutoff <= 0 || ucell_cutoff >= 1) {
-  stop("UCell cutoff must be a numeric value between 0 and 1")
+if (!is.finite(z_score_multiplier) || z_score_multiplier < 0) {
+  stop("z_score_multiplier must be a positive numeric value")
 }
 
-cache_version <- "2026-04-17_v5"
+cache_version <- "2026-07-14_v13"
 force_rebuild <- toupper(Sys.getenv("AUTO_MPXCELL_FORCE_REBUILD", "FALSE")) %in% c("TRUE", "1", "YES")
 pair_evidence_allowed <- c("literature supported", "putative")
 min_positive_samples <- 5
@@ -92,24 +93,23 @@ min_pair_samples <- 3
 positive_sig_cutoff <- 4
 negative_sig_cutoff <- -log10(0.05)
 top_ranked_genes <- 4000
-cutoff_grid <- sort(unique(c(0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50, ucell_cutoff)))
+cutoff_grid <- c(0.5, 1.0, 1.5, 2.0, z_score_multiplier)
+cutoff_grid <- sort(unique(cutoff_grid))
 annotated_positive_edges_n <- 18
 state_marker_top_n <- 100
 final_cancer_state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "Stress adaptive",
+  "SMG to intestinal metaplasia",
+  "Cancer-cell immune mimicry"
 )
 final_cancer_state_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive" = "#984EA3",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#666666"
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "Stress adaptive" = "#984EA3",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 celltype_display_order <- c("cancer", "fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma")
@@ -127,13 +127,18 @@ publication_colour_lookup <- c(
 )
 
 cancer_state_groups <- list(
-  "Classic Proliferative" = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive" = c("MP13", "MP12"),
-  "SMG-like Metaplasia" = c("MP18", "MP16"),
-  "Immune Infiltrating" = c("MP15")
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
-cancer_cc_mps <- c("MP1", "MP7", "MP9")
+cancer_cc_mps <- c("MP1", "MP5", "MP13+")
+cancer_excluded_mps <- c("MP11c", "MP18a")
+cancer_refined_gene_set_path <- file.path(
+  "Metaprogrammes_Results", "centred", "mp_refinement",
+  "intermediate", "merged_refined_mp_genes.rds"
+)
 
 celltype_cfg <- tibble(
   compartment = c("cancer", "fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma"),
@@ -141,7 +146,7 @@ celltype_cfg <- tibble(
   atlas_celltype = c("epithelial", "fibroblast", "endothelial", "t.cell", "t.cell", "macrophage", "nk.cell", "plasma"),
   subtype = c(NA, NA, NA, "cd8", "cd4", NA, NA, NA),
   mp_path = c(
-    file.path("Metaprogrammes_Results", "geneNMF_metaprograms_nMP_19.rds"),
+    file.path("Metaprogrammes_Results", "centred", "geneNMF_metaprograms_nMP_19.rds"),
     file.path("nmf_fibroblast", "MP_outs_default.rds"),
     file.path("nmf_endothelial", "MP_outs_default.rds"),
     file.path("nmf_cd8", "MP_outs_default.rds"),
@@ -151,7 +156,7 @@ celltype_cfg <- tibble(
     file.path("nmf_plasma", "MP_outs_default.rds")
   ),
   score_path = c(
-    file.path("Metaprogrammes_Results", "UCell_nMP19_filtered.rds"),
+    file.path("Metaprogrammes_Results", "centred", "mp_refinement", "intermediate", "merged_refined_ucell_scores.rds"),
     file.path("nmf_fibroblast", "UCell_default.rds"),
     file.path("nmf_endothelial", "UCell_default.rds"),
     file.path("nmf_cd8", "UCell_default.rds"),
@@ -164,20 +169,26 @@ celltype_cfg <- tibble(
 )
 
 cancer_mp_descriptions <- c(
-  "MP1" = "G2M Cell Cycle",
-  "MP2" = "MYC-related Proliferation",
-  "MP5" = "Epithelial IFN Resp.",
-  "MP7" = "DNA Damage Repair",
-  "MP8" = "Intestinal Diff.",
-  "MP9" = "G1S Cell Cycle",
-  "MP10" = "Columnar Diff.",
-  "MP12" = "Neuro-responsive Epi.",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP15" = "Immune Infiltration",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP17" = "Basal-like Transition",
-  "MP18" = "Secretory Diff. (Intest.)"
+  "MP1" = "G2/M cell cycle",
+  "MP5" = "G1/S cell cycle",
+  "MP13+" = "replication-stress-associated cell cycling",
+  "MP2+" = "MYC driven biosynthesis",
+  "MP14" = "Squamoid/basal transition",
+  "MP3+" = "Basal-columnar invasive epithelium",
+  "MP6+" = "Stress-reactive columnar epithelium",
+  "MP11+" = "Epithelial antiviral interferon response",
+  "MP9+" = "Metabolic columnar epithelium",
+  "MP10+" = "Intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP18b" = "Mucous-secretory differentiation",
+  "MP17" = "Immune-interactive glandular progenitor",
+  "MP2x" = "Wnt-active glandular stem/progenitor",
+  "MP12" = "Hypoxic inflammatory adaptive plasticity",
+  "MP15" = "T/NK-like cancer-cell immune mimicry",
+  "MP11c" = "Excluded",
+  "MP18a" = "Excluded"
 )
 
 pair_order_lookup <- setNames(seq_along(celltype_display_order), celltype_display_order)
@@ -239,26 +250,17 @@ sort_mp_names <- function(mp_names) {
   mp_names[order(as.numeric(gsub("\\D", "", mp_names)))]
 }
 
-order_cancer_mps <- function(mp_outs, keep_mps) {
+order_cancer_mps <- function(keep_mps) {
   keep_mps <- unique(keep_mps)
   state_ordered_mps <- unlist(cancer_state_groups, use.names = FALSE)
 
-  orig_order <- NULL
-  if (!is.null(mp_outs$programs.tree$order) && !is.null(mp_outs$programs.clusters)) {
-    orig_tree_order <- mp_outs$programs.tree$order
-    orig_clusters <- mp_outs$programs.clusters[orig_tree_order]
-    orig_order <- paste0("MP", unique(orig_clusters))
-  }
-  if (is.null(orig_order) || length(orig_order) == 0) {
-    orig_order <- sort_mp_names(keep_mps)
-  }
-
-  orig_order <- orig_order[orig_order %in% keep_mps]
-  unique(c(
-    orig_order[orig_order %in% cancer_cc_mps],
-    state_ordered_mps[state_ordered_mps %in% keep_mps],
-    orig_order
+  ordered <- unique(c(
+    cancer_cc_mps[cancer_cc_mps %in% keep_mps],
+    state_ordered_mps[state_ordered_mps %in% keep_mps]
   ))
+  remaining <- setdiff(keep_mps, ordered)
+  if (length(remaining) > 0) ordered <- c(ordered, sort_mp_names(remaining))
+  ordered
 }
 
 focal_direction_binary <- function(focal_is_driver, match_mode) {
@@ -346,10 +348,20 @@ make_sample_meta <- function(meta_df) {
   )
 }
 
-filter_gene_sets_by_silhouette <- function(mp_outs) {
+filter_gene_sets_by_silhouette <- function(mp_outs, skip_filtering = FALSE) {
   mp_genes <- mp_outs$metaprograms.genes
+  if (skip_filtering) return(mp_genes)
+
   sil <- mp_outs$metaprograms.metrics$silhouette
-  sil_names <- paste0("MP", seq_along(sil))
+  
+  if (!is.null(names(sil)) && length(names(sil)) == length(mp_genes)) {
+    sil_names <- names(sil)
+  } else if (!is.null(names(mp_genes)) && length(names(mp_genes)) == length(sil)) {
+    sil_names <- names(mp_genes)
+  } else {
+    sil_names <- paste0("MP", seq_along(sil))
+  }
+  
   names(sil) <- sil_names
   keep_names <- sil_names[!is.na(sil) & sil >= 0]
   mp_genes[intersect(names(mp_genes), keep_names)]
@@ -394,7 +406,7 @@ make_node_id <- function(compartment, feature_name) {
   )
 }
 
-calc_adjusted_scores <- function(score_df, sample_meta, mp_names, cutoff) {
+calc_adjusted_scores <- function(score_df, sample_meta, mp_names, z_mult) {
   common_cells <- intersect(rownames(score_df), sample_meta$cell)
   if (length(common_cells) == 0) {
     stop("No overlapping cells between score matrix and metadata")
@@ -402,7 +414,15 @@ calc_adjusted_scores <- function(score_df, sample_meta, mp_names, cutoff) {
 
   sample_meta <- sample_meta[match(common_cells, sample_meta$cell), , drop = FALSE]
   score_mat <- as.matrix(score_df[common_cells, mp_names, drop = FALSE])
-  positive_mat <- score_mat > cutoff
+  
+  cutoffs <- apply(score_mat, 2, function(x) {
+    m <- mean(x, na.rm = TRUE)
+    s <- sd(x, na.rm = TRUE)
+    if (is.na(s)) s <- 0
+    m + z_mult * s
+  })
+  
+  positive_mat <- sweep(score_mat, 2, cutoffs, ">")
 
   sample_factor <- factor(sample_meta$sample, levels = unique(sample_meta$sample))
   sample_counts <- as.numeric(table(sample_factor))
@@ -420,7 +440,8 @@ calc_adjusted_scores <- function(score_df, sample_meta, mp_names, cutoff) {
   list(
     adjusted_scores = adj_pct,
     coverage_counts = coverage_counts,
-    sample_counts = sample_counts
+    sample_counts = sample_counts,
+    applied_cutoffs = cutoffs
   )
 }
 
@@ -454,7 +475,8 @@ calc_adjusted_scores_from_positive_mat <- function(positive_mat, sample_meta, mp
   list(
     adjusted_scores = adj_pct,
     coverage_counts = coverage_counts,
-    sample_counts = sample_counts
+    sample_counts = sample_counts,
+    applied_cutoffs = rep(NA, length(mp_names))
   )
 }
 
@@ -469,8 +491,14 @@ calc_cutoff_sensitivity <- function(score_df, sample_meta, mp_names, cutoffs, co
   sample_factor <- factor(sample_meta$sample, levels = unique(sample_meta$sample))
   denominator_samples <- length(levels(sample_factor))
 
-  bind_rows(lapply(cutoffs, function(cutoff) {
-    positive_mat <- score_mat > cutoff
+  bind_rows(lapply(cutoffs, function(z_mult) {
+    dynamic_cutoffs <- apply(score_mat, 2, function(x) {
+      m <- mean(x, na.rm = TRUE)
+      s <- sd(x, na.rm = TRUE)
+      if (is.na(s)) s <- 0
+      m + z_mult * s
+    })
+    positive_mat <- sweep(score_mat, 2, dynamic_cutoffs, ">")
     sample_positive <- rowsum(positive_mat * 1, group = sample_factor, reorder = FALSE)
     coverage_n <- colSums(sample_positive > 0, na.rm = TRUE)
     positive_cell_fraction <- colMeans(positive_mat, na.rm = TRUE) * 100
@@ -478,7 +506,7 @@ calc_cutoff_sensitivity <- function(score_df, sample_meta, mp_names, cutoffs, co
     tibble(
       compartment = compartment,
       celltype_display = display_name,
-      cutoff = cutoff,
+      z_mult = z_mult,
       mp_name = mp_names,
       mp_display = vapply(mp_names, function(mp) format_mp_display(compartment, mp), character(1)),
       mp_index = as.numeric(gsub("\\D", "", mp_names)),
@@ -632,10 +660,10 @@ load_ramilowski_reference <- function(project_dir) {
 # derived from the ranked recurrent state-marker table.
 ####################
 load_cancer_state_reference <- function() {
-  state_path <- "Auto_final_states.rds"
+  state_path <- file.path("Metaprogrammes_Results", "centred", "state_definition", "intermediate", "centred_refined_noreg_states.rds")
   marker_candidates <- c(
-    file.path("Auto_six_state_markers", "Auto_six_state_markers_ranked.csv"),
-    file.path("Auto_six_state_markers", "Auto_six_state_markers_final.csv")
+    file.path("Auto_five_state_markers", "Auto_five_state_markers_ranked.csv"),
+    file.path("Auto_five_state_markers", "Auto_five_state_markers_final.csv")
   )
   marker_path <- marker_candidates[file.exists(marker_candidates)][1]
 
@@ -643,7 +671,7 @@ load_cancer_state_reference <- function() {
     stop("Missing finalized cancer states: ", state_path)
   }
   if (is.na(marker_path) || !nzchar(marker_path)) {
-    stop("Missing ranked cancer-state marker table under ref_outs/Auto_six_state_markers/")
+    stop("Missing ranked cancer-state marker table under ref_outs/Auto_five_state_markers/")
   }
 
   state_labels <- readRDS(state_path)
@@ -985,11 +1013,11 @@ plot_network <- function(edge_df, node_df, title_text, subtitle_text, edge_low, 
 describe_mode_positivity <- function(mode_cfg) {
   if (identical(mode_cfg$cancer_definition, "state")) {
     paste0(
-      "Cancer states use finalized cell-state labels; all non-cancer compartments use UCell > ",
-      ucell_cutoff
+      "Cancer states use finalized cell-state labels; all non-cancer compartments use UCell > Mean + ",
+      z_score_multiplier, " * SD"
     )
   } else {
-    paste0("All compartments use UCell > ", ucell_cutoff)
+    paste0("All compartments use dynamic UCell cutoff: Mean + ", z_score_multiplier, " * SD")
   }
 }
 
@@ -1375,10 +1403,15 @@ plot_focal_interaction_dotmap <- function(edge_df, node_df, focal, include_withi
       stroke = 0.28,
       alpha = 0.93
     ) +
-    scale_fill_gradient(
-      low = "#F8F4ED",
+    scale_fill_gradient2(
+      low = "#08519C",
+      mid = "#F8F4ED",
       high = "#B7212E",
-      limits = c(0, if(nrow(plot_df) > 0) max(plot_df$spearman_r, na.rm = TRUE) else 1),
+      midpoint = 0,
+      limits = c(
+        if(nrow(plot_df) > 0) min(c(0, plot_df$spearman_r), na.rm = TRUE) else -1,
+        if(nrow(plot_df) > 0) max(c(0, plot_df$spearman_r), na.rm = TRUE) else 1
+      ),
       oob = squish,
       name = "Spearman\nrho"
     ) +
@@ -1797,7 +1830,7 @@ write_lr_workbooks <- function(lr_pairs_df, lr_edge_summary, out_dir, include_wi
 ####################
 message("Loading complete atlas, epithelial malignancy metadata, finalized cancer states, and LR reference")
 
-merged_obj_mode <- readRDS("EAC_Ref_merged_strict.rds")
+merged_obj_mode <- readRDS("EAC_Ref_merged.rds")
 merged_meta_mode <- merged_obj_mode@meta.data
 merged_cells_mode <- rownames(merged_meta_mode)
 merged_expr_mode_all <- get_assay_data_safely(merged_obj_mode, assay = "RNA")
@@ -1911,15 +1944,21 @@ run_analysis_mode <- function(mode_cfg) {
         sample_meta = sample_meta,
         adjusted_scores = adj_bits$adjusted_scores,
         node_stats = node_stats,
-        cutoff_sensitivity = cutoff_tbl
+        cutoff_sensitivity = cutoff_tbl,
+        applied_cutoffs = adj_bits$applied_cutoffs
       ))
     }
 
-    mp_outs <- readRDS(cfg_row$mp_path)
-    mp_genes <- filter_gene_sets_by_silhouette(mp_outs)
+    if (cfg_row$compartment == "cancer") {
+      mp_genes <- readRDS(cancer_refined_gene_set_path)
+      mp_genes <- mp_genes[!names(mp_genes) %in% cancer_excluded_mps]
+    } else {
+      mp_outs <- readRDS(cfg_row$mp_path)
+      mp_genes <- filter_gene_sets_by_silhouette(mp_outs)
+    }
     score_df <- readRDS(cfg_row$score_path)
     keep_mps <- intersect(names(mp_genes), colnames(score_df))
-    keep_mps <- if (cfg_row$compartment == "cancer") order_cancer_mps(mp_outs, keep_mps) else sort_mp_names(keep_mps)
+    keep_mps <- if (cfg_row$compartment == "cancer") order_cancer_mps(keep_mps) else sort_mp_names(keep_mps)
     if (length(keep_mps) == 0) {
       stop("No silhouette-retained MPs found for ", cfg_row$compartment)
     }
@@ -1938,7 +1977,7 @@ run_analysis_mode <- function(mode_cfg) {
 
     score_df <- score_df[cells_use, keep_mps, drop = FALSE]
     sample_meta <- make_sample_meta(merged_meta_mode[cells_use, , drop = FALSE])
-    adj_bits <- calc_adjusted_scores(score_df, sample_meta, keep_mps, cutoff = ucell_cutoff)
+    adj_bits <- calc_adjusted_scores(score_df, sample_meta, keep_mps, z_mult = z_score_multiplier)
     cutoff_tbl <- calc_cutoff_sensitivity(
       score_df = score_df,
       sample_meta = sample_meta,
@@ -1987,7 +2026,8 @@ run_analysis_mode <- function(mode_cfg) {
       sample_meta = sample_meta,
       adjusted_scores = adj_bits$adjusted_scores,
       node_stats = node_stats,
-      cutoff_sensitivity = cutoff_tbl
+      cutoff_sensitivity = cutoff_tbl,
+      applied_cutoffs = adj_bits$applied_cutoffs
     )
   }
 
@@ -2006,7 +2046,7 @@ run_analysis_mode <- function(mode_cfg) {
       node_summary <- bind_rows(lapply(compartment_data, `[[`, "node_stats")) %>%
         arrange(celltype_order, mp_plot_order)
       cutoff_summary <- bind_rows(lapply(compartment_data, `[[`, "cutoff_sensitivity")) %>%
-        arrange(celltype_order, mp_plot_order, cutoff)
+        arrange(celltype_order, mp_plot_order, z_mult)
       list(
         compartment_data = compartment_data,
         node_summary = node_summary,
@@ -2038,34 +2078,34 @@ run_analysis_mode <- function(mode_cfg) {
   if (nrow(cutoff_summary) > 0) {
     cutoff_subtitle_text <- if (identical(mode_cfg$cancer_definition, "state")) {
       paste0(
-        "Dashed line = active UCell cutoff (",
-        ucell_cutoff,
+        "Dashed line = active Z-score multiplier (",
+        z_score_multiplier,
         "); cancer-state labels are assignment-based and excluded"
       )
     } else {
-      paste0("Dashed line = active cutoff (", ucell_cutoff, ")")
+      paste0("Dashed line = active multiplier (", z_score_multiplier, ")")
     }
 
     cutoff_count_plot <- cutoff_summary %>%
-      group_by(celltype_display, cutoff) %>%
+      group_by(celltype_display, z_mult) %>%
       summarise(n_nodes_passing = sum(coverage_pass), .groups = "drop") %>%
-      ggplot(aes(x = cutoff, y = n_nodes_passing, color = celltype_display)) +
-      geom_line(linewidth = 0.8) +
+      ggplot(aes(x = z_mult, y = n_nodes_passing, color = celltype_display)) +
+      geom_line(size = 1) +
       geom_point(size = 2) +
-      geom_vline(xintercept = ucell_cutoff, linetype = "dashed", color = "grey40") +
+      geom_vline(xintercept = z_score_multiplier, linetype = "dashed", color = "grey40") +
       scale_color_manual(values = plot_colour_lookup) +
       theme_minimal(base_size = 12) +
       theme(panel.grid.minor = element_blank()) +
       labs(
-        title = paste0("Positive-node coverage across cutoff choices: ", mode_cfg$analysis_label),
+        title = paste0("Positive-node coverage across Z multiplier choices: ", mode_cfg$analysis_label),
         subtitle = cutoff_subtitle_text,
-        x = "UCell positivity cutoff",
+        x = "Z-score Multiplier",
         y = paste0("Number of nodes with > ", min_positive_samples, " positive samples"),
         color = "Cell type"
       )
 
     cutoff_box_plot <- cutoff_summary %>%
-      ggplot(aes(x = factor(cutoff), y = sample_coverage_n, fill = celltype_display)) +
+      ggplot(aes(x = factor(z_mult), y = sample_coverage_n, fill = celltype_display)) +
       geom_boxplot(outlier.size = 0.7) +
       geom_hline(yintercept = min_positive_samples, linetype = "dashed", color = "grey40") +
       scale_fill_manual(values = plot_colour_lookup) +
@@ -2073,8 +2113,8 @@ run_analysis_mode <- function(mode_cfg) {
       theme_minimal(base_size = 12) +
       theme(panel.grid.minor = element_blank(), legend.position = "none") +
       labs(
-        title = "Per-node sample coverage across cutoff choices",
-        x = "UCell positivity cutoff",
+        title = "Per-node sample coverage across Z multiplier choices",
+        x = "Z-score Multiplier",
         y = "Positive samples per node"
       )
 
@@ -2222,7 +2262,7 @@ run_analysis_mode <- function(mode_cfg) {
           filter(spearman_sig, !is.na(pearson_r), pearson_r > 0, spearman_significance >= mode_positive_sig_cutoff) %>%
           arrange(desc(spearman_significance), desc(pearson_r)),
         negative_edges = result_df %>%
-          filter(spearman_sig, !is.na(pearson_r), pearson_r < 0, spearman_significance >= negative_sig_cutoff) %>%
+          filter(spearman_sig, !is.na(pearson_r), pearson_r < 0, spearman_significance >= mode_positive_sig_cutoff) %>%
           arrange(desc(spearman_significance), pearson_r)
       )
     }
@@ -2236,7 +2276,7 @@ run_analysis_mode <- function(mode_cfg) {
     filter(spearman_sig, !is.na(pearson_r), pearson_r > 0, spearman_significance >= mode_positive_sig_cutoff) %>%
     arrange(desc(spearman_significance), desc(pearson_r))
   negative_edges <- result_df %>%
-    filter(spearman_sig, !is.na(pearson_r), pearson_r < 0, spearman_significance >= negative_sig_cutoff) %>%
+    filter(spearman_sig, !is.na(pearson_r), pearson_r < 0, spearman_significance >= mode_positive_sig_cutoff) %>%
     arrange(desc(spearman_significance), pearson_r)
 
   if (!"edge_label" %in% colnames(result_df)) {
@@ -2368,7 +2408,8 @@ run_analysis_mode <- function(mode_cfg) {
     if (identical(comp$positive_rule, "assigned_state")) {
       candidate_cells[score_df[candidate_cells, mp_name] > 0]
     } else {
-      candidate_cells[score_df[candidate_cells, mp_name] > ucell_cutoff]
+      dynamic_cutoff <- comp$applied_cutoffs[[mp_name]]
+      candidate_cells[score_df[candidate_cells, mp_name] > dynamic_cutoff]
     }
   }
   match_driver_target_lr_mode <- function(driver_top_genes, target_mp_genes, edge_row, driver_label, target_label) {
@@ -2507,7 +2548,13 @@ run_analysis_mode <- function(mode_cfg) {
   write_focal_interaction_dotmap(
     edge_df = positive_edges_lr,
     node_df = node_summary,
-    file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap.pdf"),
+    out_path = file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap.pdf"),
+    include_within = mode_cfg$include_within
+  )
+  write_focal_interaction_dotmap(
+    edge_df = bind_rows(positive_edges_lr, negative_edges),
+    node_df = node_summary,
+    out_path = file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap_with_neg.pdf"),
     include_within = mode_cfg$include_within
   )
 
@@ -2597,106 +2644,112 @@ run_analysis_mode <- function(mode_cfg) {
   cancer_positive_edge_df <- cancer_edge_df %>%
     filter(spearman_sig, !is.na(pearson_r), pearson_r > 0)
 
+  cancer_significant_edge_df <- cancer_edge_df %>%
+    filter(spearman_sig, !is.na(pearson_r), spearman_significance >= mode_positive_sig_cutoff)
+    
+  if (!"co_positive_sample_pct" %in% colnames(cancer_significant_edge_df) && nrow(cancer_significant_edge_df) > 0) {
+      cancer_significant_edge_df <- add_co_positive_support(cancer_significant_edge_df, compartment_data)
+  }
+
   ####################
   # Cancer-TME interaction summary Excel (TME-centric with Gene Lists)
   ####################
-  if (nrow(cancer_positive_edge_df) > 0) {
-    message("Generating TME-centric Cancer-TME interaction Excel")
-    
-    # 1. Prepare ordering information
-    celltype_preferred_order <- c("fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma")
-    cancer_mp_order <- compartment_data$cancer$node_stats$mp_name
-    
-    # 2. Add co-positive support if not already present
-    if (!"co_positive_sample_pct" %in% colnames(cancer_positive_edge_df)) {
-        cancer_positive_edge_df <- add_co_positive_support(cancer_positive_edge_df, compartment_data)
-    }
+  message("Generating TME-centric Cancer-TME interaction Excel")
+  
+  celltype_preferred_order <- c("fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma")
+  cancer_mp_order <- compartment_data$cancer$node_stats$mp_name
+  
+  if (nrow(cancer_significant_edge_df) > 0) {
+      cancer_significant_edge_df <- cancer_significant_edge_df %>%
+          mutate(
+            cancer_mp = ifelse(compartment1 == "cancer", mp1_name, mp2_name),
+            cancer_display = ifelse(compartment1 == "cancer", mp1_display, mp2_display),
+            tme_compartment = ifelse(compartment1 == "cancer", compartment2, compartment1),
+            tme_mp = ifelse(compartment1 == "cancer", mp2_name, mp1_name),
+            tme_display = ifelse(compartment1 == "cancer", mp2_display, mp1_display),
+            direction = ifelse(pearson_r > 0, "positive", "negative"),
+            log10p = spearman_significance,
+            support_pct = co_positive_sample_pct,
+            cancer_order = match(cancer_mp, cancer_mp_order)
+          )
+  }
 
-    # 3. Process interactions and group by TME MP
-    tme_interaction_groups <- cancer_positive_edge_df %>%
-      mutate(
-        cancer_mp = ifelse(compartment1 == "cancer", mp1_name, mp2_name),
-        cancer_display = ifelse(compartment1 == "cancer", mp1_display, mp2_display),
-        tme_compartment = ifelse(compartment1 == "cancer", compartment2, compartment1),
-        tme_mp = ifelse(compartment1 == "cancer", mp2_name, mp1_name),
-        tme_display = ifelse(compartment1 == "cancer", mp2_display, mp1_display),
-        log10p = spearman_significance,
-        support_pct = co_positive_sample_pct,
-        cancer_order = match(cancer_mp, cancer_mp_order)
-      ) %>%
-      group_by(tme_compartment, tme_mp, tme_display) %>%
-      nest() %>%
-      mutate(
-        ct_order = match(tme_compartment, celltype_preferred_order),
-        mp_num = as.numeric(gsub("\\D", "", tme_mp))
-      ) %>%
-      arrange(ct_order, mp_num)
+  interaction_wb <- createWorkbook()
 
-    # 4. Create Excel Workbook
-    interaction_wb <- createWorkbook()
-    addWorksheet(interaction_wb, "TME-Cancer Interactions")
+  tmeHeaderStyle <- createStyle(fontSize = 12, fontColour = "#FFFFFF", fgFill = "#2F5597", halign = "center", textDecoration = "bold")
+  cancerNameStylePos <- createStyle(fontSize = 10, fontColour = "#8F0000", fgFill = "#F9D7CF", halign = "left", textDecoration = "bold")
+  cancerNameStyleNeg <- createStyle(fontSize = 10, fontColour = "#08519C", fgFill = "#DCEAF7", halign = "left", textDecoration = "bold")
+  cancerStatStyle <- createStyle(fontSize = 9, halign = "left", textDecoration = "italic")
+  geneStyle <- createStyle(fontSize = 10, halign = "left")
 
-    # Styles
-    tmeHeaderStyle <- createStyle(fontSize = 12, fontColour = "#FFFFFF", fgFill = "#2F5597", halign = "center", textDecoration = "bold")
-    cancerNameStyle <- createStyle(fontSize = 10, fgFill = "#E9E9E9", halign = "left", textDecoration = "bold")
-    cancerStatStyle <- createStyle(fontSize = 9, halign = "left", textDecoration = "italic")
-    geneStyle <- createStyle(fontSize = 10, halign = "left")
-
-    # 5. Fill columns (One per TME MP)
-    curr_col <- 1
-    for (i in seq_len(nrow(tme_interaction_groups))) {
-      group <- tme_interaction_groups[i, ]
-      # Order partners by Cancer MP tree order
-      partners <- group$data[[1]] %>% arrange(cancer_order)
+  for (tme_ct in celltype_preferred_order) {
+      if (!tme_ct %in% names(compartment_data)) next
+      addWorksheet(interaction_wb, tme_ct)
+      curr_col <- 1
       
-      # Row 1: TME MP Name
-      writeData(interaction_wb, sheet = 1, x = paste0(group$tme_compartment, " ", group$tme_display), startRow = 1, startCol = curr_col)
-      addStyle(interaction_wb, sheet = 1, style = tmeHeaderStyle, rows = 1, cols = curr_col)
+      tme_mps <- compartment_data[[tme_ct]]$node_stats$mp_name
+      tme_mps <- tme_mps[order(as.numeric(gsub("\\D", "", tme_mps)))]
       
-      # Rows 2+: Cancer MPs
-      curr_row <- 2
-      for (j in seq_len(nrow(partners))) {
-        p <- partners[j, ]
-        # Cancer MP Name
-        writeData(interaction_wb, sheet = 1, x = p$cancer_display, startRow = curr_row, startCol = curr_col)
-        addStyle(interaction_wb, sheet = 1, style = cancerNameStyle, rows = curr_row, cols = curr_col)
-        curr_row <- curr_row + 1
-        
-        # Stats & Support
-        stat_text <- sprintf("-log10(p): %.2f, Support: %.1f%%", p$log10p, p$support_pct)
-        writeData(interaction_wb, sheet = 1, x = stat_text, startRow = curr_row, startCol = curr_col)
-        addStyle(interaction_wb, sheet = 1, style = cancerStatStyle, rows = curr_row, cols = curr_col)
-        curr_row <- curr_row + 1
-      }
-      
-      # TME-MP Gene List
-      genes <- compartment_data[[group$tme_compartment]]$gene_sets[[group$tme_mp]]
-      if (is.null(genes) || length(genes) == 0) {
-          # Fallback to original RDS if cache is incomplete
-          mp_path_orig <- file.path("ref_outs", compartment_data[[group$tme_compartment]]$mp_path)
-          if (file.exists(mp_path_orig)) {
-              mp_outs_orig <- readRDS(mp_path_orig)
-              if ("metaprograms.genes" %in% names(mp_outs_orig)) {
-                  genes <- mp_outs_orig$metaprograms.genes[[group$tme_mp]]
-              } else if ("programs.genes" %in% names(mp_outs_orig)) {
-                  genes <- mp_outs_orig$programs.genes[[group$tme_mp]]
+      for (tme_mp_name in tme_mps) {
+          tme_display_name <- format_mp_display(tme_ct, tme_mp_name)
+          writeData(interaction_wb, sheet = tme_ct, x = paste0(tme_ct, " ", tme_display_name), startRow = 1, startCol = curr_col)
+          addStyle(interaction_wb, sheet = tme_ct, style = tmeHeaderStyle, rows = 1, cols = curr_col)
+          
+          curr_row <- 2
+          
+          if (nrow(cancer_significant_edge_df) > 0) {
+              partners <- cancer_significant_edge_df %>%
+                  filter(tme_compartment == tme_ct, tme_mp == tme_mp_name) %>%
+                  arrange(cancer_order)
+          } else {
+              partners <- tibble()
+          }
+          
+          if (nrow(partners) > 0) {
+              for (j in seq_len(nrow(partners))) {
+                  p <- partners[j, ]
+                  dir_prefix <- if(p$direction == "positive") "(+) " else "(-) "
+                  writeData(interaction_wb, sheet = tme_ct, x = paste0(dir_prefix, p$cancer_display), startRow = curr_row, startCol = curr_col)
+                  style_to_use <- if(p$direction == "positive") cancerNameStylePos else cancerNameStyleNeg
+                  addStyle(interaction_wb, sheet = tme_ct, style = style_to_use, rows = curr_row, cols = curr_col)
+                  curr_row <- curr_row + 1
+                  
+                  stat_text <- sprintf("-log10(p): %.2f, Supp: %.1f%%", p$log10p, p$support_pct)
+                  writeData(interaction_wb, sheet = tme_ct, x = stat_text, startRow = curr_row, startCol = curr_col)
+                  addStyle(interaction_wb, sheet = tme_ct, style = cancerStatStyle, rows = curr_row, cols = curr_col)
+                  curr_row <- curr_row + 1
+              }
+          } else {
+              writeData(interaction_wb, sheet = tme_ct, x = "No sig partners", startRow = curr_row, startCol = curr_col)
+              addStyle(interaction_wb, sheet = tme_ct, style = cancerStatStyle, rows = curr_row, cols = curr_col)
+              curr_row <- curr_row + 1
+          }
+          
+          genes <- compartment_data[[tme_ct]]$gene_sets[[tme_mp_name]]
+          if (is.null(genes) || length(genes) == 0) {
+              mp_path_orig <- file.path("ref_outs", compartment_data[[tme_ct]]$mp_path)
+              if (file.exists(mp_path_orig)) {
+                  mp_outs_orig <- readRDS(mp_path_orig)
+                  if ("metaprograms.genes" %in% names(mp_outs_orig)) {
+                      genes <- mp_outs_orig$metaprograms.genes[[tme_mp_name]]
+                  } else if ("programs.genes" %in% names(mp_outs_orig)) {
+                      genes <- mp_outs_orig$programs.genes[[tme_mp_name]]
+                  }
               }
           }
+          if (is.null(genes)) genes <- "No genes found"
+          
+          writeData(interaction_wb, sheet = tme_ct, x = genes, startRow = curr_row, startCol = curr_col)
+          addStyle(interaction_wb, sheet = tme_ct, style = geneStyle, rows = curr_row:(curr_row + length(genes) - 1), cols = curr_col)
+          
+          setColWidths(interaction_wb, sheet = tme_ct, cols = curr_col, widths = 30)
+          curr_col <- curr_col + 1
       }
-      if (is.null(genes)) genes <- "No genes found"
-      
-      # Write genes (one per row)
-      writeData(interaction_wb, sheet = 1, x = genes, startRow = curr_row, startCol = curr_col)
-      addStyle(interaction_wb, sheet = 1, style = geneStyle, rows = curr_row:(curr_row + length(genes) - 1), cols = curr_col)
-      
-      setColWidths(interaction_wb, sheet = 1, cols = curr_col, widths = 30)
-      curr_col <- curr_col + 1
-    }
-
-    interaction_excel_path <- file.path(analysis_out_dir, "Auto_cancer_tme_interactions_TME_centric.xlsx")
-    saveWorkbook(interaction_wb, interaction_excel_path, overwrite = TRUE)
-    excel_output_paths <- c(excel_output_paths, interaction_excel_path)
   }
+
+  interaction_excel_path <- file.path(analysis_out_dir, "Auto_cancer_tme_interactions_TME_centric.xlsx")
+  saveWorkbook(interaction_wb, interaction_excel_path, overwrite = TRUE)
+  excel_output_paths <- c(excel_output_paths, interaction_excel_path)
 
   mode_summary <- tibble(
     analysis_id = mode_cfg$analysis_id,
@@ -2705,7 +2758,7 @@ run_analysis_mode <- function(mode_cfg) {
     cancer_definition = mode_cfg$cancer_definition,
     include_within = mode_cfg$include_within,
     cache_version = cache_version,
-    ucell_cutoff = ucell_cutoff,
+    z_score_multiplier = z_score_multiplier,
     n_compartments = length(compartment_data),
     n_nodes_total = nrow(node_summary),
     n_nodes_passing_coverage = sum(node_summary$coverage_pass),
@@ -2721,7 +2774,7 @@ run_analysis_mode <- function(mode_cfg) {
     n_lr_pairs_all_reference = if (is.null(lr_ref_mode)) NA_integer_ else lr_ref_mode$n_pairs_all,
     n_lr_pairs_retained_reference = if (is.null(lr_ref_mode)) NA_integer_ else lr_ref_mode$n_pairs_retained,
     n_lr_pairs_excluded_reference = if (is.null(lr_ref_mode)) NA_integer_ else lr_ref_mode$n_pairs_excluded,
-    cancer_positive_rule = if (identical(mode_cfg$cancer_definition, "state")) "assigned_state_label" else paste0("ucell_gt_", ucell_cutoff),
+    cancer_positive_rule = if (identical(mode_cfg$cancer_definition, "state")) "assigned_state_label" else paste0("z_mult_", z_score_multiplier),
     excel_outputs = if (length(excel_output_paths) == 0) "" else paste(excel_output_paths, collapse = "; ")
   )
   write.csv(mode_summary, file.path(analysis_out_dir, "Auto_celltype_mode_summary.csv"), row.names = FALSE)
@@ -2742,7 +2795,7 @@ if (FALSE) {
 
 message("Loading complete atlas and epithelial malignancy metadata")
 
-merged_obj <- readRDS("EAC_Ref_merged_strict.rds")
+merged_obj <- readRDS("EAC_Ref_merged.rds")
 merged_meta <- merged_obj@meta.data
 merged_cells <- rownames(merged_meta)
 epi_meta <- readRDS("meta_full_epi.rds")
@@ -2758,13 +2811,18 @@ full_sample_lookup <- make_sample_meta(merged_meta) %>%
 build_compartment_data <- function(cfg_row) {
   message("Preparing compartment: ", cfg_row$compartment)
 
-  mp_outs <- readRDS(cfg_row$mp_path)
-  mp_genes <- filter_gene_sets_by_silhouette(mp_outs)
+  if (cfg_row$compartment == "cancer") {
+    mp_genes <- readRDS(cancer_refined_gene_set_path)
+    mp_genes <- mp_genes[!names(mp_genes) %in% cancer_excluded_mps]
+  } else {
+    mp_outs <- readRDS(cfg_row$mp_path)
+    mp_genes <- filter_gene_sets_by_silhouette(mp_outs)
+  }
   score_df <- readRDS(cfg_row$score_path)
 
   keep_mps <- intersect(names(mp_genes), colnames(score_df))
   keep_mps <- if (cfg_row$compartment == "cancer") {
-    order_cancer_mps(mp_outs, keep_mps)
+    order_cancer_mps(keep_mps)
   } else {
     sort_mp_names(keep_mps)
   }
@@ -2789,7 +2847,7 @@ build_compartment_data <- function(cfg_row) {
 
   score_df <- score_df[cells_use, keep_mps, drop = FALSE]
   sample_meta <- make_sample_meta(merged_meta[cells_use, , drop = FALSE])
-  adj_bits <- calc_adjusted_scores(score_df, sample_meta, keep_mps, cutoff = ucell_cutoff)
+  adj_bits <- calc_adjusted_scores(score_df, sample_meta, keep_mps, z_mult = z_score_multiplier)
   cutoff_tbl <- calc_cutoff_sensitivity(
     score_df = score_df,
     sample_meta = sample_meta,
@@ -2854,7 +2912,7 @@ step1_cache <- load_or_build_cache(
     node_summary <- bind_rows(lapply(compartment_data, `[[`, "node_stats")) %>%
       arrange(celltype_order, mp_plot_order)
     cutoff_summary <- bind_rows(lapply(compartment_data, `[[`, "cutoff_sensitivity")) %>%
-      arrange(celltype_order, mp_plot_order, cutoff)
+      arrange(celltype_order, mp_plot_order, z_mult)
 
     list(
       compartment_data = compartment_data,
@@ -2901,7 +2959,7 @@ cutoff_count_plot <- cutoff_summary %>%
   ggplot(aes(x = cutoff, y = n_mps_passing, color = celltype_display)) +
   geom_line(linewidth = 0.8) +
   geom_point(size = 2) +
-  geom_vline(xintercept = ucell_cutoff, linetype = "dashed", color = "grey40") +
+  geom_vline(xintercept = z_score_multiplier, linetype = "dashed", color = "grey40") +
   scale_color_manual(values = plot_colour_lookup) +
   theme_minimal(base_size = 15) +
   theme(
@@ -2912,7 +2970,7 @@ cutoff_count_plot <- cutoff_summary %>%
   ) +
   labs(
     title = "MP retention is highly sensitive to the UCell positivity cutoff",
-    subtitle = paste0("Dashed line = active cutoff (", ucell_cutoff, "); 0.5 is sparse for these UCell score ranges"),
+    subtitle = paste0("Dashed line = active multiplier (", z_score_multiplier, ")"),
     x = "UCell positivity cutoff",
     y = paste0("Number of MPs with > ", min_positive_samples, " positive samples"),
     color = "Cell type"
@@ -3265,7 +3323,12 @@ get_positive_cells <- function(compartment_name, mp_name, shared_samples) {
   if (length(candidate_cells) == 0) {
     return(character(0))
   }
-  candidate_cells[score_df[candidate_cells, mp_name] > ucell_cutoff]
+  if (identical(comp$positive_rule, "assigned_state")) {
+    candidate_cells[score_df[candidate_cells, mp_name] > 0]
+  } else {
+    dynamic_cutoff <- comp$applied_cutoffs[[mp_name]]
+    candidate_cells[score_df[candidate_cells, mp_name] > dynamic_cutoff]
+  }
 }
 
 match_driver_target_lr <- function(driver_top_genes, target_mp_genes, edge_row, driver_label, target_label) {
@@ -3461,7 +3524,7 @@ if (nrow(lr_edge_summary) > 0) {
     title_text = "Positive cross-celltype MP correlations with LR support",
     subtitle_text = paste0(
       "Only literature-supported and putative LR pairs retained; positivity = UCell > ",
-      ucell_cutoff
+      z_score_multiplier
     ),
     edge_low = "#F9D7CF",
     edge_high = "#8F0000",
@@ -3543,7 +3606,7 @@ summary_row <- function(metric, value) {
 
 summary_df <- bind_rows(
   summary_row("cache_version", cache_version),
-  summary_row("ucell_cutoff", ucell_cutoff),
+  summary_row("z_score_multiplier", z_score_multiplier),
   summary_row("n_compartments", length(compartment_data)),
   summary_row("n_nodes_total", nrow(node_summary)),
   summary_row("n_nodes_passing_coverage", sum(node_summary$coverage_pass)),
@@ -3566,3 +3629,716 @@ write.csv(
 
 message("Saved outputs to: ", file.path(getwd(), out_dir))
 }
+
+####################
+# Whole-celltype annotation-abundance modes. These complement the MP-by-MP
+# TME modes above: the cancer side remains MP-resolved or state-resolved,
+# while each non-epithelial partner is represented by its final directly
+# annotated celltype proportion. No marker score or activity cutoff is used.
+####################
+whole_celltype_mode_cfg <- tibble(
+  analysis_id = c(
+    "cancer_mps_vs_whole_celltypes",
+    "cancer_states_vs_whole_celltypes"
+  ),
+  analysis_label = c(
+    "Cancer MPs versus whole non-epithelial celltype abundance",
+    "Cancer states versus whole non-epithelial celltype abundance"
+  ),
+  cancer_definition = c("mp", "state"),
+  cancer_source_subdir = c(
+    "01_cancer_mps_cross_only",
+    "03_cancer_states_cross_only"
+  ),
+  out_subdir = c(
+    "05_cancer_mps_vs_whole_celltypes",
+    "06_cancer_states_vs_whole_celltypes"
+  )
+)
+whole_celltype_display_order <- c(
+  "fibroblast", "endothelial", "t.cell", "macrophage", "nk.cell", "plasma"
+)
+
+build_whole_celltype_annotation_abundance <- function(cancer_score_samples) {
+  annotation_cfg <- tibble(
+    whole_celltype = c("fibroblast", "endothelial", "t.cell", "macrophage", "nk.cell", "plasma"),
+    annotation_celltype = c("fibroblast", "endothelial", "t.cell", "macrophage", "nk.cell", "plasma")
+  )
+  atlas_sample_meta <- make_sample_meta(merged_meta_mode) %>%
+    mutate(annotation_celltype = as.character(merged_meta_mode[cell, "celltype_update"])) %>%
+    filter(
+      !is.na(sample), nzchar(sample),
+      !is.na(annotation_celltype), nzchar(annotation_celltype),
+      !grepl("^unresolved", annotation_celltype, ignore.case = TRUE)
+    )
+  annotated_totals <- atlas_sample_meta %>%
+    count(sample, study, name = "confidently_annotated_cells")
+
+  cancer_score_samples %>%
+    select(sample, study) %>%
+    distinct() %>%
+    left_join(annotated_totals, by = c("sample", "study")) %>%
+    tidyr::crossing(annotation_cfg) %>%
+    left_join(
+      atlas_sample_meta %>%
+        count(sample, annotation_celltype, name = "whole_celltype_cells"),
+      by = c("sample", "annotation_celltype")
+    ) %>%
+    mutate(
+      whole_celltype_cells = replace_na(whole_celltype_cells, 0L),
+      annotated_celltype_pct = ifelse(
+        !is.na(confidently_annotated_cells) & confidently_annotated_cells > 0,
+        100 * whole_celltype_cells / confidently_annotated_cells,
+        NA_real_
+      ),
+      annotation_measure = "percent_of_confidently_annotated_atlas_cells"
+    ) %>%
+    arrange(match(whole_celltype, annotation_cfg$whole_celltype), sample)
+}
+
+plot_whole_celltype_associations <- function(edge_df, title_text, association_label) {
+  if (nrow(edge_df) == 0) {
+    return(
+      ggplot() +
+        annotate("text", x = 0, y = 0, label = "No associations passed the threshold", size = 5) +
+        theme_void(base_size = 14) +
+        labs(title = title_text)
+    )
+  }
+
+  cancer_levels <- unique(edge_df$cancer_feature)
+  celltype_levels <- unique(c(
+    whole_celltype_display_order[whole_celltype_display_order %in% unique(edge_df$whole_celltype)],
+    edge_df$whole_celltype
+  ))
+  plot_df <- edge_df %>%
+    mutate(
+      cancer_feature = factor(cancer_feature, levels = rev(cancer_levels)),
+      whole_celltype = factor(whole_celltype, levels = celltype_levels)
+    )
+
+  ggplot(plot_df, aes(x = whole_celltype, y = cancer_feature)) +
+    geom_point(
+      aes(size = spearman_significance, fill = spearman_r),
+      shape = 21,
+      color = "grey25",
+      stroke = 0.35
+    ) +
+    scale_fill_gradient2(
+      low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0,
+      name = "Spearman rho"
+    ) +
+    scale_size_continuous(range = c(2, 10), name = "-log10 Spearman p") +
+    theme_minimal(base_size = 15) +
+    theme(
+      axis.text.x = element_text(angle = 35, hjust = 1, size = 12),
+      axis.text.y = element_text(size = 11),
+      axis.title = element_blank(),
+      panel.grid = element_blank(),
+      plot.title = element_text(face = "bold", size = 18),
+      plot.subtitle = element_text(size = 12, color = "grey25")
+    ) +
+    labs(
+      title = title_text,
+      subtitle = association_label
+    )
+}
+
+run_whole_celltype_mode <- function(mode_cfg) {
+  mode_cfg <- as.list(mode_cfg)
+  analysis_out_dir <- file.path(out_dir, mode_cfg$out_subdir)
+  dir.create(analysis_out_dir, recursive = TRUE, showWarnings = FALSE)
+
+  cancer_score_path <- file.path(
+    out_dir,
+    mode_cfg$cancer_source_subdir,
+    "Auto_adjusted_scores_cancer.csv"
+  )
+  if (!file.exists(cancer_score_path)) {
+    stop("Missing source cancer adjusted-score table for whole-celltype mode: ", cancer_score_path)
+  }
+
+  cancer_scores <- read.csv(cancer_score_path, stringsAsFactors = FALSE, check.names = FALSE) %>%
+    mutate(study = ifelse(is.na(study) | study == "", derive_study(sample), study))
+  cancer_features <- setdiff(colnames(cancer_scores), c("sample", "study", "n_cells"))
+  if (length(cancer_features) == 0) {
+    stop("No cancer MP/state columns found in ", cancer_score_path)
+  }
+
+  annotation_abundance_df <- build_whole_celltype_annotation_abundance(cancer_scores)
+  write.csv(
+    annotation_abundance_df,
+    file.path(analysis_out_dir, "Auto_whole_celltype_annotation_abundance.csv"),
+    row.names = FALSE
+  )
+
+  study_counts <- cancer_scores %>%
+    distinct(sample, study) %>%
+    count(study, name = "cancer_scored_samples")
+  eligible_studies <- study_counts %>%
+    filter(cancer_scored_samples >= min_shared_samples_per_study) %>%
+    pull(study)
+
+  if (length(eligible_studies) == 0) {
+    stop("No studies have at least ", min_shared_samples_per_study, " cancer-scored samples")
+  }
+
+  correlation_rows <- lapply(cancer_features, function(cancer_feature) {
+    lapply(unique(annotation_abundance_df$whole_celltype), function(whole_celltype_name) {
+      annotation_sub <- annotation_abundance_df %>%
+        filter(whole_celltype == whole_celltype_name, study %in% eligible_studies) %>%
+        select(sample, study, confidently_annotated_cells, whole_celltype_cells, annotated_celltype_pct)
+      cancer_sub <- cancer_scores %>%
+        filter(study %in% eligible_studies) %>%
+        select(sample, study, cancer_score = all_of(cancer_feature))
+      pair_df <- cancer_sub %>%
+        inner_join(annotation_sub, by = c("sample", "study")) %>%
+        filter(is.finite(cancer_score), is.finite(annotated_celltype_pct))
+      pear_bits <- safe_cor_test(pair_df$cancer_score, pair_df$annotated_celltype_pct, method = "pearson")
+      spear_bits <- safe_cor_test(pair_df$cancer_score, pair_df$annotated_celltype_pct, method = "spearman")
+      co_positive_n <- sum(pair_df$cancer_score > 0 & pair_df$annotated_celltype_pct > 0, na.rm = TRUE)
+      tibble(
+        edge_id = paste(mode_cfg$analysis_id, cancer_feature, whole_celltype_name, sep = "__"),
+        cancer_definition = mode_cfg$cancer_definition,
+        cancer_feature = cancer_feature,
+        whole_celltype = whole_celltype_name,
+        shared_sample_n = nrow(pair_df),
+        co_positive_sample_n = co_positive_n,
+        co_positive_sample_pct = ifelse(nrow(pair_df) > 0, 100 * co_positive_n / nrow(pair_df), NA_real_),
+        eligible_studies = paste(sort(eligible_studies), collapse = ";"),
+        pearson_r = pear_bits$estimate,
+        pearson_p = pear_bits$p.value,
+        spearman_r = spear_bits$estimate,
+        spearman_p = spear_bits$p.value
+      )
+    }) %>% bind_rows()
+  }) %>% bind_rows() %>%
+    mutate(
+      spearman_significance = -log10(pmax(spearman_p, .Machine$double.xmin)),
+      pearson_direction = case_when(
+        is.na(pearson_r) ~ NA_character_,
+        pearson_r > 0 ~ "positive",
+        pearson_r < 0 ~ "negative",
+        TRUE ~ "zero"
+      ),
+      spearman_sig = !is.na(spearman_p) & spearman_p < 0.05,
+      association_scope = "cancer_MP_or_state_vs_whole_annotated_celltype_abundance",
+      whole_celltype_measure = "percent_of_confidently_annotated_atlas_cells"
+    ) %>%
+    arrange(match(whole_celltype, whole_celltype_display_order), desc(spearman_significance))
+
+  # The whole-celltype values are final per-sample annotation proportions,
+  # not thresholded activity scores.  Therefore retain every nominal
+  # Spearman-supported association and do not apply the MP-score-specific
+  # -log10(p) effect-strength screen used by the MP-by-MP modes.
+  positive_edges <- correlation_rows %>%
+    filter(spearman_sig, pearson_r > 0) %>%
+    arrange(desc(spearman_significance), desc(pearson_r))
+  negative_edges <- correlation_rows %>%
+    filter(spearman_sig, pearson_r < 0, spearman_significance >= negative_sig_cutoff) %>%
+    arrange(desc(spearman_significance), pearson_r)
+
+  write.csv(correlation_rows, file.path(analysis_out_dir, "Auto_whole_celltype_correlations_all.csv"), row.names = FALSE)
+  write.csv(positive_edges, file.path(analysis_out_dir, "Auto_whole_celltype_correlations_positive.csv"), row.names = FALSE)
+  write.csv(negative_edges, file.path(analysis_out_dir, "Auto_whole_celltype_correlations_negative.csv"), row.names = FALSE)
+  write.csv(
+    bind_rows(
+      positive_edges %>% mutate(association = "positive"),
+      negative_edges %>% mutate(association = "negative")
+    ),
+    file.path(analysis_out_dir, "Auto_whole_celltype_interaction_dotmap_data.csv"),
+    row.names = FALSE
+  )
+  write.csv(study_counts, file.path(analysis_out_dir, "Auto_whole_celltype_study_eligibility.csv"), row.names = FALSE)
+
+  pdf(file.path(analysis_out_dir, "Auto_whole_celltype_interaction_dotmap.pdf"), width = 15, height = 10, onefile = TRUE)
+  print(plot_whole_celltype_associations(
+    positive_edges,
+    title_text = paste0("Positive: ", mode_cfg$analysis_label),
+    association_label = "Whole celltype = final annotated-celltype abundance (%); Pearson > 0; Spearman p < 0.05"
+  ))
+  print(plot_whole_celltype_associations(
+    negative_edges,
+    title_text = paste0("Negative: ", mode_cfg$analysis_label),
+    association_label = "Whole celltype = final annotated-celltype abundance (%); Pearson < 0; Spearman p < 0.05"
+  ))
+  dev.off()
+
+  mode_summary <- tibble(
+    analysis_id = mode_cfg$analysis_id,
+    analysis_label = mode_cfg$analysis_label,
+    output_dir = analysis_out_dir,
+    cancer_definition = mode_cfg$cancer_definition,
+    include_within = FALSE,
+    cache_version = cache_version,
+    z_score_multiplier = z_score_multiplier,
+    n_compartments = length(unique(annotation_abundance_df$whole_celltype)),
+    n_nodes_total = length(cancer_features) + length(unique(annotation_abundance_df$whole_celltype)),
+    n_nodes_passing_coverage = NA_integer_,
+    n_pairwise_tests = nrow(correlation_rows),
+    n_cancer_pairwise_tests = nrow(correlation_rows),
+    n_positive_edges = nrow(positive_edges),
+    n_negative_edges = nrow(negative_edges),
+    n_cancer_positive_edges_p05 = sum(correlation_rows$spearman_sig & correlation_rows$pearson_r > 0, na.rm = TRUE),
+    n_cancer_positive_edges_sig = nrow(positive_edges),
+    max_cancer_positive_spearman_significance = if (nrow(positive_edges) == 0) NA_real_ else max(positive_edges$spearman_significance, na.rm = TRUE),
+    n_lr_rows = NA_integer_,
+    n_lr_supported_edges = NA_integer_,
+    n_lr_pairs_all_reference = NA_integer_,
+    n_lr_pairs_retained_reference = NA_integer_,
+    n_lr_pairs_excluded_reference = NA_integer_,
+    cancer_positive_rule = if (identical(mode_cfg$cancer_definition, "state")) "assigned_state_label" else paste0("z_mult_", z_score_multiplier),
+    excel_outputs = ""
+  )
+  write.csv(mode_summary, file.path(analysis_out_dir, "Auto_whole_celltype_mode_summary.csv"), row.names = FALSE)
+  mode_summary
+}
+
+whole_celltype_mode_summaries <- bind_rows(lapply(
+  seq_len(nrow(whole_celltype_mode_cfg)),
+  function(i) run_whole_celltype_mode(whole_celltype_mode_cfg[i, , drop = FALSE])
+))
+write.csv(
+  bind_rows(mode_summaries, whole_celltype_mode_summaries),
+  file.path(summary_dir, "Auto_mp_cross_celltype_correlations_summary.csv"),
+  row.names = FALSE
+)
+message("Saved whole-celltype annotation-abundance modes under: ", file.path(getwd(), out_dir))
+
+####################
+# Whole-celltype compatibility runner.  The initial direct-abundance export
+# above is retained for backward compatibility, but the two aggregate modes
+# below are rendered through the same cross-compartment data contract,
+# correlation tables, coverage summaries, and plotting helpers as modes 01--04.
+# The sole substitution is that every non-malignant compartment has one node:
+# its final direct-annotation abundance per sample.
+####################
+whole_celltype_full_mode_cfg <- tibble(
+  analysis_id = c("cancer_mps_vs_whole_celltypes", "cancer_states_vs_whole_celltypes"),
+  analysis_label = c(
+    "Cancer MPs with whole-celltype direct-abundance correlations",
+    "Cancer final states with whole-celltype direct-abundance correlations"
+  ),
+  cancer_definition = c("mp", "state"),
+  source_subdir = c("01_cancer_mps_cross_only", "03_cancer_states_cross_only"),
+  out_subdir = c("05_cancer_mps_vs_whole_celltypes", "06_cancer_states_vs_whole_celltypes")
+)
+
+whole_celltype_plot_order <- c(
+  "cancer", "fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma"
+)
+whole_celltype_plot_colours <- c(
+  cancer = "#984EA3", fibroblast = "#FF7F00", endothelial = "#4DAF4A",
+  cd8 = "#56B4E9", cd4 = "#00CED1", macrophage = "#A65628", nk = "#FFD700", plasma = "#999999"
+)
+whole_celltype_compartment_cfg <- tibble(
+  compartment = c("fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma"),
+  display = c("fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma"),
+  annotation_celltype = c("fibroblast", "endothelial", "t.cell", "t.cell", "macrophage", "nk.cell", "plasma"),
+  membership_score_path = c(
+    file.path("nmf_fibroblast", "UCell_default.rds"),
+    file.path("nmf_endothelial", "UCell_default.rds"),
+    file.path("nmf_cd8", "UCell_default.rds"),
+    file.path("nmf_cd4", "UCell_default.rds"),
+    file.path("nmf_macrophage", "UCell_default.rds"),
+    file.path("nmf_nk", "UCell_default.rds"),
+    file.path("nmf_plasma", "UCell_default.rds")
+  ),
+  subset_definition = c("final_annotation", "final_annotation", "established_cd8_subset", "established_cd4_subset", "final_annotation", "final_annotation", "final_annotation")
+)
+
+build_whole_celltype_compatibility_data <- function(cancer_scores) {
+  final_meta <- make_sample_meta(merged_meta_mode) %>%
+    mutate(annotation_celltype = as.character(merged_meta_mode[cell, "celltype_update"])) %>%
+    filter(
+      !is.na(sample), nzchar(sample), !is.na(annotation_celltype), nzchar(annotation_celltype),
+      !grepl("^unresolved", annotation_celltype, ignore.case = TRUE)
+    )
+  denominator_df <- final_meta %>%
+    count(sample, study, name = "confidently_annotated_cells")
+  cancer_samples <- cancer_scores %>% select(sample, study) %>% distinct()
+
+  annotation_rows <- lapply(seq_len(nrow(whole_celltype_compartment_cfg)), function(i) {
+    cfg <- whole_celltype_compartment_cfg[i, ]
+    source_scores <- readRDS(cfg$membership_score_path)
+    membership_cells <- intersect(rownames(source_scores), final_meta$cell)
+    membership_meta <- final_meta %>% filter(cell %in% membership_cells, annotation_celltype == cfg$annotation_celltype)
+    source_samples <- membership_meta %>% distinct(sample, study)
+
+    if (cfg$subset_definition %in% c("established_cd8_subset", "established_cd4_subset")) {
+      numerator_df <- membership_meta %>% count(sample, study, name = "whole_celltype_cells")
+    } else {
+      numerator_df <- final_meta %>%
+        filter(annotation_celltype == cfg$annotation_celltype) %>%
+        count(sample, study, name = "whole_celltype_cells")
+    }
+
+    cancer_samples %>%
+      inner_join(source_samples, by = c("sample", "study")) %>%
+      left_join(denominator_df, by = c("sample", "study")) %>%
+      left_join(numerator_df, by = c("sample", "study")) %>%
+      mutate(
+        whole_celltype = cfg$display,
+        annotation_celltype = cfg$annotation_celltype,
+        display = cfg$display,
+        compartment = cfg$compartment,
+        subset_definition = cfg$subset_definition,
+        whole_celltype_cells = replace_na(whole_celltype_cells, 0L),
+        annotated_celltype_pct = ifelse(
+          confidently_annotated_cells > 0,
+          100 * whole_celltype_cells / confidently_annotated_cells,
+          NA_real_
+        ),
+        annotation_measure = "percent_of_confidently_annotated_atlas_cells"
+      )
+  })
+  annotation_long <- bind_rows(annotation_rows) %>%
+    arrange(match(display, whole_celltype_plot_order), sample)
+
+  cancer_features <- setdiff(colnames(cancer_scores), c("sample", "study", "n_cells"))
+  cancer_adjusted <- cancer_scores %>%
+    select(sample, study, n_cells, all_of(cancer_features))
+  cancer_coverage <- vapply(cancer_features, function(feature_name) {
+    sum(is.finite(cancer_adjusted[[feature_name]]) & cancer_adjusted[[feature_name]] > 0)
+  }, numeric(1))
+  cancer_node_summary <- tibble(
+    compartment = "cancer",
+    celltype_display = "cancer",
+    celltype_order = match("cancer", whole_celltype_plot_order),
+    node_id = vapply(cancer_features, function(x) make_node_id("cancer", x), character(1)),
+    node_label = vapply(cancer_features, function(x) format_node_label("cancer", "cancer", x), character(1)),
+    mp_name = cancer_features,
+    mp_display = vapply(cancer_features, function(x) format_mp_display("cancer", x), character(1)),
+    mp_index = seq_along(cancer_features),
+    mp_plot_order = seq_along(cancer_features),
+    sample_coverage_n = as.numeric(cancer_coverage),
+    denominator_samples = nrow(cancer_adjusted),
+    coverage_pct = 100 * as.numeric(cancer_coverage) / nrow(cancer_adjusted),
+    coverage_pass = is.finite(cancer_coverage) & cancer_coverage > min_positive_samples,
+    n_cells = sum(cancer_adjusted$n_cells, na.rm = TRUE),
+    plot_colour = whole_celltype_plot_colours[["cancer"]]
+  )
+  cancer_data <- list(
+    compartment = "cancer", display = "cancer", mp_names = cancer_features,
+    adjusted_scores = cancer_adjusted, node_stats = cancer_node_summary,
+    positive_rule = if ("Classic proliferation" %in% cancer_features) "assigned_state" else "ucell_cutoff",
+    gene_sets = list(), cells_use = character(0), sample_meta = tibble()
+  )
+
+  whole_data <- lapply(seq_len(nrow(whole_celltype_compartment_cfg)), function(i) {
+    cfg <- whole_celltype_compartment_cfg[i, ]
+    abundance_sub <- annotation_long %>%
+      filter(compartment == cfg$compartment) %>%
+      transmute(
+        sample, study,
+        n_cells = confidently_annotated_cells,
+        whole_abundance = annotated_celltype_pct
+      )
+    coverage_n <- sum(is.finite(abundance_sub$whole_abundance) & abundance_sub$whole_abundance > 0)
+    node_summary <- tibble(
+      compartment = cfg$compartment,
+      celltype_display = cfg$display,
+      celltype_order = match(cfg$display, whole_celltype_plot_order),
+      node_id = make_node_id(cfg$compartment, "whole_abundance"),
+      node_label = paste0(cfg$display, " whole celltype"),
+      mp_name = "whole_abundance",
+      mp_display = "whole abundance",
+      mp_index = 1,
+      mp_plot_order = 1,
+      sample_coverage_n = coverage_n,
+      denominator_samples = nrow(abundance_sub),
+      coverage_pct = 100 * coverage_n / nrow(abundance_sub),
+      coverage_pass = coverage_n > min_positive_samples,
+      n_cells = sum(abundance_sub$n_cells, na.rm = TRUE),
+      plot_colour = whole_celltype_plot_colours[[cfg$display]]
+    )
+    list(
+      compartment = cfg$compartment, display = cfg$display,
+      mp_names = "whole_abundance", adjusted_scores = abundance_sub,
+      node_stats = node_summary, positive_rule = "direct_annotation_abundance",
+      gene_sets = list(), cells_use = character(0), sample_meta = tibble()
+    )
+  })
+  names(whole_data) <- whole_celltype_compartment_cfg$compartment
+
+  list(
+    compartment_data = c(list(cancer = cancer_data), whole_data),
+    annotation_long = annotation_long
+  )
+}
+
+run_whole_celltype_compatibility_mode <- function(mode_cfg) {
+  mode_cfg <- as.list(mode_cfg)
+  analysis_out_dir <- file.path(out_dir, mode_cfg$out_subdir)
+  analysis_cache_dir <- file.path(analysis_out_dir, "cache")
+  dir.create(analysis_out_dir, recursive = TRUE, showWarnings = FALSE)
+  dir.create(analysis_cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+  ####################
+  # The shared plotting functions resolve these objects dynamically.  Set a
+  # temporary aggregate-celltype context so their order and style match the
+  # standard mode 01--04 figures while retaining a single T-cell node.
+  ####################
+  old_display_order <- celltype_display_order
+  old_pair_order_lookup <- pair_order_lookup
+  old_plot_colour_lookup <- plot_colour_lookup
+  celltype_display_order <<- whole_celltype_plot_order
+  pair_order_lookup <<- setNames(seq_along(whole_celltype_plot_order), whole_celltype_plot_order)
+  plot_colour_lookup <<- whole_celltype_plot_colours
+  on.exit({
+    celltype_display_order <<- old_display_order
+    pair_order_lookup <<- old_pair_order_lookup
+    plot_colour_lookup <<- old_plot_colour_lookup
+  }, add = TRUE)
+
+  cancer_score_path <- file.path(out_dir, mode_cfg$source_subdir, "Auto_adjusted_scores_cancer.csv")
+  if (!file.exists(cancer_score_path)) {
+    stop("Missing cancer adjusted-score input for ", mode_cfg$analysis_id, ": ", cancer_score_path)
+  }
+  cancer_scores <- read.csv(cancer_score_path, stringsAsFactors = FALSE, check.names = FALSE) %>%
+    mutate(study = ifelse(is.na(study) | study == "", derive_study(sample), study))
+
+  step1_cache <- load_or_build_cache(
+    cache_filename = "Auto_whole_celltype_step1_compartment_cache_v3.rds",
+    step_name = paste0("whole-celltype compartment inputs [", mode_cfg$analysis_id, "]"),
+    cache_dir_use = analysis_cache_dir,
+    build_fun = function() build_whole_celltype_compatibility_data(cancer_scores)
+  )
+  compartment_data <- step1_cache$compartment_data
+  annotation_long <- step1_cache$annotation_long
+  node_summary <- bind_rows(lapply(compartment_data, `[[`, "node_stats")) %>%
+    arrange(celltype_order, mp_plot_order)
+
+  write.csv(annotation_long, file.path(analysis_out_dir, "Auto_whole_celltype_annotation_abundance.csv"), row.names = FALSE)
+  for (compartment_name in names(compartment_data)) {
+    comp <- compartment_data[[compartment_name]]
+    write.csv(
+      prepare_adjusted_score_export(compartment_name, comp$adjusted_scores, comp$mp_names),
+      file.path(analysis_out_dir, paste0("Auto_adjusted_scores_", compartment_name, ".csv")),
+      row.names = FALSE
+    )
+  }
+  write.csv(node_summary, file.path(analysis_out_dir, "Auto_celltype_node_summary.csv"), row.names = FALSE)
+
+  cutoff_summary <- node_summary %>%
+    transmute(
+      compartment, celltype_display, celltype_order, mp_name, mp_plot_order,
+      z_mult = NA_real_, sample_coverage_n, denominator_samples, coverage_pct,
+      coverage_pass, positivity_definition = "direct final-annotation abundance; no activity cutoff"
+    )
+  write.csv(cutoff_summary, file.path(analysis_out_dir, "Auto_celltype_cutoff_sensitivity.csv"), row.names = FALSE)
+  cutoff_note_plot <- ggplot() +
+    annotate("text", x = 0, y = 0.35, size = 5.2, fontface = "bold",
+      label = "No UCell / marker activity cutoff in whole-celltype modes") +
+    annotate("text", x = 0, y = -0.05, size = 4.2,
+      label = "Each non-malignant node is the final annotated-celltype percentage per sample.\nCancer features retain their existing adjusted-score/state definitions from modes 01 or 03.") +
+    xlim(-1, 1) + ylim(-1, 1) + theme_void(base_size = 14) +
+    labs(title = paste0("Direct-annotation abundance input: ", mode_cfg$analysis_label))
+  ggsave(file.path(analysis_out_dir, "Auto_celltype_cutoff_sensitivity.pdf"), cutoff_note_plot, width = 14, height = 8)
+
+  step2_cache <- load_or_build_cache(
+    cache_filename = "Auto_whole_celltype_step2_correlation_cache_v3.rds",
+    step_name = paste0("whole-celltype pairwise correlations [", mode_cfg$analysis_id, "]"),
+    cache_dir_use = analysis_cache_dir,
+    build_fun = function() {
+      pair_grid <- combn(names(compartment_data), 2, simplify = FALSE)
+      pair_rows <- list()
+      study_rows <- list()
+      for (pair in pair_grid) {
+        comp_a <- compartment_data[[pair[1]]]
+        comp_b <- compartment_data[[pair[2]]]
+        shared_samples <- intersect(comp_a$adjusted_scores$sample, comp_b$adjusted_scores$sample)
+        shared_info <- tibble(sample = shared_samples) %>%
+          left_join(full_sample_lookup_mode, by = "sample") %>%
+          mutate(study = ifelse(is.na(study) | study == "", derive_study(sample), study))
+        study_df <- shared_info %>%
+          count(study, name = "shared_samples") %>%
+          mutate(
+            compartment1 = comp_a$compartment, compartment2 = comp_b$compartment,
+            celltype1_display = comp_a$display, celltype2_display = comp_b$display,
+            pair_scope = "cross", eligible = shared_samples >= min_shared_samples_per_study
+          )
+        study_rows[[length(study_rows) + 1]] <- study_df
+        eligible_studies <- study_df$study[study_df$eligible]
+        eligible_samples <- shared_info$sample[shared_info$study %in% eligible_studies]
+        if (length(eligible_samples) < min_pair_samples) next
+        score_a <- comp_a$adjusted_scores[match(eligible_samples, comp_a$adjusted_scores$sample), , drop = FALSE]
+        score_b <- comp_b$adjusted_scores[match(eligible_samples, comp_b$adjusted_scores$sample), , drop = FALSE]
+        keep <- !is.na(score_a$sample) & !is.na(score_b$sample)
+        score_a <- score_a[keep, , drop = FALSE]
+        score_b <- score_b[keep, , drop = FALSE]
+        for (mp_a in comp_a$mp_names) for (mp_b in comp_b$mp_names) {
+          pear_bits <- safe_cor_test(score_a[[mp_a]], score_b[[mp_b]], method = "pearson")
+          spear_bits <- safe_cor_test(score_a[[mp_a]], score_b[[mp_b]], method = "spearman")
+          pair_rows[[length(pair_rows) + 1]] <- tibble(
+            edge_id = paste(comp_a$compartment, mp_a, comp_b$compartment, mp_b, sep = "__"),
+            compartment1 = comp_a$compartment, compartment2 = comp_b$compartment,
+            celltype1_display = comp_a$display, celltype2_display = comp_b$display,
+            pair_scope = "cross", node1_id = make_node_id(comp_a$compartment, mp_a),
+            node2_id = make_node_id(comp_b$compartment, mp_b),
+            node1_label = comp_a$node_stats$node_label[match(mp_a, comp_a$node_stats$mp_name)],
+            node2_label = comp_b$node_stats$node_label[match(mp_b, comp_b$node_stats$mp_name)],
+            mp1_name = mp_a, mp2_name = mp_b,
+            mp1_display = comp_a$node_stats$mp_display[match(mp_a, comp_a$node_stats$mp_name)],
+            mp2_display = comp_b$node_stats$mp_display[match(mp_b, comp_b$node_stats$mp_name)],
+            shared_sample_n = nrow(score_a),
+            co_positive_sample_n = sum(score_a[[mp_a]] > 0 & score_b[[mp_b]] > 0, na.rm = TRUE),
+            co_positive_sample_pct = 100 * sum(score_a[[mp_a]] > 0 & score_b[[mp_b]] > 0, na.rm = TRUE) / nrow(score_a),
+            eligible_studies = paste(sort(eligible_studies), collapse = ";"),
+            pearson_r = pear_bits$estimate, pearson_p = pear_bits$p.value,
+            spearman_r = spear_bits$estimate, spearman_p = spear_bits$p.value
+          )
+        }
+      }
+      result_df <- bind_rows(pair_rows) %>%
+        mutate(
+          spearman_significance = -log10(pmax(spearman_p, .Machine$double.xmin)),
+          pearson_direction = case_when(pearson_r > 0 ~ "positive", pearson_r < 0 ~ "negative", TRUE ~ "zero"),
+          spearman_sig = !is.na(spearman_p) & spearman_p < 0.05,
+          celltype_pair = paste(celltype1_display, "vs", celltype2_display),
+          edge_label = paste(node1_label, node2_label, sep = " <-> ")
+        )
+      list(result_df = result_df, study_summary = bind_rows(study_rows))
+    }
+  )
+  result_df <- step2_cache$result_df
+  study_summary <- step2_cache$study_summary
+  positive_edges <- result_df %>% filter(spearman_sig, !is.na(pearson_r), pearson_r > 0) %>% arrange(desc(spearman_significance), desc(pearson_r))
+  negative_edges <- result_df %>% filter(spearman_sig, !is.na(pearson_r), pearson_r < 0) %>% arrange(desc(spearman_significance), pearson_r)
+
+  write.csv(study_summary, file.path(analysis_out_dir, "Auto_celltype_shared_sample_summary.csv"), row.names = FALSE)
+  write.csv(result_df, file.path(analysis_out_dir, "Auto_celltype_correlations_all.csv"), row.names = FALSE)
+  write.csv(positive_edges, file.path(analysis_out_dir, "Auto_celltype_correlations_positive.csv"), row.names = FALSE)
+  write.csv(negative_edges, file.path(analysis_out_dir, "Auto_celltype_correlations_negative.csv"), row.names = FALSE)
+
+  pdf(file.path(analysis_out_dir, "Auto_celltype_correlation_bubble.pdf"), width = 16, height = 12, onefile = TRUE)
+  for (focal in whole_celltype_plot_order) {
+    focal_pairs <- get_expected_focal_pairs(focal, include_within = FALSE)
+    pair_plots <- lapply(focal_pairs, function(pair_name) {
+      pair_bits <- strsplit(pair_name, " vs ", fixed = TRUE)[[1]]
+      partner <- get_partner_celltype(pair_bits, focal)
+      pair_df <- result_df %>% filter(celltype_pair == pair_name)
+      if (nrow(pair_df) > 0 && pair_bits[1] != focal) {
+        pair_df <- pair_df %>%
+          transmute(
+            edge_id,
+            node1_label_plot = node2_label,
+            node2_label_plot = node1_label,
+            spearman_significance, pearson_r, spearman_sig
+          ) %>%
+          rename(node1_label = node1_label_plot, node2_label = node2_label_plot)
+      }
+      x_nodes <- node_summary %>% filter(celltype_display == focal) %>% arrange(mp_plot_order) %>% pull(node_label)
+      y_nodes <- node_summary %>% filter(celltype_display == partner) %>% arrange(mp_plot_order) %>% pull(node_label)
+      make_pair_bubble_plot(pair_df, paste(focal, partner, sep = " vs "), x_nodes, y_nodes)
+    })
+    pad_n <- (3 - (length(pair_plots) %% 3)) %% 3
+    if (pad_n > 0) pair_plots <- c(pair_plots, rep(list(patchwork::plot_spacer()), pad_n))
+    print(patchwork::wrap_plots(pair_plots, ncol = 3, guides = "collect") + patchwork::plot_annotation(title = paste("Bubble plot:", focal)))
+  }
+  dev.off()
+
+  dotmap_subtitle <- "Final annotated-celltype abundance; dot size = co-positive samples; no marker or activity cutoff"
+  if (nrow(positive_edges) > 0) {
+    write_focal_interaction_dotmap(
+      edge_df = positive_edges, node_df = node_summary,
+      out_path = file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap.pdf"), include_within = FALSE
+    )
+    write_focal_interaction_dotmap(
+      edge_df = bind_rows(positive_edges, negative_edges), node_df = node_summary,
+      out_path = file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap_with_neg.pdf"), include_within = FALSE
+    )
+    dotmap_data <- bind_rows(lapply(whole_celltype_plot_order, function(focal) {
+      prepare_focal_interaction_dotmap_data(positive_edges, node_summary, focal, include_within = FALSE)
+    }))
+  } else {
+    pdf(file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap.pdf"), width = 22, height = 10.5, onefile = TRUE)
+    for (focal in whole_celltype_plot_order) {
+      print(
+        ggplot() +
+          annotate("text", x = 0, y = 0, label = "No significant positive interactions", size = 5, color = "grey45") +
+          xlim(-1, 1) + ylim(-1, 1) + theme_void(base_size = 14) +
+          labs(title = paste0(focal, " interaction map"), subtitle = dotmap_subtitle)
+      )
+    }
+    dev.off()
+    pdf(file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap_with_neg.pdf"), width = 22, height = 10.5, onefile = TRUE)
+    for (focal in whole_celltype_plot_order) {
+      print(
+        ggplot() +
+          annotate("text", x = 0, y = 0, label = "No significant positive interactions", size = 5, color = "grey45") +
+          xlim(-1, 1) + ylim(-1, 1) + theme_void(base_size = 14) +
+          labs(title = paste0(focal, " interaction map"), subtitle = dotmap_subtitle)
+      )
+    }
+    dev.off()
+    dotmap_data <- result_df[0, ]
+  }
+  write.csv(dotmap_data, file.path(analysis_out_dir, "Auto_celltype_interaction_dotmap_data.csv"), row.names = FALSE)
+
+  ggsave(file.path(analysis_out_dir, "Auto_celltype_positive_network.pdf"), plot_network(
+    positive_edges, node_summary, paste("Positive correlations:", mode_cfg$analysis_label),
+    "Pearson > 0 and Spearman p < 0.05; direct final-annotation abundance", "#F9D7CF", "#8F0000"
+  ), width = 15, height = 11)
+  ggsave(file.path(analysis_out_dir, "Auto_celltype_negative_network.pdf"), plot_network(
+    negative_edges, node_summary, paste("Negative correlations:", mode_cfg$analysis_label),
+    "Pearson < 0 and Spearman p < 0.05; direct final-annotation abundance", "#DCEAF7", "#08519C"
+  ), width = 15, height = 11)
+
+  ####################
+  # LR support requires two MP gene sets.  A direct whole-celltype abundance
+  # node has no such set, so preserve the standard output contract with an
+  # explicit not-applicable status rather than fabricating LR evidence.
+  ####################
+  lr_status <- tibble(
+    analysis_id = mode_cfg$analysis_id, status = "not_applicable",
+    reason = "Whole-celltype nodes are direct annotated-celltype abundances and have no MP gene set for LR matching.",
+    source = NA_character_, sheet = NA_character_, retained_evidence = paste(pair_evidence_allowed, collapse = "; "),
+    n_pairs_all = NA_integer_, n_pairs_retained = NA_integer_, n_pairs_excluded = NA_integer_
+  )
+  write.csv(lr_status, file.path(analysis_out_dir, "Auto_celltype_ligand_receptor_status.csv"), row.names = FALSE)
+  write.csv(tibble(status = "not_applicable", reason = lr_status$reason), file.path(analysis_out_dir, "Auto_celltype_ligand_receptor_pairs.csv"), row.names = FALSE)
+  write.csv(tibble(status = "not_applicable", reason = lr_status$reason), file.path(analysis_out_dir, "Auto_celltype_ligand_receptor_edge_summary.csv"), row.names = FALSE)
+  write.csv(tibble(status = "not_applicable", reason = lr_status$reason), file.path(analysis_out_dir, "Auto_celltype_positive_edges_lr_annotated.csv"), row.names = FALSE)
+  lr_note_plot <- ggplot() + annotate("text", x = 0, y = 0, size = 5, label = "Ligand-receptor matching is not applicable\nto direct whole-celltype abundance nodes") + theme_void(base_size = 14)
+  ggsave(file.path(analysis_out_dir, "Auto_celltype_positive_network_lr_annotated.pdf"), lr_note_plot, width = 15, height = 11)
+  ggsave(file.path(analysis_out_dir, "Auto_celltype_ligand_receptor_summary.pdf"), lr_note_plot, width = 12, height = 10)
+
+  wb <- createWorkbook(creator = "Codex")
+  write_styled_sheet(wb, "All correlations", result_df, "Whole-celltype direct-abundance correlations")
+  write_styled_sheet(wb, "Positive", positive_edges, "Positive whole-celltype correlations")
+  write_styled_sheet(wb, "Negative", negative_edges, "Negative whole-celltype correlations")
+  write_styled_sheet(wb, "LR status", lr_status, "Ligand-receptor status")
+  saveWorkbook(wb, file.path(analysis_out_dir, "Auto_cancer_tme_interactions_TME_centric.xlsx"), overwrite = TRUE)
+  saveWorkbook(wb, file.path(analysis_out_dir, "Auto_cross_celltype_ligand_receptor_pairs_by_focal_celltype.xlsx"), overwrite = TRUE)
+
+  cancer_edge_df <- result_df %>% filter(compartment1 == "cancer" | compartment2 == "cancer")
+  mode_summary <- tibble(
+    analysis_id = mode_cfg$analysis_id, analysis_label = mode_cfg$analysis_label,
+    output_dir = analysis_out_dir, cancer_definition = mode_cfg$cancer_definition,
+    include_within = FALSE, cache_version = paste0(cache_version, "_whole_v3"),
+    z_score_multiplier = z_score_multiplier, n_compartments = length(compartment_data),
+    n_nodes_total = nrow(node_summary), n_nodes_passing_coverage = sum(node_summary$coverage_pass),
+    n_pairwise_tests = nrow(result_df), n_cancer_pairwise_tests = nrow(cancer_edge_df),
+    n_positive_edges = nrow(positive_edges), n_negative_edges = nrow(negative_edges),
+    n_cancer_positive_edges_p05 = sum(cancer_edge_df$spearman_sig & cancer_edge_df$pearson_r > 0, na.rm = TRUE),
+    n_cancer_positive_edges_sig = sum(cancer_edge_df$spearman_sig & cancer_edge_df$pearson_r > 0, na.rm = TRUE),
+    max_cancer_positive_spearman_significance = if (nrow(cancer_edge_df) == 0) NA_real_ else max(cancer_edge_df$spearman_significance, na.rm = TRUE),
+    n_lr_rows = NA_integer_, n_lr_supported_edges = NA_integer_,
+    n_lr_pairs_all_reference = NA_integer_, n_lr_pairs_retained_reference = NA_integer_, n_lr_pairs_excluded_reference = NA_integer_,
+    cancer_positive_rule = if (identical(mode_cfg$cancer_definition, "state")) "assigned_state_label" else paste0("z_mult_", z_score_multiplier),
+    excel_outputs = paste(file.path(analysis_out_dir, c("Auto_cancer_tme_interactions_TME_centric.xlsx", "Auto_cross_celltype_ligand_receptor_pairs_by_focal_celltype.xlsx")), collapse = "; ")
+  )
+  write.csv(mode_summary, file.path(analysis_out_dir, "Auto_celltype_mode_summary.csv"), row.names = FALSE)
+  message("Saved full whole-celltype compatibility outputs to: ", file.path(getwd(), analysis_out_dir))
+  mode_summary
+}
+
+whole_celltype_full_summaries <- bind_rows(lapply(seq_len(nrow(whole_celltype_full_mode_cfg)), function(i) {
+  run_whole_celltype_compatibility_mode(whole_celltype_full_mode_cfg[i, , drop = FALSE])
+}))
+write.csv(
+  bind_rows(mode_summaries, whole_celltype_full_summaries),
+  file.path(summary_dir, "Auto_mp_cross_celltype_correlations_summary.csv"), row.names = FALSE
+)
+####################

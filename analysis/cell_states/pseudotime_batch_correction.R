@@ -39,28 +39,32 @@ library(harmony)
 
 reticulate::use_condaenv("dmtcp", conda = "/rds/general/user/sg3723/home/anaconda3/bin/conda", required = TRUE)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+live_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs"
+ephemeral_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs"
+
+setwd(live_dir)
 
 ####################
 # Constants
 ####################
 task_prefix <- "task1_batch_correction"
-out_root <- "pseudotime_batch_correction_states"
+out_root_live <- file.path(live_dir, "pseudotime_batch_correction_states")
+out_root_ephemeral <- file.path(ephemeral_dir, "pseudotime_batch_correction_states")
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive"       = c("MP13", "MP12"),
-  "SMG-like Metaplasia"   = c("MP18", "MP16"),
-  "Immune Infiltrating"   = c("MP15")
+  "Classic proliferation" = c("MP2"),
+  "Basal to intestinal metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress adaptive"       = c("MP13", "MP12"),
+  "SMG to intestinal metaplasia"   = c("MP18", "MP16"),
+  "Cancer-cell immune mimicry"   = c("MP15")
 )
 
 group_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive"       = "#984EA3",
-  "SMG-like Metaplasia"   = "#FF7F00",
-  "Immune Infiltrating"   = "#377EB8"
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "Stress adaptive"       = "#984EA3",
+  "SMG to intestinal metaplasia"   = "#FF7F00",
+  "Cancer-cell immune mimicry"   = "#377EB8"
 )
 
 mp_descriptions <- c(
@@ -81,29 +85,29 @@ mp_descriptions <- c(
 )
 
 state_subsets <- list(
-  "Basal to Intestinal Metaplasia" = list(
+  "Basal to intestinal metaplasia" = list(
     mps = c("MP17", "MP14", "MP5", "MP10", "MP8"),
     root_mp = "MP17"
   ),
-  "SMG-like Metaplasia" = list(
+  "SMG to intestinal metaplasia" = list(
     mps = c("MP18", "MP16"),
     root_mp = "MP18"
   ),
-  "Stress-adaptive" = list(
+  "Stress adaptive" = list(
     mps = c("MP13", "MP12"),
     root_mp = "MP13"
   ),
   "Basal and SMG Metaplasia" = list(
     mps = c("MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16"),
     root_mp = "MP17",
-    source_states = c("Basal to Intestinal Metaplasia", "SMG-like Metaplasia")
+    source_states = c("Basal to intestinal metaplasia", "SMG to intestinal metaplasia")
   )
 )
 
 state_dir_map <- c(
-  "Basal to Intestinal Metaplasia" = "Basal_to_Intestinal_Metaplasia",
-  "SMG-like Metaplasia" = "SMG_like_Metaplasia",
-  "Stress-adaptive" = "Stress_adaptive",
+  "Basal to intestinal metaplasia" = "Basal_to_Intestinal_Metaplasia",
+  "SMG to intestinal metaplasia" = "SMG_like_Metaplasia",
+  "Stress adaptive" = "Stress_adaptive",
   "Basal and SMG Metaplasia" = "Basal_and_SMG_Metaplasia"
 )
 
@@ -111,9 +115,9 @@ state_dir_map <- c(
 # Load data
 ####################
 message("Loading data ...")
-tmdata_all <- readRDS("EAC_Ref_epi.rds")
-state_B <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
-mp_adj_noncc <- readRDS("Auto_topmp_v2_noreg_mp_adj.rds")
+tmdata_all <- readRDS(file.path(live_dir, "EAC_Ref_epi.rds"))
+state_B <- readRDS(file.path(live_dir, "Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds"))
+mp_adj_noncc <- readRDS(file.path(live_dir, "Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds"))
 
 # Align cells
 common_cells <- intersect(names(state_B), Cells(tmdata_all))
@@ -271,14 +275,17 @@ for (batch_method in batch_methods) {
   message(sprintf("=== Running Workflow for: %s ===", batch_method))
   message(sprintf("====================================\n"))
   
-  out_root_method <- file.path(out_root, batch_method)
+  out_root_method_live <- file.path(out_root_live, batch_method)
+  out_root_method_ephemeral <- file.path(out_root_ephemeral, batch_method)
   
   # Create path layouts
-  dir.create(file.path(out_root_method, "partA"), recursive = TRUE, showWarnings = FALSE)
-  dir.create(file.path(out_root_method, "diagnostics"), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(out_root_method_live, "partA"), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(out_root_method_ephemeral, "partA"), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(out_root_method_live, "diagnostics"), recursive = TRUE, showWarnings = FALSE)
   
   for (d in state_dir_map) {
-    dir.create(file.path(out_root_method, "partB", d), recursive = TRUE, showWarnings = FALSE)
+    dir.create(file.path(out_root_method_live, "partB", d), recursive = TRUE, showWarnings = FALSE)
+    dir.create(file.path(out_root_method_ephemeral, "partB", d), recursive = TRUE, showWarnings = FALSE)
   }
   
   # --- PART A ---
@@ -296,7 +303,7 @@ for (batch_method in batch_methods) {
     target_states
   )
   
-  root_cells_A <- partA_cells[state_B[partA_cells] == "Basal to Intestinal Metaplasia"]
+  root_cells_A <- partA_cells[state_B[partA_cells] == "Basal to intestinal metaplasia"]
   
   result_A <- tryCatch({
     run_pseudotime_batch_corrected(
@@ -309,8 +316,8 @@ for (batch_method in batch_methods) {
       legend_labels = state_legend_labels,
       legend_title = "State",
       n_cells = length(partA_cells),
-      out_dir_cds = file.path(out_root_method, "partA"),
-      out_dir_diag = file.path(out_root_method, "diagnostics"),
+      out_dir_cds = file.path(out_root_method_ephemeral, "partA"),
+      out_dir_diag = file.path(out_root_method_live, "diagnostics"),
       save_prefix = paste0("partA_", batch_method)
     )
   }, error = function(e) {
@@ -319,12 +326,12 @@ for (batch_method in batch_methods) {
   })
   
   if (!is.null(result_A)) {
-    pdf(file.path(out_root_method, "partA", sprintf("Auto_partA_%s_pseudotime.pdf", batch_method)), width = 14, height = 6)
+    pdf(file.path(out_root_method_live, "partA", sprintf("Auto_partA_%s_pseudotime.pdf", batch_method)), width = 14, height = 6)
     print(result_A$plots$group + result_A$plots$pseudotime)
     dev.off()
     
     # Save RDS output
-    saveRDS(result_A$cds, file.path(out_root_method, "partA", sprintf("Auto_partA_%s_cds.rds", batch_method)))
+    saveRDS(result_A$cds, file.path(out_root_method_ephemeral, "partA", sprintf("Auto_partA_%s_cds.rds", batch_method)))
   }
   
   # --- PART B ---
@@ -371,7 +378,8 @@ for (batch_method in batch_methods) {
     
     root_cells_B <- state_cells[top_mp_label[state_cells] == root_mp]
     
-    out_dir_B <- file.path(out_root_method, "partB", state_dir_map[[state_name]])
+    out_dir_B_live <- file.path(out_root_method_live, "partB", state_dir_map[[state_name]])
+    out_dir_B_ephemeral <- file.path(out_root_method_ephemeral, "partB", state_dir_map[[state_name]])
     
     result_B <- tryCatch({
       run_pseudotime_batch_corrected(
@@ -384,8 +392,8 @@ for (batch_method in batch_methods) {
         legend_labels = mp_legend_labels,
         legend_title = "MP",
         n_cells = length(state_cells),
-        out_dir_cds = out_dir_B,
-        out_dir_diag = file.path(out_root_method, "diagnostics"),
+        out_dir_cds = out_dir_B_ephemeral,
+        out_dir_diag = file.path(out_root_method_live, "diagnostics"),
         save_prefix = paste0("partB_", state_dir_map[[state_name]], "_", batch_method)
       )
     }, error = function(e) {
@@ -394,11 +402,11 @@ for (batch_method in batch_methods) {
     })
     
     if (!is.null(result_B)) {
-      pdf(file.path(out_dir_B, sprintf("Auto_partB_%s_%s_pseudotime.pdf", state_dir_map[[state_name]], batch_method)), width = 14, height = 6)
+      pdf(file.path(out_dir_B_live, sprintf("Auto_partB_%s_%s_pseudotime.pdf", state_dir_map[[state_name]], batch_method)), width = 14, height = 6)
       print(result_B$plots$group + result_B$plots$pseudotime)
       dev.off()
       
-      saveRDS(result_B$cds, file.path(out_dir_B, sprintf("Auto_partB_%s_%s_cds.rds", state_dir_map[[state_name]], batch_method)))
+      saveRDS(result_B$cds, file.path(out_dir_B_ephemeral, sprintf("Auto_partB_%s_%s_cds.rds", state_dir_map[[state_name]], batch_method)))
     }
   }
 }

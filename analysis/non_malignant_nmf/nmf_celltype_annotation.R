@@ -21,7 +21,7 @@ args <- commandArgs(trailingOnly = TRUE)
 celltype_arg <- args[1]
 if (is.na(celltype_arg) || celltype_arg == "") stop("Usage: Rscript nmf_celltype_annotation.R <celltype>")
 
-base_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs"
+base_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs"
 
 # ---- Cell type → NMF folder & Excel sheet mapping ----
 ct_map <- list(

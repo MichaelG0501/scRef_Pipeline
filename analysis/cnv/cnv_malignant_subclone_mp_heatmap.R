@@ -42,14 +42,15 @@ suppressPackageStartupMessages({
   library(scales)
 })
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 args <- commandArgs(trailingOnly = TRUE)
 sample_arg <- if (length(args) >= 1 && nzchar(args[1])) args[1] else "all"
-min_cells <- if (length(args) >= 2 && nzchar(args[2])) as.integer(args[2]) else 40L
-min_subclone_cells <- if (length(args) >= 3 && nzchar(args[3])) as.integer(args[3]) else 20L
-min_subclone_frac <- if (length(args) >= 4 && nzchar(args[4])) as.numeric(args[4]) else 0.05
-max_plot_cells <- if (length(args) >= 5 && nzchar(args[5])) as.integer(args[5]) else 1200L
+robust_effect_size_threshold <- if (length(args) >= 2 && nzchar(args[2])) as.numeric(args[2]) else 1.0
+min_cells <- if (length(args) >= 3 && nzchar(args[3])) as.integer(args[3]) else 40L
+min_subclone_cells <- if (length(args) >= 4 && nzchar(args[4])) as.integer(args[4]) else 20L
+min_subclone_frac <- if (length(args) >= 5 && nzchar(args[5])) as.numeric(args[5]) else 0.05
+max_plot_cells <- if (length(args) >= 6 && nzchar(args[6])) as.integer(args[6]) else 1200L
 max_subclones <- 6L
 min_distinct_arm_delta <- 0.03
 min_subclone_silhouette <- 0.12
@@ -67,7 +68,7 @@ mp_score_limit <- 2
 cna_colour_limit <- 0.15
 mp_mean_colour_limit <- 0.75
 
-out_dir <- "Auto_malignant_subclone_mp"
+out_dir <- file.path("Auto_malignant_subclone_mp", paste0("threshold_", robust_effect_size_threshold))
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 gene_order_path <- "/rds/general/project/spatialtranscriptomics/live/ITH_all/all_samples/hg38_gencode_v27.txt"
@@ -85,46 +86,50 @@ gene_order <- gene_order %>%
   mutate(chromosome = factor(.data$chromosome, levels = chrom_levels)) %>%
   arrange(.data$chromosome, .data$start)
 
-ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
+ucell_scores <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds")
 meta_full_epi <- readRDS("meta_full_epi.rds")
 
 mp_descriptions <- c(
-  "MP1"  = "G2M Cell Cycle",
-  "MP9"  = "G1S Cell Cycle",
-  "MP2"  = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5"  = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8"  = "Intestinal Diff.",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP7"  = "DNA Damage Repair",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi."
+  "MP1" = "G2/M cell cycle",
+  "MP5" = "G1/S cell cycle",
+  "MP13+" = "replication-stress-associated cell cycling",
+  "MP2+" = "MYC driven biosynthesis",
+  "MP14" = "Squamoid/basal transition",
+  "MP3+" = "Basal-columnar invasive epithelium",
+  "MP6+" = "Stress-reactive columnar epithelium",
+  "MP11+" = "Epithelial antiviral interferon response",
+  "MP9+" = "Metabolic columnar epithelium",
+  "MP10+" = "Intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP18b" = "Mucous-secretory differentiation",
+  "MP17" = "Immune-interactive glandular progenitor",
+  "MP2x" = "Wnt-active glandular stem/progenitor",
+  "MP12" = "Hypoxic inflammatory adaptive plasticity",
+  "MP15" = "T/NK-like cancer-cell immune mimicry",
+  "MP11c" = "Excluded",
+  "MP18a" = "Excluded"
 )
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "SMG-like Metaplasia" = c("MP18", "MP16"),
-  "Stress-adaptive" = c("MP13", "MP12"),
-  "Immune Infiltrating" = c("MP15")
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
-cc_mps <- c("MP1", "MP7", "MP9")
-extra_state_order <- c("3CA_EMT_and_Protein_maturation")
+cc_mps <- c("MP1", "MP5", "MP13+")
+extra_state_order <- character(0)
 state_level_order <- c(names(state_groups), extra_state_order, "Unresolved", "Hybrid")
 
 state_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Stress-adaptive" = "#984EA3",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#666666",
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8",
   "Unresolved" = "grey80",
   "Hybrid" = "black"
 )
@@ -141,21 +146,28 @@ subclone_palette <- c(
 ####################
 
 mp_cols <- c(
-  "MP1_G2M Cell Cycle" = "#B0B0B0",
-  "MP7_DNA Damage Repair" = "#999999",
-  "MP9_G1S Cell Cycle" = "#C0C0C0",
-  "MP2_MYC-related Proliferation" = "#E41A1C",
-  "MP17_Basal-like Transition" = "#4DAF4A",
-  "MP14_Hypoxia Adapted Epi." = "#8DA0CB",
-  "MP5_Epithelial IFN Resp." = "#66C2A5",
-  "MP10_Columnar Diff." = "#A6D854",
-  "MP8_Intestinal Diff." = "#FC8D62",
-  "MP18_Secretory Diff. (Intest.)" = "#FF7F00",
-  "MP16_Secretory Diff. (Gastric)" = "#FFD92F",
-  "MP13_Hypoxic Inflam. Epi." = "#984EA3",
-  "MP12_Neuro-responsive Epi." = "#E78AC3",
-  "MP15_Immune Infiltration" = "#377EB8"
+  "MP1" = "#B0B0B0",
+  "MP5" = "#C0C0C0",
+  "MP13+" = "#999999",
+  "MP2+" = "#E41A1C",
+  "MP14" = "#8DA0CB",
+  "MP3+" = "#4DAF4A",
+  "MP6+" = "#66C2A5",
+  "MP11+" = "#A6D854",
+  "MP9+" = "#FC8D62",
+  "MP10+" = "#FF7F00",
+  "MP8+" = "#FFD92F",
+  "MP8b" = "#E78AC3",
+  "MP16" = "#FFD92F",
+  "MP18b" = "#FF7F00",
+  "MP17" = "#4DAF4A",
+  "MP2x" = "#E41A1C",
+  "MP12" = "#984EA3",
+  "MP15" = "#377EB8",
+  "MP11c" = "grey80",
+  "MP18a" = "grey80"
 )
+names(mp_cols) <- paste0(names(mp_cols), "_", mp_descriptions[names(mp_cols)])
 
 label_mp <- function(mps) {
   desc <- mp_descriptions[mps]
@@ -163,38 +175,23 @@ label_mp <- function(mps) {
   paste0(mps, "_", desc)
 }
 
-if (file.exists("Auto_final_states.rds")) {
-  state_vec <- readRDS("Auto_final_states.rds")
-  state_source <- "Auto_final_states.rds"
-} else if (file.exists("Auto_topmp_v2_noreg_states_B.rds")) {
-  state_vec <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
-  state_source <- "Auto_topmp_v2_noreg_states_B.rds"
+state_path <- "Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds"
+if (file.exists(state_path)) {
+  state_vec <- readRDS(state_path)
+  state_source <- state_path
 } else {
-  stop("Missing state labels. Run analysis/cell_states/state_definition_approach_b_reg_noreg.R",
-       " and, when UCell_3CA_MPs.rds is available, analysis/cell_states/final_state_unresolved_relabel.R first.")
+  stop("Missing state labels at ", state_path)
 }
 
-if (!file.exists("Auto_topmp_v2_noreg_mp_adj.rds")) {
-  stop("Missing Auto_topmp_v2_noreg_mp_adj.rds. Run analysis/cell_states/state_definition_approach_b_reg_noreg.R first.")
+mp_adj_path <- "Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds"
+if (!file.exists(mp_adj_path)) {
+  stop("Missing ", mp_adj_path)
 }
-mp_adj_noncc <- as.matrix(readRDS("Auto_topmp_v2_noreg_mp_adj.rds"))
+mp_adj_noncc <- as.matrix(readRDS(mp_adj_path))
 
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) {
-  mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
-}
-retained_mps <- names(mp.genes)
-tree_order <- geneNMF.metaprograms$programs.tree$order
-ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
-mp_tree_order <- paste0("MP", unique(ordered_clusters))
-mp_tree_order <- mp_tree_order[mp_tree_order %in% retained_mps]
-mp_names <- unique(c(
-  mp_tree_order[mp_tree_order %in% cc_mps],
-  unlist(lapply(state_groups, function(mps) mp_tree_order[mp_tree_order %in% mps]), use.names = FALSE),
-  mp_tree_order
-))
-mp_names <- mp_names[mp_names %in% names(mp_descriptions)]
+excluded_mps <- c("MP11c", "MP18a")
+plot_mp_order <- c(cc_mps, unlist(state_groups, use.names = FALSE), excluded_mps)
+mp_names <- plot_mp_order[plot_mp_order %in% names(mp_descriptions)]
 mp_labels <- setNames(label_mp(mp_names), mp_names)
 
 infer_study <- function(sample_id) {
@@ -649,34 +646,38 @@ make_corr_heatmap <- function(mp_z, subclone) {
   )
 }
 
-make_boxplot <- function(score_df, mp_test_df, sample_id) {
+make_boxplot <- function(score_df, sub_test_df, sample_id) {
   set.seed(42)
   point_df <- score_df %>%
     group_by(.data$mp_label, .data$subclone) %>%
     group_modify(~ .x[sample(seq_len(nrow(.x)), min(nrow(.x), 200L)), , drop = FALSE]) %>%
     ungroup()
 
-  label_df <- mp_test_df %>%
-    mutate(sig_label = case_when(
+  label_df <- sub_test_df %>%
+    mutate(sig_stars = case_when(
       is.na(p_adj) ~ "NA",
       p_adj < 0.0001 ~ "****",
       p_adj < 0.001 ~ "***",
       p_adj < 0.01 ~ "**",
       p_adj < 0.05 ~ "*",
       TRUE ~ "NS"
-    ))
+    )) %>%
+    mutate(
+      ann_text = sprintf("%s\nΔ=%.1f\n%s", sig_stars, delta_mean, ifelse(significant, "SIG", "ns"))
+    )
   label_df$mp_label <- factor(label_df$mp_label, levels = unique(score_df$mp_label))
 
   y_pos <- score_df %>%
     group_by(.data$mp_label) %>%
-    summarise(y = max(.data$score_z, na.rm = TRUE) + 0.25, .groups = "drop") %>%
+    summarise(y = max(.data$score_z, na.rm = TRUE) + 0.1, .groups = "drop") %>%
     left_join(label_df, by = "mp_label")
 
   ggplot(score_df, aes(.data$subclone, .data$score_z, fill = .data$subclone)) +
     geom_boxplot(outlier.shape = NA, linewidth = 0.2) +
     geom_jitter(data = point_df, width = 0.12, size = 0.15, alpha = 0.15) +
-    geom_text(data = y_pos, aes(x = 1, y = .data$y, label = .data$sig_label), inherit.aes = FALSE, size = 2.4) +
+    geom_text(data = y_pos, aes(x = .data$subclone, y = .data$y, label = .data$ann_text), inherit.aes = FALSE, size = 1.9, vjust = 0, lineheight = 0.8) +
     facet_wrap(~mp_label, scales = "free_y", ncol = 4) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.4))) +
     scale_fill_manual(values = subclone_colours(score_df$subclone), drop = FALSE) +
     labs(title = paste0(sample_id, ": MP scores by CNA subclone"), x = NULL, y = "MP score z") +
     theme_classic(base_size = 8) +
@@ -801,7 +802,13 @@ test_mps_by_subclone <- function(mp_z, subclone, sample_id) {
       y <- mp_df$score_z[mp_df$subclone != cl]
       mean_score <- mean(x, na.rm = TRUE)
       rest_mean <- mean(y, na.rm = TRUE)
-      delta_mean <- mean_score - rest_mean
+      
+      median_score <- median(x, na.rm = TRUE)
+      rest_median <- median(y, na.rm = TRUE)
+      sample_mad <- mad(mp_df$score_z, na.rm = TRUE)
+      if (is.na(sample_mad) || sample_mad == 0) sample_mad <- 1e-6
+      
+      delta_mean <- (median_score - rest_median) / sample_mad
       p_val <- if (length(x) >= 2 && length(y) >= 2) {
         tryCatch(wilcox.test(x, y)$p.value, error = function(e) NA_real_)
       } else {
@@ -831,7 +838,7 @@ test_mps_by_subclone <- function(mp_z, subclone, sample_id) {
     ungroup() %>%
     group_by(.data$sample) %>%
     mutate(p_adj = p.adjust(.data$p_value, method = "BH"),
-           significant = !is.na(.data$p_adj) & .data$p_adj < 0.05 & abs(.data$delta_mean) >= 0.25) %>%
+           significant = !is.na(.data$p_adj) & .data$p_adj < 0.05 & abs(.data$delta_mean) >= robust_effect_size_threshold) %>%
     ungroup()
 
   list(long = long, tests = tests, sub_tests = sub_tests)
@@ -851,9 +858,42 @@ state_tests_all <- list()
 qc_tests_all <- list()
 
 sample_pdf <- file.path(out_dir, "Auto_malignant_subclone_mp_sample_pages.pdf")
+skip_loop <- Sys.getenv("SKIP_CNA_LOOP") == "TRUE"
+
+if (skip_loop) {
+  message("SKIP_CNA_LOOP is TRUE. Loading existing CSVs to skip the slow loop...")
+  cell_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_cells.csv"), stringsAsFactors = FALSE)
+  sample_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_summary.csv"), stringsAsFactors = FALSE)
+  mp_tests_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_mp_tests.csv"), stringsAsFactors = FALSE)
+  sub_tests_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_mp_subclone_tests.csv"), stringsAsFactors = FALSE)
+  state_tests_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_state_tests.csv"), stringsAsFactors = FALSE)
+  
+  # Reconstruct qc_tests_df since it wasn't saved to CSV
+  qc_metrics <- c("nCount_RNA", "nFeature_RNA", "percent.mt", "cc_score", "cs_score")
+  qc_test_rows <- list()
+  for (samp in unique(cell_df$sample)) {
+    samp_df <- cell_df[cell_df$sample == samp & cell_df$subclone != "Unresolved", ]
+    if (length(unique(samp_df$subclone)) >= 2) {
+      for (q in qc_metrics) {
+        if (q %in% colnames(samp_df)) {
+          ms <- tapply(samp_df[[q]], samp_df$subclone, mean, na.rm = TRUE)
+          hi_cl <- names(ms)[which.max(ms)]
+          lo_cl <- names(ms)[which.min(ms)]
+          p <- tryCatch(wilcox.test(samp_df[[q]][samp_df$subclone == hi_cl], 
+                                    samp_df[[q]][samp_df$subclone == lo_cl])$p.value, 
+                        error = function(e) NA_real_)
+          qc_test_rows[[length(qc_test_rows) + 1]] <- data.frame(sample = samp, metric = q, p_value = p, stringsAsFactors = FALSE)
+        }
+      }
+    }
+  }
+  qc_tests_df <- bind_rows(qc_test_rows)
+  if (nrow(qc_tests_df) > 0) qc_tests_df$p_adj <- p.adjust(qc_tests_df$p_value, method = "BH")
+} else {
 pdf(sample_pdf, width = 18, height = 12, useDingbats = FALSE)
 
 for (sample_id in sample_dirs) {
+  set.seed(42)
   message("Processing ", sample_id)
   epi_path <- get_epi_path(sample_id)
   if (is.na(epi_path)) {
@@ -937,8 +977,8 @@ for (sample_id in sample_dirs) {
     nCount_RNA = if ("nCount_RNA" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "nCount_RNA"]) else NA_real_,
     nFeature_RNA = if ("nFeature_RNA" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "nFeature_RNA"]) else NA_real_,
     percent.mt = if ("percent.mt" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "percent.mt"]) else NA_real_,
-    cc_score = if ("cc_score" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "cc_score"]) else NA_real_,
-    cs_score = if ("cs_score" %in% colnames(meta_epi)) as.numeric(meta_epi[keep_cells, "cs_score"]) else NA_real_,
+    cc_score = if ("cc_score" %in% colnames(meta_full_epi)) as.numeric(meta_full_epi[match(keep_cells, rownames(meta_full_epi)), "cc_score"]) else NA_real_,
+    cs_score = if ("cs_score" %in% colnames(meta_full_epi)) as.numeric(meta_full_epi[match(keep_cells, rownames(meta_full_epi)), "cs_score"]) else NA_real_,
     stringsAsFactors = FALSE,
     row.names = keep_cells
   )
@@ -1013,7 +1053,7 @@ for (sample_id in sample_dirs) {
     popViewport()
   }
 
-  print(make_boxplot(score_df, test_res$tests, sample_id), vp = viewport(layout.pos.row = 2, layout.pos.col = 1:2))
+  print(make_boxplot(score_df, test_res$sub_tests, sample_id), vp = viewport(layout.pos.row = 2, layout.pos.col = 1:2))
   print(make_state_distribution_plot(meta_all, state_test), vp = viewport(layout.pos.row = 2, layout.pos.col = 3))
   print(make_qc_boxplot(meta_plot, sample_id), vp = viewport(layout.pos.row = 2, layout.pos.col = 4))
   popViewport()
@@ -1041,13 +1081,22 @@ write.csv(sample_df, file.path(out_dir, "Auto_malignant_subclone_summary.csv"), 
 write.csv(mp_tests_df, file.path(out_dir, "Auto_malignant_subclone_mp_tests.csv"), row.names = FALSE)
 write.csv(sub_tests_df, file.path(out_dir, "Auto_malignant_subclone_mp_subclone_tests.csv"), row.names = FALSE)
 write.csv(state_tests_df, file.path(out_dir, "Auto_malignant_subclone_state_tests.csv"), row.names = FALSE)
+} # end else (!skip_loop)
 
 if (nrow(sub_tests_df) > 0) {
   multi_subclone_samples <- sample_df$sample[sample_df$n_subclones >= 2]
   
+  target_mps <- setdiff(mp_names[mp_names %in% names(mp_labels)], c("MP11c", "MP18a"))
+  
+  true_sig_df <- sub_tests_df %>%
+    filter(sample %in% multi_subclone_samples, mp %in% target_mps) %>%
+    group_by(sample, mp) %>%
+    summarise(truly_significant = any(significant, na.rm = TRUE), .groups = "drop")
+
   sig_counts_sample <- mp_tests_df %>%
-    filter(sample %in% multi_subclone_samples) %>%
-    mutate(significant = !is.na(p_adj) & p_adj < 0.05) %>%
+    filter(sample %in% multi_subclone_samples, mp %in% target_mps) %>%
+    left_join(true_sig_df, by = c("sample", "mp")) %>%
+    mutate(significant = coalesce(truly_significant, FALSE)) %>%
     group_by(sample) %>%
     summarise(n_sig_mps = sum(significant, na.rm = TRUE), .groups = "drop") %>%
     mutate(category = case_when(
@@ -1079,25 +1128,23 @@ if (nrow(sub_tests_df) > 0) {
     labs(title = "Significant MP differences per sample", x = NULL, y = "% samples") +
     theme_classic(base_size = 11) + theme(legend.position = "none", plot.title = element_text(face = "bold"))
 
-  target_mps <- c("MP1", "MP7", "MP9", "MP2", "MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16", "MP13", "MP12", "MP15")
-  # Filter to those present in mp_labels
-  target_mps <- target_mps[target_mps %in% names(mp_labels)]
-  
   mp_plot_df <- mp_tests_df %>%
     filter(sample %in% multi_subclone_samples, mp %in% target_mps) %>%
+    left_join(true_sig_df, by = c("sample", "mp")) %>%
     mutate(mp_label = factor(mp_label, levels = mp_labels[target_mps]),
-           val = -log10(p_adj))
+           val = -log10(p_adj),
+           truly_significant = coalesce(truly_significant, FALSE))
   
   mp_pcts <- mp_plot_df %>%
     group_by(mp_label) %>%
-    summarise(pct = 100 * mean(p_adj < 0.05, na.rm = TRUE), .groups = "drop")
+    summarise(pct = 100 * mean(truly_significant, na.rm = TRUE), .groups = "drop")
   
   p_mp <- ggplot(mp_plot_df, aes(mp_label, val, fill = mp_label)) +
     geom_boxplot(outlier.shape = NA, alpha = 0.7) +
     geom_jitter(width = 0.2, size = 1, alpha = 0.6) +
     geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red") +
     geom_text(data = mp_pcts, aes(x = mp_label, y = max(mp_plot_df$val, na.rm = TRUE) * 1.15, label = sprintf("%.1f%%", pct)), inherit.aes = FALSE, size = 4.5) +
-    scale_y_log10(expand = expansion(mult = c(0.1, 0.3))) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.25))) +
     scale_fill_manual(values = mp_cols[mp_labels[target_mps]]) +
     labs(title = NULL, x = NULL, y = "-log10(p_adj)") +
     theme_classic(base_size = 16) +
@@ -1166,7 +1213,7 @@ if (nrow(sub_tests_df) > 0) {
       geom_jitter(width = 0.2, size = 1, alpha = 0.6) +
       geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red") +
       geom_text(data = qc_pcts, aes(x = metric, y = max(qc_plot_df$val, na.rm = TRUE) * 1.15, label = sprintf("%.1f%%", pct)), inherit.aes = FALSE, size = 2.5) +
-      scale_y_log10(expand = expansion(mult = c(0.1, 0.3))) +
+      scale_y_continuous(expand = expansion(mult = c(0.05, 0.25))) +
       labs(title = "QC Significance", x = NULL, y = "-log10(p_adj)") +
       theme_classic(base_size = 9) + 
       theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none", plot.title = element_text(size = 8, face = "bold"))
@@ -1414,23 +1461,82 @@ if (nrow(sub_tests_df) > 0) {
           plot.subtitle = element_text(size = 9),
           plot.margin = margin(4, 6, 4, 6))
 
+  cc_mps <- c("MP6", "MP7", "MP1", "MP3")
+  sig_counts_sample_no_cc <- mp_tests_df %>%
+    filter(sample %in% multi_subclone_samples, !(mp %in% cc_mps)) %>%
+    left_join(true_sig_df, by = c("sample", "mp")) %>%
+    mutate(significant = coalesce(truly_significant, FALSE)) %>%
+    group_by(sample) %>%
+    summarise(n_sig_mps = sum(significant, na.rm = TRUE), .groups = "drop") %>%
+    mutate(category = case_when(
+      n_sig_mps == 0 ~ "None",
+      n_sig_mps == 1 ~ "One significant",
+      TRUE ~ "More than one"
+    ))
+  p_counts_no_cc <- sig_counts_sample_no_cc %>%
+    count(.data$category, name = "n") %>%
+    mutate(category = factor(.data$category, levels = c("None", "One significant", "More than one")),
+           pct = 100 * .data$n / sum(.data$n)) %>%
+    ggplot(aes(.data$category, .data$pct, fill = .data$category)) +
+    geom_col(color = "black", linewidth = 0.3) +
+    geom_text(aes(label = paste0(.data$n, " (", round(.data$pct, 1), "%)")), vjust = -0.4, size = 4) +
+    scale_fill_manual(values = c("None" = "grey70", "One significant" = "#FDB863", "More than one" = "#B2182B")) +
+    scale_y_continuous(limits = c(0, 100)) +
+    labs(title = "Significant MP diff. per sample (excl. CC MPs)", subtitle = "Excludes G2M, G1S, DNA Repair", x = NULL, y = "Percentage of samples") +
+    theme_classic(base_size = 12) +
+    theme(legend.position = "none", plot.title = element_text(face="bold"))
+
   # --- Write page 1 as a separate compact PDF, then combine ---
+  p_counts_combined <- arrangeGrob(
+    p_counts + labs(title = "Sig. MP diff. (All MPs)") + theme(plot.title = element_text(size = 9)),
+    p_counts_no_cc + labs(title = "Sig. MP diff. (Excl. CC)") + theme(plot.title = element_text(size = 9)),
+    ncol = 1
+  )
+
   tmp_page0 <- tempfile(fileext = ".pdf")
   pdf(tmp_page0, width = 15, height = 4.2, useDingbats = FALSE)
-  grid.arrange(p_subclone_dist, p_counts, p_mp_excl, p_st_excl, ncol = 4)
+  grid.arrange(p_subclone_dist, p_counts_combined, p_mp_excl, p_st_excl, ncol = 4)
   dev.off()
+
+
+  score_plot_df <- sub_tests_df %>%
+    filter(.data$sample %in% multi_subclone_samples, .data$mp %in% target_mps) %>%
+    mutate(mp_label = factor(.data$mp_label, levels = rev(mp_labels[target_mps])))
+  score_label_df <- score_plot_df %>%
+    group_by(.data$mp, .data$mp_label) %>%
+    summarise(
+      label_x = max(abs(.data$delta_mean), robust_effect_size_threshold, na.rm = TRUE) + 0.1,
+      score_threshold = robust_effect_size_threshold,
+      n_sig = sum(.data$significant, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(label = paste0("thr=", sprintf("%.2f", .data$score_threshold), "; sig=", .data$n_sig))
+  p_score <- ggplot(score_plot_df, aes(.data$delta_mean, .data$mp_label)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey45", linewidth = 0.5) +
+    geom_boxplot(width = 0.52, outlier.shape = NA, fill = "grey86", color = "black", linewidth = 0.55) +
+    geom_point(aes(color = .data$significant),
+               position = position_jitter(height = 0.12, width = 0), alpha = 0.65, size = 1.8) +
+    geom_text(data = score_label_df, aes(x = .data$label_x, y = .data$mp_label, label = .data$label),
+              inherit.aes = FALSE, hjust = 0, size = 3.1) +
+    scale_color_manual(values = c("TRUE" = "#B2182B", "FALSE" = "grey45")) +
+    scale_x_continuous(trans = scales::pseudo_log_trans(base = 10)) +
+    labs(title = "Subclone vs rest MP expression difference scores",
+         subtitle = paste0("Score = median diff / sample MAD; final calls also require BH FDR < 0.05 & abs(Score) >= ", robust_effect_size_threshold),
+         x = "Robust Effect Size (Median diff / MAD) [pseudo-log scale]",
+         y = NULL,
+         color = "Final significant") +
+    theme_classic(base_size = 14) +
+    theme(axis.text.y = element_text(size = 10), legend.position = "top",
+          plot.title = element_text(face = "bold"))
 
   tmp_rest <- tempfile(fileext = ".pdf")
   pdf(tmp_rest, width = 15, height = 9, useDingbats = FALSE)
-  # Page 2: Summary of MP Differences
-  grid.arrange(p_mp, nullGrob(), ncol = 2, widths = c(2, 1))
-  # Page 3: QC Summary
+  grid.arrange(p_score, ncol = 1)
   grid.arrange(grobs = plot_list_qc, ncol = 3)
-  # Page 4: MP Differences by Clone
   grid.arrange(grobs = plot_list_mp, ncol = 4)
-  # Page 5: State Distributions
   grid.arrange(grobs = plot_list_state, ncol = 4)
   dev.off()
+
 
   # Combine into final output
   final_summary_pdf <- file.path(out_dir, "Auto_malignant_subclone_mp_cohort_summary.pdf")
@@ -1441,5 +1547,70 @@ if (nrow(sub_tests_df) > 0) {
     system(py_cmd)
   }
   unlink(c(tmp_page0, tmp_rest))
+
+  ####################
+  # Diagnostic PDF: one MP per page
+  diagnostic_pdf <- file.path(out_dir, "Auto_malignant_subclone_mp_difference_diagnostics.pdf")
+  pdf(diagnostic_pdf, width = 14, height = 8, useDingbats = FALSE)
+  
+  if (nrow(sub_tests_df) > 0) {
+    p_diag_all <- sub_tests_df %>%
+      filter(sample %in% multi_subclone_samples, mp %in% target_mps) %>%
+      mutate(mp_label = factor(mp_label, levels = mp_labels[target_mps])) %>%
+      ggplot(aes(x = mp_label, y = abs(delta_mean), fill = mp_label)) +
+      geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+      geom_jitter(width = 0.2, size = 1.5, alpha = 0.6, aes(color = significant)) +
+      scale_fill_manual(values = mp_cols[mp_labels[target_mps]]) +
+      scale_color_manual(values = c("TRUE" = "#B2182B", "FALSE" = "grey55")) +
+      labs(title = "Subclone MP Robust Effect Sizes", x = NULL, y = "Robust Effect Size (Median diff / MAD)", color = "Significant") +
+      theme_classic(base_size = 16) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top", plot.title = element_text(face = "bold"))
+    print(p_diag_all)
+
+    if (requireNamespace("ggrepel", quietly = TRUE)) {
+      for (mp_id in target_mps) {
+        diag_df <- sub_tests_df %>%
+          filter(sample %in% multi_subclone_samples, mp == mp_id) %>%
+          mutate(abs_difference_score = abs(delta_mean)) %>%
+          arrange(abs_difference_score) %>%
+          mutate(comparison_rank = row_number(),
+                 comparison_label = paste(sample, subclone, sep = ": "),
+                 statistically_significant = !is.na(p_adj) & p_adj < 0.05,
+                 score_threshold_pass = abs_difference_score >= robust_effect_size_threshold,
+                 call_class = case_when(
+                   significant ~ "Final significant",
+                   statistically_significant ~ "FDR only",
+                   score_threshold_pass ~ "Score only",
+                   TRUE ~ "Not significant"
+                 ))
+        if (nrow(diag_df) == 0) next
+        
+        set.seed(42)
+        label_subset <- diag_df %>%
+          group_by(call_class) %>%
+          arrange(desc(abs_difference_score)) %>%
+          slice(c(1, 3, sample(row_number(), 1))) %>%
+          distinct() %>%
+          ungroup()
+        
+        p_diag <- ggplot(diag_df, aes(comparison_rank, abs_difference_score)) +
+          geom_segment(aes(xend = comparison_rank, y = 0, yend = abs_difference_score, color = call_class), linewidth = 0.6, alpha = 0.82) +
+          geom_point(aes(color = call_class), size = 2.5, alpha = 0.9) +
+          geom_hline(yintercept = robust_effect_size_threshold, linetype = "dashed", color = "#B2182B", linewidth = 1) +
+          ggrepel::geom_text_repel(data = label_subset, aes(label = comparison_label, color = call_class), size = 3.5, max.overlaps = Inf, min.segment.length = 0, segment.size = 0.4, segment.alpha = 0.6, box.padding = 0.8, point.padding = 0.5, nudge_y = 0.4, direction = "both") +
+          scale_color_manual(values = c("Final significant" = "#B2182B", "FDR only" = "#2166AC", "Score only" = "#F4A582", "Not significant" = "grey55")) +
+          labs(title = mp_labels[mp_id],
+               x = "Pairwise comparison rank", y = "Robust Effect Size (Median diff / MAD)", color = "Call class") +
+          theme_classic(base_size = 16) +
+          theme(legend.position = "top", plot.title = element_text(face = "bold"))
+        print(p_diag)
+      }
+    } else {
+       message("ggrepel not installed, skipping detailed diagnostic plots")
+    }
+  }
+  dev.off()
+
 message("Saved sample pages to: ", sample_pdf)
 message("Saved tables and cohort summary to: ", out_dir)
+}

@@ -17,12 +17,9 @@
 #
 # Input:
 #   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_final_states.rds
-#   ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
-#   ref_outs/UCell_3CA_MPs.rds
-#   ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
-#   ref_outs/task4_unresolved_states/Auto_task4_unresolved_relabel_mp_coverage.csv
-#   /rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
 #
 # Output:
 #   ref_outs/final_mp_scenic/Auto_final_mp_scenic_selected_cells.csv
@@ -42,6 +39,14 @@
 #   Rscript analysis/cell_states/final_mp_scenic.R
 #   Rscript analysis/cell_states/final_mp_scenic.R prepare_only=true
 #   Rscript analysis/cell_states/final_mp_scenic.R db_dir=/path/to/cistarget
+####################
+
+####################
+# Additional live outputs:
+#   ref_outs/final_mp_scenic/Auto_final_mp_scenic_regulons_by_mp.xlsx
+#   ref_outs/final_mp_scenic/Auto_final_mp_scenic_regulons_by_state.xlsx
+# Each workbook contains an all-regulon overview and ranked per-MP/per-state
+# sheets with SCENIC RSS, mean AUCell activity, and regulon-target summaries.
 ####################
 
 library(Seurat)
@@ -91,17 +96,7 @@ to_flag <- function(x, default = FALSE) {
   tolower(x) %in% c("true", "1", "yes", "y")
 }
 
-clean_3ca_name <- function(x) {
-  x <- gsub("^X3CA_", "3CA_", x)
-  x <- gsub("\\.", " ", x)
-  x
-}
 
-format_3ca_label <- function(x) {
-  x <- clean_3ca_name(x)
-  x <- sub("^3CA_mp_([0-9]+) ", "3CA MP\\1 ", x)
-  x
-}
 
 format_regulon_name <- function(x) {
   x <- gsub("_extended$", "", x)
@@ -438,47 +433,7 @@ scenic_gene_filtering_sparse <- function(
   genesKept
 }
 
-load_retained_3ca <- function(coverage_path, state_path, ucell_3ca) {
-  if (file.exists(coverage_path)) {
-    coverage_df <- read.csv(coverage_path, stringsAsFactors = FALSE)
-    retained <- coverage_df %>%
-      filter(
-        n_samples >= 50,
-        n_studies >= 6,
-        pct_cells >= 1
-      ) %>%
-      arrange(desc(n_cells)) %>%
-      pull(mp_label)
-    retained <- retained[retained %in% colnames(ucell_3ca)]
-    if (length(retained) > 0) {
-      return(unique(retained))
-    }
-  }
 
-  if (!file.exists(state_path)) {
-    stop("Could not find 3CA coverage CSV or fallback state file.")
-  }
-
-  state_B <- readRDS(state_path)
-  common_cells <- intersect(names(state_B), rownames(ucell_3ca))
-  state_B <- state_B[common_cells]
-  unresolved_cells <- names(state_B)[state_B == "Unresolved"]
-  if (length(unresolved_cells) == 0) {
-    stop("Fallback unresolved-cell 3CA retention failed: no unresolved cells available.")
-  }
-
-  cc_fixed <- c(
-    "X3CA_mp_1.Cell.Cycle...G2.M",
-    "X3CA_mp_2.Cell.Cycle...G1.S",
-    "X3CA_mp_3.Cell.Cylce.HMG.rich",
-    "X3CA_mp_4.Chromatin",
-    "X3CA_mp_5.Cell.cycle.single.nucleus"
-  )
-  unresolved_3ca <- ucell_3ca[unresolved_cells, setdiff(colnames(ucell_3ca), cc_fixed), drop = FALSE]
-  top_3ca_mp <- colnames(unresolved_3ca)[max.col(unresolved_3ca, ties.method = "first")]
-  mp_counts <- sort(table(top_3ca_mp), decreasing = TRUE)
-  names(mp_counts)[seq_len(min(3, length(mp_counts)))]
-}
 
 arg_list <- parse_args(commandArgs(trailingOnly = TRUE))
 prepare_only <- to_flag(arg_list[["prepare_only"]], default = FALSE)
@@ -495,124 +450,104 @@ if (!nzchar(db_dir)) {
 }
 db_dir <- normalizePath(db_dir, winslash = "/", mustWork = FALSE)
 
-out_dir <- "final_mp_scenic"
+out_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/final_mp_scenic"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-cache_dir <- file.path(out_dir, "cache")
+ephemeral_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/final_mp_scenic"
+dir.create(ephemeral_dir, recursive = TRUE, showWarnings = FALSE)
+
+cache_dir <- file.path(ephemeral_dir, "cache")
 dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 
 ####################
 # Final MP definitions
 ####################
 sc_mps <- c(
-  "MP1", "MP7", "MP9",
-  "MP2",
-  "MP17", "MP14", "MP5", "MP10", "MP8",
-  "MP13", "MP12",
-  "MP18", "MP16",
+  "MP1", "MP5", "MP13+",
+  "MP2+",
+  "MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+",
+  "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x",
+  "MP12",
   "MP15"
 )
 
 sc_mp_descriptions <- c(
-  "MP1" = "G2M Cell Cycle",
-  "MP7" = "DNA Damage Repair",
-  "MP9" = "G1S Cell Cycle",
-  "MP2" = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epithelium",
-  "MP5" = "Epithelial IFN Response",
-  "MP10" = "Columnar Differentiation",
-  "MP8" = "Intestinal Differentiation",
-  "MP13" = "Hypoxic Inflammatory Epithelium",
-  "MP12" = "Neuro-responsive Epithelium",
-  "MP18" = "Secretory Differentiation (Intestinal)",
-  "MP16" = "Secretory Differentiation (Gastric)",
-  "MP15" = "Immune Infiltration"
+  "MP1" = "G2/M cell cycle",
+  "MP5" = "G1/S cell cycle",
+  "MP13+" = "replication-stress-associated cell cycling",
+  "MP2+" = "MYC driven biosynthesis",
+  "MP14" = "Squamoid/basal transition",
+  "MP3+" = "Basal-columnar invasive epithelium",
+  "MP6+" = "Stress-reactive columnar epithelium",
+  "MP11+" = "Epithelial antiviral interferon response",
+  "MP9+" = "Metabolic columnar epithelium",
+  "MP10+" = "Intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP18b" = "Mucous-secretory differentiation",
+  "MP17" = "Immune-interactive glandular progenitor",
+  "MP2x" = "Wnt-active glandular stem/progenitor",
+  "MP12" = "Hypoxic inflammatory adaptive plasticity",
+  "MP15" = "T/NK-like cancer-cell immune mimicry"
 )
 
 mp_group_map <- c(
-  "MP1" = "Cell Cycle",
-  "MP7" = "Cell Cycle",
-  "MP9" = "Cell Cycle",
-  "MP2" = "Classic Proliferative",
-  "MP17" = "Basal to Intestinal Metaplasia",
-  "MP14" = "Basal to Intestinal Metaplasia",
-  "MP5" = "Basal to Intestinal Metaplasia",
-  "MP10" = "Basal to Intestinal Metaplasia",
-  "MP8" = "Basal to Intestinal Metaplasia",
-  "MP13" = "Stress-adaptive",
-  "MP12" = "Stress-adaptive",
-  "MP18" = "SMG-like Metaplasia",
-  "MP16" = "SMG-like Metaplasia",
-  "MP15" = "Immune Infiltrating"
+  "MP1" = "Cell cycle",
+  "MP5" = "Cell cycle",
+  "MP13+" = "Cell cycle",
+  "MP2+" = "Classic proliferation",
+  "MP14" = "Basal to intestinal metaplasia",
+  "MP3+" = "Basal to intestinal metaplasia",
+  "MP6+" = "Basal to intestinal metaplasia",
+  "MP11+" = "Basal to intestinal metaplasia",
+  "MP9+" = "Basal to intestinal metaplasia",
+  "MP10+" = "Basal to intestinal metaplasia",
+  "MP8+" = "SMG to intestinal metaplasia",
+  "MP8b" = "SMG to intestinal metaplasia",
+  "MP16" = "SMG to intestinal metaplasia",
+  "MP18b" = "SMG to intestinal metaplasia",
+  "MP17" = "SMG to intestinal metaplasia",
+  "MP2x" = "SMG to intestinal metaplasia",
+  "MP12" = "Stress adaptive",
+  "MP15" = "Cancer-cell immune mimicry"
 )
 
 group_cols <- c(
-  "Cell Cycle" = "#D4AF37",
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive" = "#984EA3",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Immune Infiltrating" = "#377EB8",
-  "Pan-cancer 3CA" = "#6A3D9A"
+  "Cell cycle" = "#6B7280",
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 state_level_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "SMG to intestinal metaplasia",
+  "Stress adaptive",
+  "Cancer-cell immune mimicry"
 )
 
 state_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive" = "#984EA3",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#666666"
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 ####################
 # Load inputs
 ####################
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
-final_states <- readRDS("Auto_final_states.rds")
-ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
-ucell_3ca <- readRDS("UCell_3CA_MPs.rds")
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
+final_states <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
+ucell_scores <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds")
+mp_gene_sets <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds")
 
-three_ca_df <- read.csv(
-  "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv",
-  check.names = FALSE,
-  stringsAsFactors = FALSE
-)
-three_ca_list <- as.list(three_ca_df)
-three_ca_list <- lapply(three_ca_list, function(x) unique(x[!is.na(x) & nzchar(x)]))
-names(three_ca_list) <- make.names(sub("^MP", "3CA_mp_", names(three_ca_list)))
-
-coverage_path <- "task4_unresolved_states/Auto_task4_unresolved_relabel_mp_coverage.csv"
-retained_3ca <- load_retained_3ca(
-  coverage_path = coverage_path,
-  state_path = "Auto_topmp_v2_noreg_states_B.rds",
-  ucell_3ca = ucell_3ca
-)
-retained_3ca <- retained_3ca[retained_3ca %in% names(three_ca_list)]
-if (length(retained_3ca) == 0) {
-  stop("No retained 3CA MPs could be resolved from coverage results.")
-}
-
-final_mp_ids <- c(sc_mps, retained_3ca)
-display_label_map <- c(
-  setNames(paste(sc_mps, sc_mp_descriptions[sc_mps]), sc_mps),
-  setNames(vapply(retained_3ca, format_3ca_label, character(1)), retained_3ca)
-)
-mp_group_map <- c(
-  mp_group_map,
-  setNames(rep("Pan-cancer 3CA", length(retained_3ca)), retained_3ca)
-)
+final_mp_ids <- sc_mps
+display_label_map <- setNames(paste(sc_mps, sc_mp_descriptions[sc_mps]), sc_mps)
 
 ####################
 # Score assembly and cell selection
@@ -634,8 +569,7 @@ if (file.exists(selection_cache)) {
     list(
       Cells(tmdata_all),
       names(final_states),
-      rownames(ucell_scores),
-      rownames(ucell_3ca)
+      rownames(ucell_scores)
     )
   )
   if (length(common_cells) == 0) {
@@ -645,21 +579,16 @@ if (file.exists(selection_cache)) {
   tmdata_all <- tmdata_all[, common_cells]
   final_states <- final_states[common_cells]
   ucell_scores <- ucell_scores[common_cells, , drop = FALSE]
-  ucell_3ca <- ucell_3ca[common_cells, retained_3ca, drop = FALSE]
 
-  missing_sc <- setdiff(sc_mps, colnames(ucell_scores))
-  if (length(missing_sc) > 0) {
+  missing_mps <- setdiff(final_mp_ids, colnames(ucell_scores))
+  if (length(missing_mps) > 0) {
     stop(
-      "Selected final scATLAS MPs are missing from UCell_nMP19_filtered.rds: ",
-      paste(missing_sc, collapse = ", ")
+      "Selected final MPs are missing from merged_refined_ucell_scores.rds: ",
+      paste(missing_mps, collapse = ", ")
     )
   }
 
-  score_mat <- cbind(
-    as.matrix(ucell_scores[, sc_mps, drop = FALSE]),
-    as.matrix(ucell_3ca[, retained_3ca, drop = FALSE])
-  )
-  score_mat <- score_mat[, final_mp_ids, drop = FALSE]
+  score_mat <- as.matrix(ucell_scores[, final_mp_ids, drop = FALSE])
 
   sample_var <- tmdata_all$orig.ident
   study_var <- tmdata_all$study
@@ -786,15 +715,11 @@ ggsave(
 ####################
 # Final MP gene sets
 ####################
-sc_mp_gene_sets <- geneNMF.metaprograms$metaprograms.genes[sc_mps]
+sc_mp_gene_sets <- mp_gene_sets[sc_mps]
 sc_mp_gene_sets <- lapply(sc_mp_gene_sets, function(x) unique(x[!is.na(x) & nzchar(x)]))
 sc_mp_gene_sets <- lapply(sc_mp_gene_sets, function(x) head(x, top_genes_per_set))
 
-three_ca_gene_sets <- three_ca_list[retained_3ca]
-three_ca_gene_sets <- lapply(three_ca_gene_sets, function(x) head(x, top_genes_per_set))
-
-final_gene_sets <- c(sc_mp_gene_sets, three_ca_gene_sets)
-final_gene_sets <- final_gene_sets[final_mp_ids]
+final_gene_sets <- sc_mp_gene_sets
 names(final_gene_sets) <- display_label_map[names(final_gene_sets)]
 
 saveRDS(
@@ -829,7 +754,6 @@ if (prepare_only) {
     n_common_cells = length(common_cells),
     n_selected_cells = nrow(selected_df),
     n_selected_mps = length(unique(selected_df$final_mp_id)),
-    retained_3ca = paste(format_3ca_label(retained_3ca), collapse = " | "),
     db_dir = db_dir,
     stringsAsFactors = FALSE
   )
@@ -878,7 +802,7 @@ expr_genes <- unique(unlist(final_gene_sets, use.names = FALSE))
 expr_genes <- intersect(expr_genes, rownames(counts_mat))
 
 old_wd <- getwd()
-setwd(out_dir)
+setwd(ephemeral_dir)
 on.exit(setwd(old_wd), add = TRUE)
 
 scenicOptions <- initializeScenic(
@@ -980,6 +904,8 @@ if (is.null(rss_mat)) {
   rss_mat <- mean_auc_mat
 }
 rss_mat <- as.matrix(rss_mat)
+
+setwd(out_dir)
 
 saveRDS(regulon_auc, "Auto_final_mp_scenic_regulon_auc.rds")
 saveRDS(rss_mat, "Auto_final_mp_scenic_rss.rds")
@@ -1228,7 +1154,7 @@ dev.off()
 ####################
 # Regulon target summary
 ####################
-mp_gene_sets_by_id <- c(sc_mp_gene_sets, three_ca_gene_sets)
+mp_gene_sets_by_id <- sc_mp_gene_sets
 regulon_target_df <- bind_rows(lapply(seq_len(nrow(edge_df)), function(i) {
   reg_name <- edge_df$regulon[i]
   reg_targets <- extract_regulon_targets(regulons[[reg_name]])
@@ -1252,6 +1178,178 @@ write.csv(
   "Auto_final_mp_scenic_regulon_targets.csv",
   row.names = FALSE
 )
+
+####################
+# Excel summary of scATLAS SCENIC regulons by final MP
+####################
+regulon_target_df <- regulon_target_df %>%
+  rowwise() %>%
+  mutate(
+    .targets = list(extract_regulon_targets(regulons[[format_regulon_name(regulon)]])),
+    n_targets = length(.targets[[1]]),
+    overlap_with_mp_genes = sum(.targets[[1]] %in% mp_gene_sets_by_id[[names(display_label_map)[match(mp_label, display_label_map)]]]),
+    targets_preview = paste(head(.targets[[1]], 30), collapse = "; ")
+  ) %>%
+  ungroup() %>%
+  select(-.targets)
+write.csv(regulon_target_df, "Auto_final_mp_scenic_regulon_targets.csv", row.names = FALSE)
+
+write_scenic_regulon_workbook <- function(
+    specificity_mat,
+    activity_mat,
+    label_order,
+    output_file,
+    analysis_level,
+    mp_gene_sets_by_label = NULL
+) {
+  if (!requireNamespace("openxlsx", quietly = TRUE)) {
+    stop("The openxlsx package is required to write SCENIC regulon Excel summaries.")
+  }
+
+  if (identical(analysis_level, "final MP")) {
+    label_order <- intersect(display_label_map[sc_mps], label_order)
+  }
+
+  specificity_mat <- as.matrix(specificity_mat[, label_order, drop = FALSE])
+  activity_mat <- as.matrix(activity_mat[, label_order, drop = FALSE])
+  regulon_ids <- intersect(rownames(specificity_mat), rownames(activity_mat))
+  if (length(regulon_ids) == 0) {
+    stop("No overlapping regulons are available for the ", analysis_level, " Excel summary.")
+  }
+  specificity_mat <- specificity_mat[regulon_ids, , drop = FALSE]
+  activity_mat <- activity_mat[regulon_ids, , drop = FALSE]
+
+  get_regulon_targets_by_id <- function(regulon_id) {
+    regulon_key <- format_regulon_name(regulon_id)
+    extract_regulon_targets(regulons[[regulon_key]])
+  }
+  target_df <- bind_rows(lapply(regulon_ids, function(regulon_id) {
+    targets <- get_regulon_targets_by_id(regulon_id)
+    data.frame(
+      regulon_id = regulon_id,
+      n_targets = length(targets),
+      targets_preview = paste(head(targets, 100), collapse = "; "),
+      stringsAsFactors = FALSE
+    )
+  }))
+
+  overview_df <- target_df %>% select(regulon_id, n_targets, targets_preview)
+  for (label in label_order) {
+    overview_df[[label]] <- specificity_mat[regulon_ids, label]
+  }
+
+  wb <- openxlsx::createWorkbook()
+  header_style <- openxlsx::createStyle(
+    textDecoration = "bold",
+    fgFill = "#1F4E78",
+    fontColour = "#FFFFFF",
+    halign = "center",
+    valign = "center",
+    wrapText = TRUE
+  )
+  title_style <- openxlsx::createStyle(
+    textDecoration = "bold",
+    fontSize = 14,
+    fontColour = "#1F1F1F"
+  )
+  numeric_style <- openxlsx::createStyle(numFmt = "0.0000")
+  text_style <- openxlsx::createStyle(valign = "top", wrapText = TRUE)
+
+  overview_sheet <- "All regulons"
+  openxlsx::addWorksheet(wb, overview_sheet)
+  openxlsx::writeData(
+    wb,
+    overview_sheet,
+    paste0("scATLAS SCENIC regulons by ", analysis_level),
+    startRow = 1,
+    startCol = 1
+  )
+  openxlsx::addStyle(wb, overview_sheet, title_style, rows = 1, cols = 1)
+  openxlsx::writeData(wb, overview_sheet, overview_df, startRow = 3, headerStyle = header_style)
+  openxlsx::addStyle(
+    wb, overview_sheet, numeric_style,
+    rows = 4:(nrow(overview_df) + 3),
+    cols = 4:ncol(overview_df), gridExpand = TRUE, stack = TRUE
+  )
+  openxlsx::addStyle(
+    wb, overview_sheet, text_style,
+    rows = 4:(nrow(overview_df) + 3), cols = 1:3, gridExpand = TRUE, stack = TRUE
+  )
+  openxlsx::setColWidths(wb, overview_sheet, cols = 1, widths = 28)
+  openxlsx::setColWidths(wb, overview_sheet, cols = 2, widths = 12)
+  openxlsx::setColWidths(wb, overview_sheet, cols = 3, widths = 60)
+  openxlsx::setColWidths(wb, overview_sheet, cols = 4:ncol(overview_df), widths = 14)
+  openxlsx::freezePane(wb, overview_sheet, firstActiveRow = 4, firstActiveCol = 3)
+
+  for (cols in list(4:ncol(overview_df))) {
+    values <- as.numeric(as.matrix(overview_df[, cols, drop = FALSE]))
+    values <- values[is.finite(values)]
+    if (length(values) > 0) {
+      limits <- as.numeric(stats::quantile(values, c(0.05, 0.5, 0.95), na.rm = TRUE))
+      if (length(unique(limits)) == 3) {
+        openxlsx::conditionalFormatting(
+          wb, overview_sheet, cols = cols, rows = 4:(nrow(overview_df) + 3),
+          type = "colourScale", style = c("#FFFFFF", "#F4B183", "#C00000"), rule = limits
+        )
+      }
+    }
+  }
+
+  for (index in seq_along(label_order)) {
+    label <- label_order[index]
+    sheet_name <- substr(paste0(sprintf("%02d", index), " ", label), 1, 31)
+    sheet_name <- gsub("/", "-", sheet_name, fixed = TRUE)
+    sheet_df <- data.frame(
+      regulon_id = regulon_ids,
+      rss = specificity_mat[regulon_ids, label],
+      rss_rank = rank(-specificity_mat[regulon_ids, label], ties.method = "min", na.last = "keep"),
+      mean_auc = activity_mat[regulon_ids, label],
+      n_targets = target_df$n_targets[match(regulon_ids, target_df$regulon_id)],
+      targets_preview = target_df$targets_preview[match(regulon_ids, target_df$regulon_id)],
+      stringsAsFactors = FALSE
+    ) %>%
+      arrange(desc(rss), desc(mean_auc), regulon_id)
+
+    openxlsx::addWorksheet(wb, sheet_name)
+    openxlsx::writeData(wb, sheet_name, paste0(label, " — ", analysis_level, " regulons"), startRow = 1)
+    openxlsx::addStyle(wb, sheet_name, title_style, rows = 1, cols = 1)
+    openxlsx::writeData(wb, sheet_name, sheet_df, startRow = 3, headerStyle = header_style)
+    openxlsx::addStyle(
+      wb, sheet_name, numeric_style, rows = 4:(nrow(sheet_df) + 3),
+      cols = c(2, 4), gridExpand = TRUE, stack = TRUE
+    )
+    openxlsx::addStyle(
+      wb, sheet_name, text_style, rows = 4:(nrow(sheet_df) + 3),
+      cols = c(1, 5:6), gridExpand = TRUE, stack = TRUE
+    )
+    openxlsx::conditionalFormatting(
+      wb, sheet_name, cols = 2, rows = 4:(nrow(sheet_df) + 3),
+      type = "colourScale", style = c("#FFFFFF", "#F4B183", "#C00000")
+    )
+    openxlsx::conditionalFormatting(
+      wb, sheet_name, cols = 4, rows = 4:(nrow(sheet_df) + 3),
+      type = "colourScale", style = c("#FFFFFF", "#9DC3E6", "#2F5597")
+    )
+    openxlsx::setColWidths(wb, sheet_name, cols = 1, widths = 28)
+    openxlsx::setColWidths(wb, sheet_name, cols = 2:5, widths = 13)
+    openxlsx::setColWidths(wb, sheet_name, cols = 6, widths = 60)
+    openxlsx::freezePane(wb, sheet_name, firstActiveRow = 4, firstActiveCol = 3)
+  }
+
+  openxlsx::saveWorkbook(wb, output_file, overwrite = TRUE)
+  message("Saved ", analysis_level, " SCENIC regulon Excel summary: ", output_file)
+}
+
+mp_gene_sets_by_label <- setNames(sc_mp_gene_sets, display_label_map[names(sc_mp_gene_sets)])
+write_scenic_regulon_workbook(
+  specificity_mat = rss_mat,
+  activity_mat = mean_auc_mat,
+  label_order = intersect(display_label_map[sc_mps], mp_label_order),
+  output_file = "Auto_final_mp_scenic_regulons_by_mp.xlsx",
+  analysis_level = "final MP",
+  mp_gene_sets_by_label = mp_gene_sets_by_label
+)
+####################
 
 ####################
 # State-level regulon summaries
@@ -1356,6 +1454,18 @@ if (nrow(state_df) > 0 && dplyr::n_distinct(state_df$final_state) >= 2) {
     "Auto_final_mp_scenic_state_network_edges.csv",
     row.names = FALSE
   )
+
+  ####################
+  # Excel summary of scATLAS SCENIC regulons by final state
+  ####################
+  write_scenic_regulon_workbook(
+    specificity_mat = state_rss_mat,
+    activity_mat = state_mean_auc_mat,
+    label_order = state_label_order,
+    output_file = "Auto_final_mp_scenic_regulons_by_state.xlsx",
+    analysis_level = "final state"
+  )
+  ####################
 
   state_node_df <- data.frame(
     name = unique(c(state_edge_df$regulon_label, state_edge_df$state_label)),
@@ -1483,7 +1593,6 @@ summary_df <- data.frame(
   n_selected_cells = nrow(selected_df),
   n_selected_mps = length(unique(selected_df$final_mp_id)),
   n_selected_states = dplyr::n_distinct(selected_df$final_state[selected_df$final_state %in% state_level_order]),
-  retained_3ca = paste(format_3ca_label(retained_3ca), collapse = " | "),
   n_regulons = nrow(auc_mat),
   db_files = paste(db_files, collapse = " | "),
   stringsAsFactors = FALSE

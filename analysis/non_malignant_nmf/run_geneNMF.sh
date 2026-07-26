@@ -20,7 +20,7 @@ module load tools/dev
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 source activate /rds/general/user/sg3723/home/anaconda3/envs/gnmf
 
-WD=/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 cd $WD
 
 Rscript analysis/non_malignant_nmf/nmf_celltype_geneNMF.R ${celltype}

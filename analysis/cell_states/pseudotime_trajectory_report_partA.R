@@ -49,35 +49,38 @@ suppressPackageStartupMessages({
 
 set.seed(12345)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+live_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs"
+ephemeral_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs"
+
+setwd(live_dir)
 
 ####################
 # Configuration
 ####################
 group_cols <- c(
-  "Classic Proliferative"          = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive"                = "#984EA3",
-  "SMG-like Metaplasia"            = "#FF7F00",
-  "Immune Infiltrating"            = "#377EB8"
+  "Classic proliferation"          = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "Stress adaptive"                = "#984EA3",
+  "SMG to intestinal metaplasia"            = "#FF7F00",
+  "Cancer-cell immune mimicry"            = "#377EB8"
 )
 
 state_order <- c(
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating",
-  "Classic Proliferative"
+  "Basal to intestinal metaplasia",
+  "Stress adaptive",
+  "SMG to intestinal metaplasia",
+  "Cancer-cell immune mimicry",
+  "Classic proliferation"
 )
 
 target_states <- names(group_cols)
-root_state <- "Basal to Intestinal Metaplasia"
+root_state <- "Basal to intestinal metaplasia"
 
-partA_dir <- "task1_pseudotime_updated_naming/partA"
-asset_dir <- "pseudotime_trajectory_assets"
+partA_dir <- file.path(live_dir, "task1_pseudotime_updated_naming/partA")
+asset_dir <- file.path(ephemeral_dir, "pseudotime_trajectory_assets")
 dir.create(asset_dir, recursive = TRUE, showWarnings = FALSE)
 
-pdf_path <- "Auto_pseudotime_trajectory_summary_reports_partA.pdf"
+pdf_path <- file.path(live_dir, "Auto_pseudotime_trajectory_summary_reports_partA.pdf")
 
 ####################
 # Helper Functions
@@ -328,9 +331,8 @@ build_weighted_ridge_df <- function(proj_df, state_order, n_points = 512) {
 ####################
 
 message("Loading datasets...")
-tmdata_all <- readRDS("EAC_Ref_epi.rds")
-final_states_path <- "Auto_final_states.rds"
-state_vec <- readRDS(ifelse(file.exists(final_states_path), final_states_path, "Auto_topmp_v2_noreg_states_B.rds"))
+tmdata_all <- readRDS(file.path(live_dir, "EAC_Ref_epi.rds"))
+state_vec <- readRDS(file.path(live_dir, "Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds"))
 
 # Align indices
 common_cells <- intersect(Cells(tmdata_all), names(state_vec))

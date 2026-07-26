@@ -18,7 +18,7 @@ library(dplyr)
 args <- commandArgs(trailingOnly = TRUE)
 celltype_arg <- args[1]
 
-base_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs"
+base_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs"
 setwd(base_dir)
 
 # ---- Cell type mapping ----
@@ -139,7 +139,7 @@ if (length(tmdata_annotated) < 2) {
 }
 
 # ---- Run multiNMF ----
-geneNMF.programs <- multiNMF(tmdata_annotated, assay = "RNA", k = 4:9, min.exp = 0.05)
+geneNMF.programs <- multiNMF(tmdata_annotated, assay = "RNA", k = 4:9, min.exp = 0.05, center = TRUE)
 saveRDS(geneNMF.programs, file = file.path(out_dir, "geneNMF_outs.rds"))
 
 # ---- Get MetaPrograms ----
