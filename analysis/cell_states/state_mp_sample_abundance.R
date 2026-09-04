@@ -8,14 +8,14 @@
 ####################
 
 ####################
-# Auto_sample_abundance.R
+# Summarises current centred refined state and top-MP prevalence by orig.ident.
 #
 # Input:
 #   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_topmp_v2_noreg_states_B.rds
-#   ref_outs/Auto_topmp_v2_noreg_mp_adj.rds
-#   ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
-#   ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv
 #
 # Output:
 #   ref_outs/sample_abundance/Auto_sample_abundance.pdf
@@ -35,106 +35,61 @@ library(patchwork)
 ####################
 # paths and setup
 ####################
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 task_prefix <- "task3"
 out_dir <- paste0(task_prefix, "_sample_abundance")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-summary_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/updates/new_updates/summaries"
+summary_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/updates/new_updates/summaries"
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
 ####################
 # load data
 ####################
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
-final_states_path <- "Auto_final_states.rds"
-if (file.exists(final_states_path)) {
-  state_B <- readRDS(final_states_path)
-} else {
-  state_B <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
-}
-mp_adj_noncc <- readRDS("Auto_topmp_v2_noreg_mp_adj.rds")
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
-ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
+state_B <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
+mp_adj_noncc <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds")
+ucell_scores <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds")
+grouping <- read.csv("Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv", check.names = FALSE)
 
 ####################
 # constants
 ####################
-mp_descriptions <- c(
-  "MP1"  = "G2M Cell Cycle",
-  "MP9"  = "G1S Cell Cycle",
-  "MP2"  = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5"  = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8"  = "Intestinal Diff.",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP7"  = "DNA Damage Repair",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi"
-)
+mp_descriptions <- setNames(grouping$description, grouping$mp)
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "SMG-like Metaplasia"   = c("MP18", "MP16"),
-  "Stress-adaptive"       = c("MP13", "MP12"),
-  "Immune Infiltrating"   = c("MP15")
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
 group_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "SMG-like Metaplasia"   = "#FF7F00",
-  "Stress-adaptive"       = "#984EA3",
-  "Immune Infiltrating"   = "#377EB8",
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8",
   Unresolved = "grey80",
   Hybrid = "black"
 )
 
-# Identify any extra states (e.g. 3CA relabeled)
+# Guard against unexpected extra labels while preserving technical states.
 extra_states <- setdiff(unique(as.character(state_B)), names(group_cols))
 if (length(extra_states) > 0) {
   new_cols <- setNames(scales::hue_pal()(length(extra_states)), extra_states)
   group_cols <- c(group_cols, new_cols)
 }
 
-mp_cols <- c(
-  "MP1_G2M Cell Cycle" = "#B0B0B0",
-  "MP2_MYC-related Proliferation" = "#E41A1C",
-  "MP5_Epithelial IFN Resp." = "#66C2A5",
-  "MP7_DNA Damage Repair" = "#999999",
-  "MP8_Intestinal Diff." = "#FC8D62",
-  "MP9_G1S Cell Cycle" = "#C0C0C0",
-  "MP10_Columnar Diff." = "#A6D854",
-  "MP12_Neuro-responsive Epi" = "#E78AC3",
-  "MP13_Hypoxic Inflam. Epi." = "#984EA3",
-  "MP14_Hypoxia Adapted Epi." = "#8DA0CB",
-  "MP15_Immune Infiltration" = "#377EB8",
-  "MP16_Secretory Diff. (Gastric)" = "#FFD92F",
-  "MP17_Basal-like Transition" = "#4DAF4A",
-  "MP18_Secretory Diff. (Intest.)" = "#FF7F00"
-)
+mp_cols <- setNames(scales::hue_pal()(nrow(grouping)), paste0(grouping$mp, "_", grouping$description))
 
 ####################
 # metaprogram filtering
 ####################
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
-retained_mps <- names(mp.genes)
-
-tree_order <- geneNMF.metaprograms$programs.tree$order
-ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
-valid_cluster_ids <- as.numeric(gsub("\\D", "", retained_mps))
-mp_tree_order <- unique(ordered_clusters)
-mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
-mp_tree_order_names <- paste0("MP", mp_tree_order)
-
-cc_mps <- c("MP1", "MP7", "MP9")
+retained_mps <- grouping$mp
+mp_tree_order_names <- retained_mps
+cc_mps <- c("MP1", "MP5", "MP13+")
 non_cc_mps <- setdiff(retained_mps, cc_mps)
 
 ####################
@@ -268,7 +223,7 @@ mp_adj_noncc <- as.matrix(mp_adj_noncc[common_cells, , drop = FALSE])
 sample_var <- tmdata_all$orig.ident
 study_var <- tmdata_all$study
 
-cc_mps <- c("MP1", "MP7", "MP9")
+cc_mps <- c("MP1", "MP5", "MP13+")
 cc_in_ucell <- intersect(cc_mps, colnames(ucell_scores))
 cc_raw <- as.matrix(ucell_scores[common_cells, cc_in_ucell, drop = FALSE])
 mp_adj_cc <- z_normalise(cc_raw, sample_var, study_var)
@@ -351,7 +306,7 @@ study_order <- study_map %>%
 ####################
 # Define preferred MP order: CC MPs first, then defined state MPs, then any others.
 state_ordered_mps <- unname(unlist(state_groups))
-cc_mps_order <- c("MP1", "MP7", "MP9")
+cc_mps_order <- c("MP1", "MP5", "MP13+")
 preferred_mp_order <- c(cc_mps_order, state_ordered_mps)
 # Ensure we include any retained MPs that might not be in the explicit lists
 preferred_mp_order <- c(preferred_mp_order, setdiff(retained_mps, preferred_mp_order))
@@ -450,20 +405,20 @@ p6 <- plot_abundance(
 ####################
 # p7: Basal Metaplasia Breakdown
 ####################
-# Population: Cells in "Basal to Intestinal Metaplasia" state
-# Categories: Focus on the 5 defining MPs (MP17, MP14, MP5, MP10, MP8)
-basal_cells <- names(state_B)[state_B == "Basal to Intestinal Metaplasia"]
+# Population: cells in the current basal-to-intestinal-metaplasia state
+# Categories: the six current defining MPs
+basal_cells <- names(state_B)[state_B == "Basal to intestinal metaplasia"]
 basal_topmp_label <- topmp_all_label[basal_cells]
 basal_sample_by_cell <- sample_by_cell[basal_cells]
 
-basal_mp_ids <- c("MP17", "MP14", "MP5", "MP10", "MP8")
+basal_mp_ids <- c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+")
 basal_levels <- label_mp(basal_mp_ids)
 
-# Proportions scaled to 100% of these 5 MPs within the basal population
+# Proportions scaled to 100% of these six MPs within the basal population
 prop_basal <- make_prop_data(basal_topmp_label, basal_sample_by_cell, basal_levels)
 prop_basal <- force_100(prop_basal)
 
-# Secondary axis: total count of "Basal to Intestinal Metaplasia" cells per sample
+# Secondary axis: total count of basal-to-intestinal-metaplasia cells per sample
 totals_basal <- data.frame(
   orig.ident = as.character(basal_sample_by_cell),
   stringsAsFactors = FALSE
@@ -472,17 +427,17 @@ totals_basal <- data.frame(
   right_join(data.frame(orig.ident = unique(sample_by_cell), stringsAsFactors = FALSE), by = "orig.ident") %>%
   mutate(total_n = ifelse(is.na(total_n), 0, total_n))
 
-# Sorting order: proportion of MP17 (within this state, scaled to 100% of these 5 MPs)
-mp17_label <- label_mp("MP17")
+# Sorting order: proportion of MP14 within this state
+mp14_label <- label_mp("MP14")
 basal_sort_order <- prop_basal %>%
-  filter(label == mp17_label) %>%
+  filter(label == mp14_label) %>%
   arrange(desc(pct), orig.ident) %>%
   pull(orig.ident)
 
 # Specialized palette for basal MPs to ensure high separability and NO overlap with state colors
 # (States use: Red, Green, Purple, Orange, Blue)
 col_basal <- setNames(
-  c("#FF69B4", "#FFD700", "#00CED1", "#A0522D", "#708090"), 
+  c("#FF69B4", "#FFD700", "#00CED1", "#A0522D", "#708090", "#7B68EE"),
   basal_levels
 )
 
@@ -490,7 +445,7 @@ p7 <- plot_abundance(
   prop_data = prop_basal,
   sample_order = basal_sort_order,
   col_map = col_basal,
-  title_text = "Basal Metaplasia MP Breakdown | Sort: MP17 Proportion",
+  title_text = "Basal Metaplasia MP Breakdown | Sort: MP14 Proportion",
   totals_df = totals_basal
 )
 

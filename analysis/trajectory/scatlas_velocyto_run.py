@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 ####################
 # scatlas_velocyto_run.py
+# Status: active upstream
+# Script: analysis/trajectory/scatlas_velocyto_run.py
+# Methodology: analysis/methodology/trajectory/scatlas_velocity_methodology.md
+# Inputs: CLI-supplied Cell Ranger BAM, filtered-barcode file, genes GTF, and RepeatMasker mask GTF.
+# Outputs: sample loom under ref_outs/Auto_velocity_scATLAS/looms/<sample>/ when invoked by the PBS wrapper.
+# Cache/replot: velocyto rebuild; the wrapper stages large work in ephemeral and retains the final loom live.
+# Run: analysis/trajectory/scatlas_velocity_run_velocyto.sh <sample arguments>
+# Conda env: velocity
 #
 # Run velocyto.py on Cell Ranger BAMs, accepting standard CB/UB tags.
 ####################

@@ -8,11 +8,11 @@
 #     - /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg
 #     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds
 #     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_tpm_matrix.rds
-#     - ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores.rds, if present
-#     - ref_outs/Auto_cna_subclone_expression/tables/Auto_v2_recomputed_recurrent_cna_event_summary.csv
+#     - ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores_centred17.rds, if present
+#     - ref_outs/Auto_cna_subclone_expression/threshold_1/tables/Auto_v2_recomputed_recurrent_cna_event_summary.csv
 #     - ref_outs/OAC_CNV.xlsx
 #     - ref_outs/41588_2018_331_MOESM3_ESM.xlsx
-#     - ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds, if GSVA cache absent
+#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds, if GSVA cache absent
 #   Outputs:
 #     - ref_outs/TCGA/cna_recurrent_event_validation/intermediate/
 #     - ref_outs/TCGA/cna_recurrent_event_validation/tables/
@@ -38,8 +38,8 @@ suppressPackageStartupMessages({
   library(tidyr)
 })
 
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_config.R")
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_helpers.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_helpers.R")
 
 setwd(SCREF_PROJECT_DIR)
 set.seed(42)
@@ -58,11 +58,12 @@ tcga_recon_dir <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "esca_gdc_reconstruction
 tcga_meta_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_meta.rds")
 tcga_matrix_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_tpm_matrix.rds")
 tcga_mixture_path <- file.path(tcga_recon_dir, "tables", "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
-gender_gsva_cache_path <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "gender_validation", "intermediate", "Auto_tcga_gender_gsva_scores.rds")
-local_gsva_cache_path <- file.path(tiers[["intermediate"]], "Auto_tcga_cna_validation_gsva_scores.rds")
+gender_gsva_cache_path <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "gender_validation", "intermediate", "Auto_tcga_gender_gsva_scores_centred17.rds")
+local_gsva_cache_path <- file.path(tiers[["intermediate"]], "Auto_tcga_cna_validation_gsva_scores_centred17.rds")
 arm_cache_path <- file.path(tiers[["intermediate"]], "Auto_tcga_weighted_arm_cna_calls.rds")
-sc_recurrent_path <- file.path(SCREF_REF_OUTS_DIR, "Auto_cna_subclone_expression", "tables", "Auto_v2_recomputed_recurrent_cna_event_summary.csv")
-sc_event_tests_path <- file.path(SCREF_REF_OUTS_DIR, "Auto_cna_subclone_expression", "tables", "Auto_v2_recurrent_cna_event_feature_tests.csv")
+sc_cna_dir <- file.path(SCREF_REF_OUTS_DIR, "Auto_cna_subclone_expression", "threshold_1")
+sc_recurrent_path <- file.path(sc_cna_dir, "tables", "Auto_v2_recomputed_recurrent_cna_event_summary.csv")
+sc_event_tests_path <- file.path(sc_cna_dir, "tables", "Auto_v2_recurrent_cna_event_feature_tests.csv")
 oac_cnv_path <- file.path(SCREF_REF_OUTS_DIR, "OAC_CNV.xlsx")
 occams_path <- file.path(SCREF_REF_OUTS_DIR, "41588_2018_331_MOESM3_ESM.xlsx")
 
@@ -118,34 +119,9 @@ run_summary <- start_run_summary(
   )
 )
 
-mp_descriptions <- c(
-  "MP1" = "G2M Cell Cycle",
-  "MP7" = "DNA Damage Repair",
-  "MP9" = "G1S Cell Cycle",
-  "MP2" = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5" = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8" = "Intestinal Diff.",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP12" = "Neuro-responsive Epi",
-  "MP15" = "Immune Infiltration"
-)
-
-mp_order <- c("MP1", "MP7", "MP9", "MP2", "MP17", "MP14", "MP5", "MP10",
-              "MP8", "MP18", "MP16", "MP13", "MP12", "MP15")
-
-state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
-  "Stress-adaptive",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
-)
+mp_descriptions <- SCREF_MP_DESCRIPTIONS
+mp_order <- SCREF_MP_ORDER
+state_order <- SCREF_PRIMARY_STATE_ORDER
 
 p_to_stars <- function(p) {
   case_when(
@@ -617,31 +593,10 @@ write.csv(tcga_discovered_events, file.path(tiers[["tables"]], "Auto_tcga_recurr
 # 5) TCGA MP/state scores
 ####################
 message("Loading or computing TCGA MP/state feature scores")
-load_3ca_gene_sets <- function() {
-  nmf3ca_path <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
-  if (!file.exists(nmf3ca_path)) return(list())
-  mp_df <- read.csv(nmf3ca_path, check.names = FALSE)
-  mp_list <- as.list(mp_df)
-  mp_list <- lapply(mp_list, function(x) unique(x[x != "" & !is.na(x)]))
-  names(mp_list) <- make.names(sub("^MP", "3CA_mp_", names(mp_list)))
-  target_3ca <- c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1")
-  mp_list[intersect(target_3ca, names(mp_list))]
-}
-
-clean_3ca_name <- function(x) {
-  x <- gsub("^X3CA_", "3CA_", x)
-  x <- gsub("\\.", " ", x)
-  x
-}
-
 make_feature_labels <- function(mp_features, state_features) {
   mp_labels <- paste0(mp_features, " ", mp_descriptions[mp_features])
   mp_labels[is.na(mp_labels)] <- label_mps(mp_features[is.na(mp_labels)])
   names(mp_labels) <- mp_features
-  three_ca <- grep("^X3CA_", mp_features, value = TRUE)
-  if (length(three_ca) > 0) {
-    mp_labels[three_ca] <- clean_3ca_name(three_ca)
-  }
   state_labels <- setNames(state_features, state_features)
   c(mp_labels, state_labels)
 }
@@ -654,35 +609,15 @@ run_gsva_scores <- function(expr_mat, gene_sets) {
 }
 
 build_gene_sets <- function() {
-  geneNMF.metaprograms <- readRDS(SCREF_MP_OBJECT_RDS)
-  mp_genes <- filter_silhouette_mps(
-    geneNMF.metaprograms$metaprograms.genes,
-    geneNMF.metaprograms$metaprograms.metrics$silhouette
-  )
-  preferred_mp_order <- c(
-    "MP2", "MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16",
-    "MP13", "MP12", "MP15", "MP1", "MP7", "MP9",
-    "X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1"
-  )
-  mp_genes <- mp_genes[intersect(c(preferred_mp_order, setdiff(names(mp_genes), preferred_mp_order)), names(mp_genes))]
-  pan_mp_sets <- load_3ca_gene_sets()
-  mp_sets <- c(mp_genes, pan_mp_sets)
-
+  mp_genes <- readRDS(SCREF_MP_GENES_RDS)
+  mp_genes <- mp_genes[intersect(mp_order, names(mp_genes))]
+  mp_sets <- mp_genes
   state_groups <- SCREF_STATE_GROUPS
-  state_groups[["Classic Proliferative"]] <- c(state_groups[["Classic Proliferative"]], "X3CA_mp_30.Respiration.1")
-  core_state_order <- c(SCREF_PRIMARY_STATE_ORDER, "3CA_EMT_and_Protein_maturation")
   state_sets <- lapply(state_groups, function(mps) {
-    unique(c(
-      unlist(mp_genes[intersect(mps, names(mp_genes))], use.names = FALSE),
-      unlist(pan_mp_sets[intersect(mps, names(pan_mp_sets))], use.names = FALSE)
-    ))
+    unique(unlist(mp_genes[intersect(mps, names(mp_genes))], use.names = FALSE))
   })
-  emt_protein_sources <- intersect(c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III"), names(pan_mp_sets))
-  if (length(emt_protein_sources) > 0) {
-    state_sets[["3CA_EMT_and_Protein_maturation"]] <- unique(unlist(pan_mp_sets[emt_protein_sources], use.names = FALSE))
-  }
   state_sets <- state_sets[sapply(state_sets, length) >= 5]
-  state_sets <- state_sets[intersect(core_state_order, names(state_sets))]
+  state_sets <- state_sets[intersect(state_order, names(state_sets))]
   list(mp_sets = mp_sets, state_sets = state_sets)
 }
 
@@ -753,7 +688,7 @@ feature_info <- bind_rows(
     feature_label = feature_labels[.data$feature],
     feature_group = case_when(
       .data$feature_type == "MP" ~ "Metaprogrammes",
-      .data$feature_type == "State" ~ "Six states",
+      .data$feature_type == "State" ~ "Centred states",
       TRUE ~ .data$feature_type
     ),
     feature_order = case_when(
@@ -763,10 +698,10 @@ feature_info <- bind_rows(
     )
   ) |>
   filter(!is.na(.data$feature_order)) |>
-  arrange(factor(.data$feature_group, levels = c("Metaprogrammes", "Six states")), .data$feature_order)
+  arrange(factor(.data$feature_group, levels = c("Metaprogrammes", "Centred states")), .data$feature_order)
 
 mp_features <- feature_info |> filter(.data$feature_group == "Metaprogrammes") |> pull(.data$feature)
-state_features <- feature_info |> filter(.data$feature_group == "Six states") |> pull(.data$feature)
+state_features <- feature_info |> filter(.data$feature_group == "Centred states") |> pull(.data$feature)
 plot_features <- c(mp_features, state_features)
 feature_group <- setNames(feature_info$feature_group, feature_info$feature)
 feature_label_map <- setNames(feature_info$feature_label, feature_info$feature)
@@ -990,12 +925,11 @@ write.csv(significant_overlap, file.path(tiers[["tables"]], "Auto_tcga_discovere
 if (file.exists(sc_event_tests_path)) {
   sc_event_tests <- read.csv(sc_event_tests_path, check.names = FALSE)
   state_feature_lookup <- c(
-    "state__Classic_Proliferative" = "Classic Proliferative",
-    "state__Basal_to_Intestinal_Metaplasia" = "Basal to Intestinal Metaplasia",
-    "state__SMG_like_Metaplasia" = "SMG-like Metaplasia",
-    "state__Stress_adaptive" = "Stress-adaptive",
-    "state__Immune_Infiltrating" = "Immune Infiltrating",
-    "state__3CA_EMT_and_Protein_maturation" = "3CA_EMT_and_Protein_maturation"
+    "state__Classic_proliferation" = "Classic proliferation",
+    "state__Basal_to_intestinal_metaplasia" = "Basal to intestinal metaplasia",
+    "state__SMG_to_intestinal_metaplasia" = "SMG to intestinal metaplasia",
+    "state__Stress_adaptive" = "Stress adaptive",
+    "state__Cancer_cell_immune_mimicry" = "Cancer-cell immune mimicry"
   )
   sc_event_tests <- sc_event_tests |>
     mutate(
@@ -1036,7 +970,7 @@ if (file.exists(sc_event_tests_path)) {
 all_arm_fdr_cutoff <- 0.05
 recurrent_fdr_cutoff <- 0.05
 
-sc_results_path_for_arm_mp <- file.path(SCREF_REF_OUTS_DIR, "Auto_cna_subclone_expression", "rds", "Auto_cna_subclone_expression_results.rds")
+sc_results_path_for_arm_mp <- file.path(sc_cna_dir, "rds", "Auto_cna_subclone_expression_results.rds")
 
 safe_spearman <- function(x, y) {
   x <- suppressWarnings(as.numeric(x))
@@ -1556,7 +1490,7 @@ pdf(file.path(tiers[["figures"]], "Auto_tcga_cna_event_association_dotplots.pdf"
     width = 22, height = 13, useDingbats = FALSE)
 print(event_bar)
 print(plot_event_assoc("Metaprogrammes", "all metaprogrammes"))
-print(plot_event_assoc("Six states", "six states excluding Hybrid and Unresolved"))
+print(plot_event_assoc("Centred states", "five centred states excluding Hybrid and Unresolved"))
 dev.off()
 
 pdf(file.path(tiers[["figures"]], "Auto_tcga_cna_event_boxplots.pdf"),
@@ -1565,7 +1499,7 @@ for (event_page in event_page_chunks(sc_boxplot_events, page_size = 4L)) {
   print(plot_event_boxplots("Metaprogrammes", "all metaprogrammes", event_page))
 }
 for (event_page in event_page_chunks(sc_boxplot_events, page_size = 4L)) {
-  print(plot_event_boxplots("Six states", "six states excluding Hybrid and Unresolved", event_page))
+  print(plot_event_boxplots("Centred states", "five centred states excluding Hybrid and Unresolved", event_page))
 }
 dev.off()
 
@@ -1650,7 +1584,7 @@ suppressPackageStartupMessages({
 })
 
 # Load SC data
-sc_results_path <- file.path(SCREF_REF_OUTS_DIR, "Auto_cna_subclone_expression", "rds", "Auto_cna_subclone_expression_results.rds")
+sc_results_path <- file.path(sc_cna_dir, "rds", "Auto_cna_subclone_expression_results.rds")
 if (file.exists(sc_results_path)) {
   sc_results <- readRDS(sc_results_path)
   
@@ -1832,7 +1766,7 @@ if (file.exists(sc_results_path)) {
   sc_chr8q_myc <- sc_arm_long |>
     filter(.data$arm == "chr8q") |>
     select(.data$sample, .data$subclone, .data$subclone_id, .data$cna_call) |>
-    left_join(sc_features |> select(.data$sample, .data$subclone, .data$subclone_id, .data$mp__MP2, .data$n_cells),
+    left_join(sc_features |> select(.data$sample, .data$subclone, .data$subclone_id, .data[["mp__MP2+"]], .data$n_cells),
               by = c("sample", "subclone", "subclone_id")) |>
     mutate(
       chr8q_group = case_when(
@@ -1858,7 +1792,7 @@ if (file.exists(sc_results_path)) {
     levels_sc <- levels(sc_chr8q_myc$chr8q_group_label)
     comps_sc <- list(c(levels_sc[1], levels_sc[2]), c(levels_sc[2], levels_sc[3]), c(levels_sc[1], levels_sc[3]))
     
-    p_gain8q_myc_sc <- ggplot(sc_chr8q_myc, aes(x = .data$chr8q_group_label, y = .data$mp__MP2, fill = .data$chr8q_group)) +
+    p_gain8q_myc_sc <- ggplot(sc_chr8q_myc, aes(x = .data$chr8q_group_label, y = .data[["mp__MP2+"]], fill = .data$chr8q_group)) +
       geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.8, width = 0.62) +
       geom_point(aes(size = .data$n_cells), position = position_jitter(width = 0.14, height = 0),
                  alpha = 0.42, color = "black") +
@@ -1870,7 +1804,7 @@ if (file.exists(sc_results_path)) {
       labs(
         title = "scATLAS: chr8q CNA vs MYC MP",
         x = NULL,
-        y = "Subclone mean MP2 score",
+        y = "Subclone mean MP2+ score",
         fill = "chr8q CNA",
         size = "Cells"
       ) +
@@ -1888,7 +1822,7 @@ if (file.exists(sc_results_path)) {
   tcga_chr8q_myc <- tcga_arm_calls |>
     filter(.data$arm == "chr8q") |>
     select(.data$sample_barcode, .data$sample_key, .data$cna_call) |>
-    left_join(tcga_score_df |> select(.data$sample_barcode, .data$sample_key, .data$MP2), by = c("sample_barcode", "sample_key")) |>
+    left_join(tcga_score_df |> select(.data$sample_barcode, .data$sample_key, .data[["MP2+"]]), by = c("sample_barcode", "sample_key")) |>
     mutate(
       chr8q_group = case_when(
         .data$cna_call == 1L ~ "8q gain",
@@ -1913,7 +1847,7 @@ if (file.exists(sc_results_path)) {
     levels_tcga <- levels(tcga_chr8q_myc$chr8q_group_label)
     comps_tcga <- list(c(levels_tcga[1], levels_tcga[2]), c(levels_tcga[2], levels_tcga[3]), c(levels_tcga[1], levels_tcga[3]))
     
-    p_gain8q_myc_tcga <- ggplot(tcga_chr8q_myc, aes(x = .data$chr8q_group_label, y = .data$MP2, fill = .data$chr8q_group)) +
+    p_gain8q_myc_tcga <- ggplot(tcga_chr8q_myc, aes(x = .data$chr8q_group_label, y = .data[["MP2+"]], fill = .data$chr8q_group)) +
       geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.8, width = 0.62) +
       geom_point(position = position_jitter(width = 0.14, height = 0),
                  alpha = 0.42, color = "black", size = 3) +
@@ -1924,7 +1858,7 @@ if (file.exists(sc_results_path)) {
       labs(
         title = "TCGA: chr8q CNA vs MYC MP",
         x = NULL,
-        y = "Patient mean MP2 score",
+        y = "Patient mean MP2+ score",
         fill = "chr8q CNA"
       ) +
       theme_classic(base_size = 22) +

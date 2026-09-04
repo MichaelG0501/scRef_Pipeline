@@ -1,4 +1,12 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cell_states/Auto_drug_reversal/Auto_drug_reversal_inputs.R
+#   Methodology: not required (superseded exploratory drug-reversal branch)
+#   Map: analysis/ANALYSIS_MAP.md
+####################
+
+####################
 # Auto_drug_reversal_inputs.R
 #
 # Prepare five-state scRef malignant-state reversal inputs for ASGARD,
@@ -19,7 +27,7 @@ suppressPackageStartupMessages({
 # setup
 ####################
 
-project_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
 out_dir <- "Auto_drug_reversal"
@@ -39,12 +47,11 @@ if (requireNamespace("future", quietly = TRUE)) {
 }
 
 state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
+  "Classic proliferation",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
   "Stress-adaptive",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
+  "Cancer-cell immune mimicry"
 )
 
 params <- list(
@@ -247,7 +254,7 @@ if (file.exists(auto_state_cache) && !identical(Sys.getenv("AUTO_REBUILD_DRUG_ST
 
 if (is.null(sc_ref_state)) {
   sc_ref_all <- readRDS("EAC_Ref_epi.rds")
-  state_labels <- readRDS("Auto_final_states.rds")
+  state_labels <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
   DefaultAssay(sc_ref_all) <- "RNA"
 
   common_cells <- intersect(colnames(sc_ref_all), names(state_labels))
@@ -345,7 +352,7 @@ if (exists("all_degs") && !is.null(all_degs)) {
   all_degs <- all_degs
 } else if (params$deg_mode == "global") {
   message("Using existing descriptive global marker screen as a non-statistical fallback.")
-  global_path <- file.path("Auto_five_state_markers", "Auto_five_state_global_marker_screen.csv.gz")
+  global_path <- file.path("Metaprogrammes_Results", "centred", "state_markers", "Auto_five_state_global_marker_screen.csv.gz")
   if (!file.exists(global_path)) {
     stop("AUTO_DRUG_DEG_MODE=global requested, but global marker screen is missing.")
   }

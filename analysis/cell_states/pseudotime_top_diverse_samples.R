@@ -9,30 +9,28 @@
 
 ####################
 # Auto_pseudotime_states.R
-# Monocle3 pseudotime analysis for the noreg Approach B cell states.
+# Monocle3 pseudotime analysis for the current centred refined noreg states.
 #
 # Part A: Per-sample pseudotime using the 5 defined states.
 #   - Top 12 samples ranked by diversity (geometric mean across 5 states)
-#   - Root = Basal to Intestinal Metaplasia state cells
+#   - Root = Basal to intestinal metaplasia state cells
 #   - Labels: 5 defined states only (no Unresolved/Hybrid)
 #
 # Part B: Per-sample pseudotime within 3 state subsets:
-#   - Basal to Intestinal Metaplasia: MP labels from topMP of {MP17, MP14, MP5, MP10, MP8}, root = MP17
-#   - SMG-like Metaplasia: MP labels from topMP of {MP18, MP16}, root = MP18
-#   - Stress-adaptive: MP labels from topMP of {MP13, MP12}, root = MP13
+#   - Basal and SMG state subsets use their current centred refined MP panels.
 #   - Also top 12 samples per state subset (by cell count)
 #
 # Input:
 #   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_topmp_v2_noreg_states_B.rds
-#   ref_outs/Auto_topmp_v2_noreg_mp_adj.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds
 #
 # Output:
 #   ref_outs/task1_pseudotime_updated_naming/partA/Auto_task1_partA_top12_pseudotime_states.pdf (12 pages)
 #   ref_outs/task1_pseudotime_updated_naming/partA/<sample>_pseudotime_states.rds
 #   ref_outs/task1_pseudotime_updated_naming/partB/<state>/Auto_task1_partB_<state>_top12_pseudotime.pdf (up to 12 pages)
 #   ref_outs/task1_pseudotime_updated_naming/partB/<state>/<sample>_pseudotime_<state>.rds
-#   updates/new_updates/summaries/Auto_pseudotime_states_summary.csv
+#   updates/new_updates/summaries/Auto_task1_pseudotime_states_summary.csv
 ####################
 
 library(Seurat)
@@ -53,8 +51,7 @@ task_prefix <- "task1"
 out_root <- paste0(task_prefix, "_pseudotime_updated_naming")
 dir.create(file.path(out_root, "partA"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(out_root, "partB", "Basal_to_Intestinal_Metaplasia"), recursive = TRUE, showWarnings = FALSE)
-dir.create(file.path(out_root, "partB", "SMG_like_Metaplasia"), recursive = TRUE, showWarnings = FALSE)
-dir.create(file.path(out_root, "partB", "Stress_adaptive"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(out_root, "partB", "SMG_to_Intestinal_Metaplasia"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(out_root, "partB", "Basal_and_SMG_Metaplasia"), recursive = TRUE, showWarnings = FALSE)
 
 summary_dir <- file.path(live_dir, "../updates/new_updates/summaries/")
@@ -64,65 +61,64 @@ dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 # Constants
 ####################
 state_groups <- list(
-  "Classic proliferation" = c("MP2"),
-  "Basal to intestinal metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress adaptive"       = c("MP13", "MP12"),
-  "SMG to intestinal metaplasia"   = c("MP18", "MP16"),
-  "Cancer-cell immune mimicry"   = c("MP15")
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
 group_cols <- c(
   "Classic proliferation" = "#E41A1C",
   "Basal to intestinal metaplasia" = "#4DAF4A",
-  "Stress adaptive"       = "#984EA3",
-  "SMG to intestinal metaplasia"   = "#FF7F00",
-  "Cancer-cell immune mimicry"   = "#377EB8"
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 
 
 mp_descriptions <- c(
-  "MP1"  = "G2M Cell Cycle",
-  "MP9"  = "G1S Cell Cycle",
-  "MP2"  = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5"  = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8"  = "Intestinal Diff.",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP7"  = "DNA Damage Repair",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi"
+  "MP1"    = "G2/M cell cycle",
+  "MP5"    = "G1/S cell cycle",
+  "MP13+"  = "replication-stress-associated cell cycling",
+  "MP2+"   = "MYC driven biosynthesis",
+  "MP14"   = "Squamoid/basal transition",
+  "MP3+"   = "Basal-columnar invasive epithelium",
+  "MP6+"   = "Stress-reactive columnar epithelium",
+  "MP11+"  = "Epithelial antiviral interferon response",
+  "MP9+"   = "Metabolic columnar epithelium",
+  "MP10+"  = "Intestinal metaplasia",
+  "MP8+"   = "Glandular intestinal metaplasia",
+  "MP8b"   = "Metabolic intestinal metaplasia",
+  "MP16"   = "Mucous-secretory glandular epithelium",
+  "MP18b"  = "Mucous-secretory differentiation",
+  "MP17"   = "Immune-interactive glandular progenitor",
+  "MP12"   = "Hypoxic inflammatory adaptive plasticity",
+  "MP15"   = "T/NK-like cancer-cell immune mimicry"
 )
 
 # State subset definitions: MPs and root MP
+# Stress adaptive has only 1 MP (MP12), so per-MP pseudotime is not meaningful.
 state_subsets <- list(
   "Basal to intestinal metaplasia" = list(
-    mps = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-    root_mp = "MP17"
+    mps = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+    root_mp = "MP14"
   ),
   "SMG to intestinal metaplasia" = list(
-    mps = c("MP18", "MP16"),
-    root_mp = "MP18"
-  ),
-  "Stress adaptive" = list(
-    mps = c("MP13", "MP12"),
-    root_mp = "MP13"
+    mps = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+    root_mp = "MP8+"
   ),
   "Basal and SMG Metaplasia" = list(
-    mps = c("MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16"),
-    root_mp = "MP17",
+    mps = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+", "MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+    root_mp = "MP14",
     source_states = c("Basal to intestinal metaplasia", "SMG to intestinal metaplasia")
   )
 )
 
 state_dir_map <- c(
   "Basal to intestinal metaplasia" = "Basal_to_Intestinal_Metaplasia",
-  "SMG to intestinal metaplasia" = "SMG_like_Metaplasia",
-  "Stress adaptive" = "Stress_adaptive",
+  "SMG to intestinal metaplasia" = "SMG_to_Intestinal_Metaplasia",
   "Basal and SMG Metaplasia" = "Basal_and_SMG_Metaplasia"
 )
 
@@ -312,10 +308,10 @@ for (i in seq_along(top12_samples)) {
     target_states
   )
 
-  # Root cells = Basal to Intestinal Metaplasia
+  # Root cells = Basal to intestinal metaplasia
   root_cells <- sample_cells[state_B[sample_cells] == "Basal to intestinal metaplasia"]
   if (length(root_cells) == 0) {
-    message(sprintf("  Skipping %s: no Basal to Intestinal Metaplasia cells", sample_id))
+    message(sprintf("  Skipping %s: no Basal to intestinal metaplasia cells", sample_id))
     next
   }
 

@@ -2,7 +2,7 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/cell_states/final_mp_scenic.R
-#   Methodology: analysis/methodology/cell_states/state_workflows_methodology.md
+#   Methodology: analysis/methodology/cell_states/final_mp_scenic_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
 #   Inputs/outputs: documented in this header below and in the analysis map.
 ####################
@@ -12,8 +12,7 @@
 #
 # Final-MP-focused SCENIC workflow for OAC epithelial cells.
 # Uses the curated final MP panel:
-#   - retained scATLAS MPs, including the three CC-associated MPs
-#   - the three retained pan-cancer 3CA MPs from unresolved relabeling
+#   - the final 17 centred refined MPs, including three cell-cycle-associated MPs
 #
 # Input:
 #   ref_outs/EAC_Ref_epi.rds
@@ -65,7 +64,7 @@ library(grid)
 library(doParallel)
 library(foreach)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0 || all(is.na(x)) || !nzchar(x[1])) {
@@ -446,7 +445,7 @@ top_genes_per_set <- as.integer(arg_list[["top_genes_per_set"]] %||% "100")
 top_regulons_per_mp <- as.integer(arg_list[["top_regulons_per_mp"]] %||% "8")
 db_dir <- arg_list[["db_dir"]] %||% Sys.getenv("SCENIC_DB_DIR", unset = "")
 if (!nzchar(db_dir)) {
-  db_dir <- file.path(getwd(), "final_mp_scenic", "cistarget_databases")
+  db_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/cistarget_databases_rcistarget_mc9nr"
 }
 db_dir <- normalizePath(db_dir, winslash = "/", mustWork = FALSE)
 
@@ -466,7 +465,7 @@ sc_mps <- c(
   "MP1", "MP5", "MP13+",
   "MP2+",
   "MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+",
-  "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x",
+  "MP8+", "MP8b", "MP16", "MP18b", "MP17",
   "MP12",
   "MP15"
 )
@@ -487,7 +486,6 @@ sc_mp_descriptions <- c(
   "MP16" = "Mucous-secretory glandular epithelium",
   "MP18b" = "Mucous-secretory differentiation",
   "MP17" = "Immune-interactive glandular progenitor",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
   "MP12" = "Hypoxic inflammatory adaptive plasticity",
   "MP15" = "T/NK-like cancer-cell immune mimicry"
 )
@@ -497,44 +495,43 @@ mp_group_map <- c(
   "MP5" = "Cell cycle",
   "MP13+" = "Cell cycle",
   "MP2+" = "Classic proliferation",
-  "MP14" = "Basal to intestinal metaplasia",
-  "MP3+" = "Basal to intestinal metaplasia",
-  "MP6+" = "Basal to intestinal metaplasia",
-  "MP11+" = "Basal to intestinal metaplasia",
-  "MP9+" = "Basal to intestinal metaplasia",
-  "MP10+" = "Basal to intestinal metaplasia",
-  "MP8+" = "SMG to intestinal metaplasia",
-  "MP8b" = "SMG to intestinal metaplasia",
-  "MP16" = "SMG to intestinal metaplasia",
-  "MP18b" = "SMG to intestinal metaplasia",
-  "MP17" = "SMG to intestinal metaplasia",
-  "MP2x" = "SMG to intestinal metaplasia",
-  "MP12" = "Stress adaptive",
+  "MP14" = "Squamous-to-intestinal",
+  "MP3+" = "Squamous-to-intestinal",
+  "MP6+" = "Squamous-to-intestinal",
+  "MP11+" = "Squamous-to-intestinal",
+  "MP9+" = "Squamous-to-intestinal",
+  "MP10+" = "Squamous-to-intestinal",
+  "MP8+" = "Glandular-to-intestinal",
+  "MP8b" = "Glandular-to-intestinal",
+  "MP16" = "Glandular-to-intestinal",
+  "MP18b" = "Glandular-to-intestinal",
+  "MP17" = "Glandular-to-intestinal",
+  "MP12" = "Stress-adaptive",
   "MP15" = "Cancer-cell immune mimicry"
 )
 
 group_cols <- c(
   "Cell cycle" = "#6B7280",
   "Classic proliferation" = "#E41A1C",
-  "Basal to intestinal metaplasia" = "#4DAF4A",
-  "SMG to intestinal metaplasia" = "#FF7F00",
-  "Stress adaptive" = "#984EA3",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
+  "Stress-adaptive" = "#984EA3",
   "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 state_level_order <- c(
   "Classic proliferation",
-  "Basal to intestinal metaplasia",
-  "SMG to intestinal metaplasia",
-  "Stress adaptive",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
+  "Stress-adaptive",
   "Cancer-cell immune mimicry"
 )
 
 state_cols <- c(
   "Classic proliferation" = "#E41A1C",
-  "Basal to intestinal metaplasia" = "#4DAF4A",
-  "SMG to intestinal metaplasia" = "#FF7F00",
-  "Stress adaptive" = "#984EA3",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
+  "Stress-adaptive" = "#984EA3",
   "Cancer-cell immune mimicry" = "#377EB8"
 )
 
@@ -552,7 +549,7 @@ display_label_map <- setNames(paste(sc_mps, sc_mp_descriptions[sc_mps]), sc_mps)
 ####################
 # Score assembly and cell selection
 ####################
-selection_cache <- file.path(cache_dir, "mp_cell_selection.rds")
+selection_cache <- file.path(cache_dir, "mp_cell_selection_final17.rds")
 
 if (file.exists(selection_cache)) {
   message("Loading cached MP cell selection.")
@@ -745,7 +742,7 @@ write.csv(
 
 if (prepare_only) {
   summary_dir <- file.path(
-    "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
+    "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
     "updates", "new_updates", "summaries"
   )
   dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1582,8 +1579,23 @@ if (nrow(state_df) > 0 && dplyr::n_distinct(state_df$final_state) >= 2) {
   dev.off()
 }
 
+####################
+# Publish all terminal SCENIC objects and figures from the ephemeral working
+# directory into live storage. The SCENIC int/ cache remains ephemeral only.
+####################
+publish_files <- list.files(
+  ephemeral_dir,
+  pattern = "^Auto_final_mp_scenic_.*\\.(rds|RDS|csv|pdf|png|xlsx)$",
+  full.names = TRUE
+)
+if (length(publish_files) > 0) {
+  copied <- file.copy(publish_files, file.path(out_dir, basename(publish_files)), overwrite = TRUE)
+  if (!all(copied)) stop("Failed to publish one or more final SCENIC outputs to live storage")
+}
+####################
+
 summary_dir <- file.path(
-  "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
+  "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
   "updates", "new_updates", "summaries"
 )
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1603,4 +1615,4 @@ write.csv(
   row.names = FALSE
 )
 
-message("Saved final MP SCENIC outputs in ", file.path(getwd()))
+message("Saved final MP SCENIC outputs in ", out_dir, "; ephemeral computation cache: ", ephemeral_dir)

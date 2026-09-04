@@ -14,7 +14,8 @@
 # Produces 5 plot styles in a single PDF.
 #
 # Inputs:
-#   ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv
 #   /rds/general/project/spatialtranscriptomics/live/ITH_all/all_samples/hg38_gencode_v27.txt
 #
 # Outputs:
@@ -34,15 +35,10 @@ suppressPackageStartupMessages({
   library(RColorBrewer)
 })
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 # ── 1. Load data ──
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) {
-  mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
-}
+mp.genes <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds")
 cat("Retained MPs:", length(mp.genes), "\n")
 
 gene_order <- read.table(
@@ -57,28 +53,26 @@ gene_order <- gene_order %>%
   arrange(chromosome, start) %>%
   distinct(gene, .keep_all = TRUE)
 
-# ── 2. MP descriptions & colours ──
-mp_descriptions <- c(
-  "MP1"  = "G2M Cell Cycle",       "MP9"  = "G1S Cell Cycle",
-  "MP2"  = "MYC Proliferation",    "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted",      "MP5"  = "Epithelial IFN",
-  "MP10" = "Columnar Diff.",       "MP8"  = "Intestinal Diff.",
-  "MP13" = "Hypoxic Inflam.",      "MP7"  = "DNA Damage Repair",
-  "MP18" = "Secretory (Intest.)",  "MP16" = "Secretory (Gastric)",
-  "MP15" = "Immune Infiltration",  "MP12" = "Neuro-responsive"
+# ── 2. Current final-panel descriptions, colours, and order ──
+grouping <- read.csv(
+  "Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv",
+  check.names = FALSE
 )
+mp_descriptions <- setNames(grouping$description, grouping$mp)
 
-# Fixed colour palette — 14 distinct colours
 mp_pal <- c(
-  "MP1"  = "#B0B0B0", "MP9"  = "#C0C0C0", "MP7"  = "#999999",
-  "MP2"  = "#E41A1C", "MP17" = "#4DAF4A", "MP14" = "#8DA0CB",
-  "MP5"  = "#66C2A5", "MP10" = "#A6D854", "MP8"  = "#FC8D62",
-  "MP18" = "#FF7F00", "MP16" = "#FFD92F", "MP13" = "#984EA3",
-  "MP12" = "#E78AC3", "MP15" = "#377EB8"
+  "MP1" = "#B0B0B0", "MP5" = "#C0C0C0", "MP13+" = "#999999",
+  "MP2+" = "#E41A1C", "MP14" = "#4DAF4A", "MP3+" = "#8DA0CB",
+  "MP6+" = "#66C2A5", "MP11+" = "#FC8D62", "MP9+" = "#A6D854",
+  "MP10+" = "#E78AC3", "MP8+" = "#FF7F00", "MP8b" = "#A65628",
+  "MP16" = "#FFD92F", "MP18b" = "#B3B3B3", "MP17" = "#66C2A5",
+  "MP12" = "#984EA3", "MP15" = "#377EB8"
 )
 
-mp_order <- c("MP1","MP9","MP7","MP2","MP17","MP14","MP5","MP10",
-              "MP8","MP18","MP16","MP13","MP12","MP15")
+mp_order <- c(
+  "MP1", "MP5", "MP13+", "MP2+", "MP14", "MP3+", "MP6+", "MP11+",
+  "MP9+", "MP10+", "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP12", "MP15"
+)
 mp_order <- intersect(mp_order, names(mp.genes))
 
 label_mp <- function(x) {
@@ -519,3 +513,14 @@ plot_density_facet()
 
 dev.off()
 cat("Done. Output:", out_pdf, "\n")
+
+####################
+# Compact update summary
+####################
+summary_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/updates/new_updates/summaries"
+dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
+file.copy(
+  "Auto_mp_chromosomal_mapping_summary.csv",
+  file.path(summary_dir, "Auto_mp_chromosomal_mapping_summary.csv"),
+  overwrite = TRUE
+)

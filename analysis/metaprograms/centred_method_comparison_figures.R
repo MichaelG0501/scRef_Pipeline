@@ -10,6 +10,7 @@
 #     - /rds/general/project/tumourheterogeneity1/live/temp_save/geneNMF_metaprograms_nMP_19.rds
 #     - /rds/general/project/tumourheterogeneity1/live/temp_save/UCell_nMP19_filtered.rds
 #     - ref_outs/geneNMF_outs.rds
+#     - ref_outs/meta_full_epi.rds (authoritative orig.ident metadata)
 #     - ref_outs/by_samples/*/*_epi_f.rds
 #     - ref_outs/Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_*.rds
 #     - ref_outs/Metaprogrammes_Results/{centred/,}mp_refinement/intermediate/*.rds
@@ -32,7 +33,7 @@
 args <- commandArgs(trailingOnly = TRUE)
 mode <- if (length(args) > 0) args[[1]] else "render"
 
-project_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 ref_dir <- file.path(project_dir, "ref_outs")
 outdir <- file.path(ref_dir, "Metaprogrammes_Results", "centred_comparison")
 for (subdir in c("intermediate", "tables", "figures", "logs")) {
@@ -251,18 +252,16 @@ tree_ordered_initial_mps <- function(mp_obj, keep_names) {
 }
 
 infer_samples <- function(cells) {
-  sample_dirs <- list.dirs("by_samples", full.names = FALSE, recursive = FALSE)
-  sample_dirs <- sample_dirs[grepl("^[^/]+_[^/]+_[^/]+$", sample_dirs)]
-  sample_dirs <- sample_dirs[order(nchar(sample_dirs), decreasing = TRUE)]
-  out <- rep(NA_character_, length(cells))
-  for (sample in sample_dirs) {
-    idx <- is.na(out) & startsWith(cells, paste0(sample, "_"))
-    out[idx] <- sample
+  ####################
+  # Sample identity must come from metadata rather than barcode parsing.
+  meta <- readRDS(file.path(ref_dir, "meta_full_epi.rds"))
+  if (inherits(meta, "Seurat")) meta <- meta@meta.data
+  if (!is.data.frame(meta) || !"orig.ident" %in% colnames(meta)) {
+    stop("meta_full_epi.rds must be a cell-indexed data frame containing orig.ident")
   }
-  if (anyNA(out)) {
-    warning("Could not infer sample for ", sum(is.na(out)), " cells; using cell IDs as fallback.")
-    out[is.na(out)] <- cells[is.na(out)]
-  }
+  out <- unname(setNames(as.character(meta$orig.ident), rownames(meta))[cells])
+  if (anyNA(out)) stop("Missing orig.ident for ", sum(is.na(out)), " comparison cells")
+  ####################
   out
 }
 
@@ -689,11 +688,11 @@ saveRDS(initial_expr_cor_cross, file.path(outdir, "intermediate", "Auto_initial_
 write.csv(initial_expr_cor_cross, file.path(outdir, "tables", "Auto_initial_centred_vs_uncentred_ucell_spearman.csv"))
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive" = c("MP13", "MP12"),
-  "SMG-like Metaplasia" = c("MP18", "MP16"),
-  "Immune Infiltrating" = c("MP15")
+  "Classic proliferation" = c("MP2"),
+  "Basal to intestinal metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
+  "Stress adaptive" = c("MP13", "MP12"),
+  "SMG to intestinal metaplasia" = c("MP18", "MP16"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 final_unc_order <- unlist(state_groups, use.names = FALSE)
 final_unc_order <- final_unc_order[final_unc_order %in% colnames(unc_ucell)]
@@ -1166,4 +1165,3 @@ add_sheet(wb, "Grouped_By_Parent", df_p2, page2_order)
 output_excel <- file.path(outdir, "tables", "Auto_centred_refined_MP_genes_summary.xlsx")
 saveWorkbook(wb, output_excel, overwrite = TRUE)
 message("Saved: ", output_excel)
-

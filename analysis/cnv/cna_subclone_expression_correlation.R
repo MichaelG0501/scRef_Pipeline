@@ -62,13 +62,15 @@ setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 out_dir <- file.path("Auto_cna_subclone_expression", paste0("threshold_", robust_effect_size_threshold))
 table_dir <- file.path(out_dir, "tables")
 figure_dir <- file.path(out_dir, "figures")
+live_rds_dir <- file.path(out_dir, "rds")
 ephemeral_out_dir <- file.path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_cna_subclone_expression", paste0("threshold_", robust_effect_size_threshold))
-rds_dir <- file.path(ephemeral_out_dir, "rds")
+ephemeral_rds_dir <- file.path(ephemeral_out_dir, "rds")
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(figure_dir, recursive = TRUE, showWarnings = FALSE)
-dir.create(rds_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(live_rds_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(ephemeral_rds_dir, recursive = TRUE, showWarnings = FALSE)
 
 subclone_dir <- file.path("Auto_malignant_subclone_mp", paste0("threshold_", robust_effect_size_threshold))
 cell_path <- file.path(subclone_dir, "Auto_malignant_subclone_cells.csv")
@@ -121,15 +123,12 @@ mp_descriptions <- c(
   "MP16" = "Mucous-secretory glandular epithelium",
   "MP18b" = "Mucous-secretory differentiation",
   "MP17" = "Immune-interactive glandular progenitor",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
   "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry",
-  "MP11c" = "Excluded",
-  "MP18a" = "Excluded"
+  "MP15" = "T/NK-like cancer-cell immune mimicry"
 )
 
 mp_order <- c("MP1", "MP5", "MP13+", "MP2+", "MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+",
-              "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x", "MP12", "MP15")
+              "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP12", "MP15")
 
 state_order <- c(
   "Classic proliferation",
@@ -167,11 +166,8 @@ mp_cols <- c(
   "MP16" = "#FFD92F",
   "MP18b" = "#FF7F00",
   "MP17" = "#4DAF4A",
-  "MP2x" = "#E41A1C",
   "MP12" = "#984EA3",
-  "MP15" = "#377EB8",
-  "MP11c" = "grey80",
-  "MP18a" = "grey80"
+  "MP15" = "#377EB8"
 )
 
 safe_mean <- function(x) {
@@ -201,7 +197,8 @@ write_table <- function(x, filename) {
 }
 
 save_rds <- function(x, filename) {
-  saveRDS(x, file.path(rds_dir, filename))
+  saveRDS(x, file.path(ephemeral_rds_dir, filename))
+  saveRDS(x, file.path(live_rds_dir, filename))
 }
 
 label_mp <- function(mp) {
@@ -360,7 +357,11 @@ gene_order <- read.table(
 gene_to_arm <- gene_order %>%
   select(gene = .data$gene, chr_arm = .data$chr_arm, chromosome = .data$chromosome, start = .data$start, end = .data$end)
 
-cache_rds_path <- file.path(rds_dir, "Auto_cna_subclone_expression_results.rds")
+cache_rds_path <- file.path(live_rds_dir, "Auto_cna_subclone_expression_results.rds")
+if (!file.exists(cache_rds_path)) {
+  ephemeral_cache_path <- file.path(ephemeral_rds_dir, "Auto_cna_subclone_expression_results.rds")
+  if (file.exists(ephemeral_cache_path)) cache_rds_path <- ephemeral_cache_path
+}
 
 if (replot_only && file.exists(cache_rds_path)) {
   message("SCREF_REPLOT_ONLY=TRUE: loading cached computation results")
@@ -847,7 +848,7 @@ pair_endpoints <- c(
   "state_l1",
   "state_js",
   "fraction_abs_delta",
-  paste0("abs_delta__", intersect(c("mp__MP2", "cell_cycle_mp_mean", classic_state_col, "cc_score", "cs_score", "nCount_RNA", "cna_burden_mean_abs"), target_features))
+  paste0("abs_delta__", intersect(c("mp__MP2+", "cell_cycle_mp_mean", classic_state_col, "cc_score", "cs_score", "nCount_RNA", "cna_burden_mean_abs"), target_features))
 )
 pair_endpoints <- intersect(pair_endpoints, colnames(pairwise_df))
 cna_distance_metrics <- c("cna_abs_mean", "cna_euclidean", "cna_call_discordance")
@@ -999,7 +1000,7 @@ cluster_plot_state_features <- setdiff(state_feature_cols, c(hybrid_state_col, u
 cluster_plot_features <- intersect(c(mp_feature_cols, cluster_plot_state_features), colnames(features))
 cluster_plot_group <- c(
   setNames(rep("Metaprogrammes", length(intersect(mp_feature_cols, cluster_plot_features))), intersect(mp_feature_cols, cluster_plot_features)),
-  setNames(rep("Six states", length(intersect(cluster_plot_state_features, cluster_plot_features))), intersect(cluster_plot_state_features, cluster_plot_features))
+  setNames(rep("Centred states", length(intersect(cluster_plot_state_features, cluster_plot_features))), intersect(cluster_plot_state_features, cluster_plot_features))
 )
 cluster_plot_features <- names(cluster_plot_group)
 
@@ -1142,7 +1143,7 @@ cluster_mp_plot <- plot_cluster_feature_boxplots(
   "CNA consensus clusters versus metaprogramme expression"
 )
 cluster_state_plot <- plot_cluster_feature_boxplots(
-  "Six states",
+  "Centred states",
   "CNA consensus clusters versus state abundance"
 )
 ggsave(file.path(figure_dir, "Auto_cna_consensus_cluster_mp_boxplots.pdf"),
@@ -1638,7 +1639,7 @@ qc_features <- intersect(
 
 feature_group <- c(
   setNames(rep("Metaprogrammes", length(mp_features)), mp_features),
-  setNames(rep("Six states", length(state_features)), state_features),
+  setNames(rep("Centred states", length(state_features)), state_features),
   setNames(rep("QC / CNA metrics", length(qc_features)), qc_features)
 )
 plot_features <- names(feature_group)
@@ -2452,7 +2453,7 @@ pdf(file.path(figure_dir, "Auto_recurrent_cna_event_associations_all_features.pd
     width = 22, height = 13, useDingbats = FALSE)
 print(event_bar)
 print(plot_event_assoc("Metaprogrammes", "all metaprogrammes"))
-print(plot_event_assoc("Six states", "six states excluding Hybrid and Unresolved"))
+print(plot_event_assoc("Centred states", "five centred states excluding Hybrid and Unresolved"))
 print(plot_event_assoc("QC / CNA metrics", "QC and CNA metrics"))
 dev.off()
 
@@ -2462,7 +2463,7 @@ for (event_page in event_page_chunks(boxplot_events, page_size = 4L)) {
   print(plot_event_boxplots("Metaprogrammes", "all metaprogrammes", event_page))
 }
 for (event_page in event_page_chunks(boxplot_events, page_size = 4L)) {
-  print(plot_event_boxplots("Six states", "six states excluding Hybrid and Unresolved", event_page))
+  print(plot_event_boxplots("Centred states", "five centred states excluding Hybrid and Unresolved", event_page))
 }
 for (event_page in event_page_chunks(boxplot_events, page_size = 4L)) {
   print(plot_event_boxplots("QC / CNA metrics", "QC and CNA metrics", event_page))
@@ -2475,7 +2476,7 @@ for (event_page in event_page_chunks(recurrent_events, page_size = 4L)) {
   print(plot_event_sample_deltas("Metaprogrammes", "all metaprogrammes", event_page))
 }
 for (event_page in event_page_chunks(recurrent_events, page_size = 4L)) {
-  print(plot_event_sample_deltas("Six states", "six states excluding Hybrid and Unresolved", event_page))
+  print(plot_event_sample_deltas("Centred states", "five centred states excluding Hybrid and Unresolved", event_page))
 }
 for (event_page in event_page_chunks(recurrent_events, page_size = 4L)) {
   print(plot_event_sample_deltas("QC / CNA metrics", "QC and CNA metrics", event_page))
@@ -2510,7 +2511,7 @@ if (nrow(chr8q_myc) > 0) {
     labs(
       title = "chr8q CNA status versus MYC-related proliferation MP",
       x = NULL,
-      y = "Subclone mean MP2 score",
+      y = "Subclone mean MP2+ score",
       fill = "chr8q CNA",
       size = "Cells"
     ) +
@@ -2533,7 +2534,7 @@ dominant_tests_v2 <- dominant_tests_v2 %>%
   mutate(
     feature_label = factor(.data$feature_label,
                            levels = rev(unique(feature_label(plot_features)))),
-    feature_group = factor(.data$feature_group, levels = c("Metaprogrammes", "Six states", "QC / CNA metrics"))
+    feature_group = factor(.data$feature_group, levels = c("Metaprogrammes", "Centred states", "QC / CNA metrics"))
   )
 
 plot_dominant_group <- function(group_name, title_suffix) {
@@ -2578,14 +2579,14 @@ plot_dominant_group <- function(group_name, title_suffix) {
 pdf(file.path(figure_dir, "Auto_largest_subclone_effects_all_features.pdf"),
     width = 22, height = 13, useDingbats = FALSE)
 print(plot_dominant_group("Metaprogrammes", "all metaprogrammes"))
-print(plot_dominant_group("Six states", "six states excluding Hybrid and Unresolved"))
+print(plot_dominant_group("Centred states", "five centred states excluding Hybrid and Unresolved"))
 print(plot_dominant_group("QC / CNA metrics", "QC and CNA metrics"))
 dev.off()
 
 pairwise_feature_tests_v2 <- pairwise_feature_tests_v2 %>%
   mutate(
     cna_metric_label = factor(.data$cna_metric_label, levels = cna_metric_labels[cna_distance_metrics]),
-    feature_group = factor(.data$feature_group, levels = c("Metaprogrammes", "Six states", "QC / CNA metrics"))
+    feature_group = factor(.data$feature_group, levels = c("Metaprogrammes", "Centred states", "QC / CNA metrics"))
   )
 
 plot_pairwise_group <- function(group_name, title_suffix) {
@@ -2620,7 +2621,7 @@ plot_pairwise_group <- function(group_name, title_suffix) {
 pdf(file.path(figure_dir, "Auto_pairwise_cna_distance_all_features.pdf"),
     width = 22, height = 13, useDingbats = FALSE)
 print(plot_pairwise_group("Metaprogrammes", "all metaprogrammes"))
-print(plot_pairwise_group("Six states", "six states excluding Hybrid and Unresolved"))
+print(plot_pairwise_group("Centred states", "five centred states excluding Hybrid and Unresolved"))
 print(plot_pairwise_group("QC / CNA metrics", "QC and CNA metrics"))
 dev.off()
 

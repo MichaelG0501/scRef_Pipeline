@@ -8,9 +8,9 @@
 # Description:
 #   Replots the centred GeneNMF program similarity matrix ordered by the final
 #   centred refined MPs, then plots centred refined MP UCell score correlations
-#   using the requested state grouping and MP order. The two excluded centred
-#   refined MPs are retained in the final plotting order and annotated as
-#   Excluded.
+#   using the requested state grouping and MP order. Low-coverage and
+#   explicitly excluded MPs (MP2x, MP11c, MP18a) are filtered upstream in
+#   04_mp_refinement_merge_correlated_submps.R and are not present here.
 #
 # Inputs:
 #   - ref_outs/Metaprogrammes_Results/centred/optimal_nMP.rds
@@ -57,11 +57,13 @@ suppressPackageStartupMessages({
   library(grid)
 })
 
-project_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
+project_dir_ephemeral <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
 ref_dir <- file.path(project_dir, "ref_outs")
 setwd(ref_dir)
 
 outdir <- file.path("Metaprogrammes_Results", "centred", "mp_refinement")
+outdir_ephemeral <- file.path(project_dir_ephemeral, "ref_outs", outdir)
 for (subdir in c("intermediate", "tables", "figures", "logs")) {
   dir.create(file.path(outdir, subdir), recursive = TRUE, showWarnings = FALSE)
 }
@@ -98,7 +100,13 @@ geneNMF.metaprograms <- readRDS(nmf_file)
 merged_assignments <- readRDS(assignment_file)
 merged_mp_genes <- readRDS(gene_file)
 merged_ucell <- readRDS(ucell_file)
+refined_ucell <- readRDS(refined_ucell_file)
 tmdata_all <- readRDS(epi_file)
+
+# Filter assignments to only include MPs retained in merged_mp_genes
+# (MPs removed by coverage/nGenes/explicit filtering in 04 are still in the assignments table)
+retained_mps <- names(merged_mp_genes)
+merged_assignments <- merged_assignments[merged_assignments$merged_refined_mp %in% retained_mps, ]
 
 required_assignment_cols <- c("program", "original_mp", "refined_submp", "merged_refined_mp")
 missing_cols <- setdiff(required_assignment_cols, colnames(merged_assignments))
@@ -112,44 +120,39 @@ if (length(missing_cols) > 0) {
 state_groups <- list(
   "Cell cycle" = c("MP1", "MP5", "MP13+"),
   "Classic proliferation" = c("MP2+"),
-  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x"),
-  "Stress adaptive" = c("MP12"),
-  "Cancer-cell immune mimicry" = c("MP15"),
-  "Excluded" = c("MP11c", "MP18a")
+  "Squamous-to-intestinal" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "Glandular-to-intestinal" = c("MP18b", "MP16", "MP17", "MP8b", "MP8+"),
+  "Stress-adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
 mp_desc_map <- c(
   "MP1" = "G2/M cell cycle",
   "MP5" = "G1/S cell cycle",
-  "MP13+" = "replication-stress-associated cell cycling",
+  "MP13+" = "Single-nucleus cell cycle",
   "MP2+" = "MYC driven biosynthesis",
   "MP14" = "Squamoid/basal transition",
   "MP3+" = "Basal-columnar invasive epithelium",
-  "MP6+" = "Stress-reactive columnar epithelium",
-  "MP11+" = "Epithelial antiviral interferon response",
+  "MP6+" = "Inflammatory-reactive columnar epithelium",
+  "MP11+" = "Epithelial type I interferon response",
   "MP9+" = "Metabolic columnar epithelium",
   "MP10+" = "Intestinal metaplasia",
-  "MP8+" = "Glandular intestinal metaplasia",
-  "MP8b" = "Metabolic intestinal metaplasia",
-  "MP16" = "Mucous-secretory glandular epithelium",
   "MP18b" = "Mucous-secretory differentiation",
-  "MP17" = "Immune-interactive glandular progenitor",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
-  "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry",
-  "MP11c" = "Excluded",
-  "MP18a" = "Excluded"
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP17" = "MHC-II glandular progenitor",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP12" = "Hypoxic-inflammatory adaptive plasticity",
+  "MP15" = "Cancer-cell immune mimicry"
 )
 
 state_cols <- c(
   "Cell cycle" = "#6B7280",
   "Classic proliferation" = "#E41A1C",
-  "Basal to intestinal metaplasia" = "#4DAF4A",
-  "SMG to intestinal metaplasia" = "#FF7F00",
-  "Stress adaptive" = "#984EA3",
-  "Cancer-cell immune mimicry" = "#377EB8",
-  "Excluded" = "grey80"
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
+  "Stress-adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 ####################
 
@@ -284,7 +287,7 @@ ht_nmf <- Heatmap(
   height = unit(205, "mm")
 )
 
-label_break_before <- c("MP2+", "MP14", "MP8+", "MP12", "MP15", "MP11c")
+label_break_before <- c("MP2+", "MP14", "MP18b", "MP12", "MP15")
 
 adjust_label_positions <- function(raw_y, labels, base_gap = 0.026,
                                    break_gap = 0.052, low = 0.018, high = 0.982) {

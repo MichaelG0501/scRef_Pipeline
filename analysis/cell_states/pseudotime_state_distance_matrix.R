@@ -10,7 +10,7 @@
 ####################
 # pseudotime_state_distance_matrix.R
 # Monocle3-based state-to-state distance comparison for the 5 primary
-# noreg Approach B states across all valid samples.
+# current centred refined noreg states across all valid samples.
 #
 # Methods:
 #   1. Directed pseudotime gaps (median)
@@ -21,7 +21,7 @@
 #
 # Input:
 #   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_topmp_v2_noreg_states_B.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
 #
 # Output:
 #   ref_outs/state_distance_pseudotime/Auto_state_distance_sample_summary.csv

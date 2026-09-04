@@ -2,7 +2,7 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/shared/scRef_config.R
-#   Methodology: analysis/methodology/README.md
+#   Methodology: not required (configuration only)
 #   Map: analysis/ANALYSIS_MAP.md
 #   Inputs/outputs: documented in this header below and in the analysis map.
 ####################
@@ -17,29 +17,51 @@
 #   conventions in one place. New scripts may source this file directly, or copy
 #   the relevant constants only when a fully self-contained HPC job is required.
 #
-# Methodology:
-#   analysis/methodology/README.md
-#
 # Output:
 #   None. This file defines constants only.
 ####################
 
-SCREF_PROJECT_DIR <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+SCREF_PROJECT_DIR <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 SCREF_REF_OUTS_DIR <- file.path(SCREF_PROJECT_DIR, "ref_outs")
 SCREF_ANALYSIS_DIR <- file.path(SCREF_PROJECT_DIR, "analysis")
 SCREF_UPDATES_DIR <- file.path(SCREF_PROJECT_DIR, "updates", "new_updates")
 SCREF_SUMMARY_DIR <- file.path(SCREF_UPDATES_DIR, "summaries")
+SCREF_EPHEMERAL_PROJECT_DIR <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+SCREF_EPHEMERAL_REF_OUTS_DIR <- file.path(SCREF_EPHEMERAL_PROJECT_DIR, "ref_outs")
 
-SCREF_PREFERRED_STATE_METHOD <- "Approach B, noreg"
-SCREF_STATE_NOREG_RDS <- file.path(SCREF_REF_OUTS_DIR, "Auto_topmp_v2_noreg_states_B.rds")
-SCREF_STATE_NOREG_MP_ADJ_RDS <- file.path(SCREF_REF_OUTS_DIR, "Auto_topmp_v2_noreg_mp_adj.rds")
-SCREF_STATE_NOREG_GROUP_MAX_RDS <- file.path(SCREF_REF_OUTS_DIR, "Auto_topmp_v2_noreg_group_max.rds")
-SCREF_FINAL_STATE_RDS <- file.path(SCREF_REF_OUTS_DIR, "Auto_final_states.rds")
+SCREF_PREFERRED_STATE_METHOD <- "centred refined noreg, Approach B"
+SCREF_CENTRED_MP_DIR <- file.path(
+  SCREF_REF_OUTS_DIR, "Metaprogrammes_Results", "centred", "mp_refinement"
+)
+SCREF_CENTRED_STATE_DIR <- file.path(
+  SCREF_REF_OUTS_DIR, "Metaprogrammes_Results", "centred", "state_definition"
+)
+SCREF_STATE_NOREG_RDS <- file.path(
+  SCREF_CENTRED_STATE_DIR, "intermediate", "centred_refined_noreg_states.rds"
+)
+SCREF_STATE_NOREG_MP_ADJ_RDS <- file.path(
+  SCREF_CENTRED_STATE_DIR, "intermediate", "centred_refined_noreg_mp_adj.rds"
+)
+SCREF_STATE_NOREG_GROUP_MAX_RDS <- file.path(
+  SCREF_CENTRED_STATE_DIR, "intermediate", "centred_refined_noreg_group_max.rds"
+)
+# Compatibility alias for scripts that historically distinguished final from noreg states.
+SCREF_FINAL_STATE_RDS <- SCREF_STATE_NOREG_RDS
 
 SCREF_EPI_RDS <- file.path(SCREF_REF_OUTS_DIR, "EAC_Ref_epi.rds")
 SCREF_META_FULL_EPI_RDS <- file.path(SCREF_REF_OUTS_DIR, "meta_full_epi.rds")
-SCREF_MP_OBJECT_RDS <- file.path(SCREF_REF_OUTS_DIR, "Metaprogrammes_Results", "geneNMF_metaprograms_nMP_19.rds")
-SCREF_MP_UCELL_RDS <- file.path(SCREF_REF_OUTS_DIR, "Metaprogrammes_Results", "UCell_nMP19_filtered.rds")
+SCREF_LEGACY_MP_OBJECT_RDS <- file.path(
+  SCREF_REF_OUTS_DIR, "Metaprogrammes_Results", "centred", "geneNMF_metaprograms_nMP_19.rds"
+)
+SCREF_MP_GENES_RDS <- file.path(
+  SCREF_CENTRED_MP_DIR, "intermediate", "merged_refined_mp_genes.rds"
+)
+SCREF_MP_UCELL_RDS <- file.path(
+  SCREF_CENTRED_MP_DIR, "intermediate", "merged_refined_ucell_scores.rds"
+)
+SCREF_MP_GROUPING_CSV <- file.path(
+  SCREF_CENTRED_MP_DIR, "tables", "centred_refined_mp_state_grouping.csv"
+)
 SCREF_3CA_UCELL_RDS <- file.path(SCREF_REF_OUTS_DIR, "UCell_3CA_MPs.rds")
 SCREF_CELL_CYCLE_GENE_CSV <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Cell_Cycle_Genes.csv"
 SCREF_CLINICAL_XLSX <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx"
@@ -63,49 +85,51 @@ SCREF_DEFAULT_PLOT <- list(
 )
 
 SCREF_MP_DESCRIPTIONS <- c(
-  "MP1" = "G2M Cell Cycle",
-  "MP9" = "G1S Cell Cycle",
-  "MP2" = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5" = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8" = "Intestinal Diff.",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP7" = "DNA Damage Repair",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi."
+  "MP1" = "G2/M cell cycle",
+  "MP5" = "G1/S cell cycle",
+  "MP13+" = "Single-nucleus cell cycle",
+  "MP2+" = "MYC driven biosynthesis",
+  "MP14" = "Squamoid/basal transition",
+  "MP3+" = "Basal-columnar invasive epithelium",
+  "MP6+" = "Inflammatory-reactive columnar epithelium",
+  "MP11+" = "Epithelial type I interferon response",
+  "MP9+" = "Metabolic columnar epithelium",
+  "MP10+" = "Intestinal metaplasia",
+  "MP18b" = "Mucous-secretory differentiation",
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP17" = "MHC-II glandular progenitor",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP12" = "Hypoxic-inflammatory adaptive plasticity",
+  "MP15" = "Cancer-cell immune mimicry"
 )
 
-SCREF_CC_MPS <- c("MP1", "MP7", "MP9")
+SCREF_CC_MPS <- c("MP1", "MP5", "MP13+")
 SCREF_STATE_GROUPS <- list(
-  "Classic Proliferative" = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "SMG-like Metaplasia" = c("MP18", "MP16"),
-  "Stress-adaptive" = c("MP13", "MP12"),
-  "Immune Infiltrating" = c("MP15")
+  "Classic proliferation" = c("MP2+"),
+  "Squamous-to-intestinal" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "Glandular-to-intestinal" = c("MP18b", "MP16", "MP17", "MP8b", "MP8+"),
+  "Stress-adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
 SCREF_PRIMARY_STATE_ORDER <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
+  "Classic proliferation",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
   "Stress-adaptive",
-  "Immune Infiltrating"
+  "Cancer-cell immune mimicry"
 )
 
-SCREF_FINAL_EXTRA_STATE_ORDER <- c("3CA_EMT_and_Protein_maturation")
+SCREF_FINAL_EXTRA_STATE_ORDER <- character(0)
 SCREF_TECHNICAL_STATE_ORDER <- c("Unresolved", "Hybrid")
 
 SCREF_STATE_COLOURS <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "SMG-like Metaplasia" = "#FF7F00",
+  "Classic proliferation" = "#E41A1C",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
   "Stress-adaptive" = "#984EA3",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#666666",
+  "Cancer-cell immune mimicry" = "#377EB8",
   "Unresolved" = "grey80",
   "Hybrid" = "black"
 )

@@ -1,4 +1,12 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/raw_data/Auto_cellranger_carroll_bam_single.sh
+#   Methodology: not required (PBS/submit wrapper; method is documented by the invoked analysis script)
+#   Map: analysis/ANALYSIS_MAP.md
+#   Description: Execution wrapper; resources, dependencies, and arguments are defined below.
+####################
 #PBS -l select=1:ncpus=8:mem=128gb
 #PBS -l walltime=24:00:00
 #PBS -N Auto_Car_CR_single

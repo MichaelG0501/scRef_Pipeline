@@ -1,8 +1,26 @@
 #!/usr/bin/env python3
 ####################
 # scatlas_velocity_scvelo_visualise.py
+# Status: active
+# Script: analysis/trajectory/scatlas_velocity_scvelo_visualise.py
+# Methodology: analysis/methodology/trajectory/scatlas_velocity_methodology.md
+# Inputs: live velocity cell metadata/sample manifest plus per-sample live or
+#   ephemeral velocyto loom and versioned scVelo H5AD cache.
+# Outputs: ref_outs/Auto_velocity_scATLAS/h5ad/, tables/ state/MP node and edge
+#   CSVs, and figures/ per-sample/state-direction PDFs; persistent copies are live.
+# Cache/replot: VELOCITY_CACHE_VERSION guards H5AD reuse; cached models may be
+#   staged ephemeral but all replot tables/H5AD/final figures are live.
+# Run: qsub analysis/trajectory/scatlas_velocity_run_scvelo_visualisation.sh
+# Conda env: velocity
 #
-# Per-sample scVelo analysis and scATLAS state-transition summaries.
+# Per-sample scVelo analysis with LOCAL per-sample UMAP recomputation
+# and scATLAS state-transition summaries.
+#
+# Key changes from v1:
+#   - UMAP is recomputed per sample (not injected from global coordinates)
+#   - Uses centred refined noreg states only (no 3CA relabeling)
+#   - MP-level velocity direction for Basal and SMG states
+#   - Cache versioning (VELOCITY_CACHE_VERSION = 2)
 ####################
 
 from pathlib import Path
@@ -22,32 +40,71 @@ import scanpy as sc
 import scvelo as scv
 
 
-WD = Path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline")
-OUT = WD / "ref_outs" / "Auto_velocity_scATLAS"
+VELOCITY_CACHE_VERSION = 2
+
+WD_EPH = Path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline")
+OUT_EPH = WD_EPH / "ref_outs" / "Auto_velocity_scATLAS"
+WD_LIVE = Path("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline")
+OUT_LIVE = WD_LIVE / "ref_outs" / "Auto_velocity_scATLAS"
+
 MAJOR_STATES = [
-    "Classic Proliferative",
-    "Basal to Intestinal Metaplasia",
-    "SMG-like Metaplasia",
-    "Stress-adaptive",
-    "Immune Infiltrating",
+    "Classic proliferation",
+    "Basal to intestinal metaplasia",
+    "SMG to intestinal metaplasia",
+    "Stress adaptive",
+    "Cancer-cell immune mimicry",
 ]
 STATE_COLORS = {
-    "Classic Proliferative": "#E41A1C",
-    "Basal to Intestinal Metaplasia": "#4DAF4A",
-    "SMG-like Metaplasia": "#FF7F00",
-    "Stress-adaptive": "#984EA3",
-    "Immune Infiltrating": "#377EB8",
-    "3CA_EMT_and_Protein_maturation": "#666666",
-    "Unresolved": "#D9D9D9",
-    "Hybrid": "#000000",
+    "Classic proliferation": "#E41A1C",
+    "Basal to intestinal metaplasia": "#4DAF4A",
+    "SMG to intestinal metaplasia": "#FF7F00",
+    "Stress adaptive": "#984EA3",
+    "Cancer-cell immune mimicry": "#377EB8",
+    "Unresolved": "grey",
+    "Hybrid": "black",
     "Unassigned": "#A6A6A6",
 }
+
+BASAL_MPS = ["MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"]
+SMG_MPS = ["MP8+", "MP8b", "MP16", "MP18b", "MP17"]
+
+BASAL_MP_COLORS = {
+    "MP14": "#4DAF4A", "MP3+": "#8DA0CB", "MP6+": "#66C2A5",
+    "MP11+": "#FC8D62", "MP9+": "#A6D854", "MP10+": "#E78AC3",
+    "Hybrid": "black", "Unassigned": "#A6A6A6",
+}
+SMG_MP_COLORS = {
+    "MP8+": "#FF7F00", "MP8b": "#A65628", "MP16": "#F781BF",
+    "MP18b": "#999999", "MP17": "#66C2A5",
+    "Hybrid": "black", "Unassigned": "#A6A6A6",
+}
+
+MP_DESC_MAP = {
+    "MP1": "G2/M cell cycle",
+    "MP5": "G1/S cell cycle",
+    "MP13+": "replication-stress-associated cell cycling",
+    "MP2+": "MYC driven biosynthesis",
+    "MP14": "Squamoid/basal transition",
+    "MP3+": "Basal-columnar invasive epithelium",
+    "MP6+": "Stress-reactive columnar epithelium",
+    "MP11+": "Epithelial antiviral interferon response",
+    "MP9+": "Metabolic columnar epithelium",
+    "MP10+": "Intestinal metaplasia",
+    "MP8+": "Glandular intestinal metaplasia",
+    "MP8b": "Metabolic intestinal metaplasia",
+    "MP16": "Mucous-secretory glandular epithelium",
+    "MP18b": "Mucous-secretory differentiation",
+    "MP17": "Immune-interactive glandular progenitor",
+    "MP12": "Hypoxic inflammatory adaptive plasticity",
+    "MP15": "T/NK-like cancer-cell immune mimicry",
+}
+
 LAYOUT = {
-    "Classic Proliferative": np.array([-1.18, 0.76]),
-    "Basal to Intestinal Metaplasia": np.array([1.18, 0.76]),
-    "SMG-like Metaplasia": np.array([1.18, -0.76]),
-    "Stress-adaptive": np.array([-1.18, -0.76]),
-    "Immune Infiltrating": np.array([0.0, -1.34]),
+    "Classic proliferation": np.array([-1.18, 0.76]),
+    "Basal to intestinal metaplasia": np.array([1.18, 0.76]),
+    "SMG to intestinal metaplasia": np.array([1.18, -0.76]),
+    "Stress adaptive": np.array([-1.18, -0.76]),
+    "Cancer-cell immune mimicry": np.array([0.0, -1.34]),
 }
 EDGE_THRESHOLD = 0.35
 CORE_PDF = "Auto_scatlas_velocity_per_sample_visualisations.pdf"
@@ -58,6 +115,10 @@ ALIGNMENT_LABEL_FONTSIZE = 10
 ARROW_NODE_SHRINK = 54
 ARROW_RAD = 0.24
 
+
+# ---------------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------------
 
 def comma_int(value: int | float) -> str:
     return f"{int(value):,}"
@@ -82,23 +143,23 @@ def title_with_n(title: str, nodes: pd.DataFrame, sample_set: Optional[Set[str]]
 
 def format_state_label(state: str) -> str:
     labels = {
-        "Classic Proliferative": "Classic\nProlif.",
-        "Basal to Intestinal Metaplasia": "Basal to\nIntest. Meta",
-        "SMG-like Metaplasia": "SMG-like\nMetaplasia",
-        "Stress-adaptive": "Stress-\nadaptive",
-        "Immune Infiltrating": "Immune\nInfiltrating",
+        "Classic proliferation": "Classic\nproliferation",
+        "Basal to intestinal metaplasia": "Basal to\nintestinal meta",
+        "SMG to intestinal metaplasia": "SMG to\nintestinal meta",
+        "Stress adaptive": "Stress\nadaptive",
+        "Cancer-cell immune mimicry": "Cancer-cell\nimmune mimicry",
     }
     return labels.get(state, state)
 
 
+def format_mp_label(mp: str) -> str:
+    desc = MP_DESC_MAP.get(mp, mp)
+    short = desc[:20] + "…" if len(desc) > 20 else desc
+    return f"{mp}\n{short}"
+
+
 def edge_curve_side(source: str, target: str) -> float:
     return 1.0 if MAJOR_STATES.index(source) < MAJOR_STATES.index(target) else -1.0
-
-
-def sample_has_velocity_input(sample: str) -> bool:
-    h5ad_path = OUT / "h5ad" / f"Auto_scvelo_{sample}.h5ad"
-    loom_dir = OUT / "looms" / sample
-    return h5ad_path.exists() or len(list(loom_dir.glob("*.loom"))) == 1
 
 
 def extract_barcode(cell_id: str) -> str:
@@ -108,11 +169,32 @@ def extract_barcode(cell_id: str) -> str:
     return bc
 
 
-def load_sample(sample: str, meta: pd.DataFrame) -> ad.AnnData:
-    loom_dir = OUT / "looms" / sample
-    looms = sorted(loom_dir.glob("*.loom"))
+# ---------------------------------------------------------------------------
+# Sample loading & velocity computation
+# ---------------------------------------------------------------------------
+
+def sample_has_velocity_input(sample: str) -> bool:
+    h5ad_live = OUT_LIVE / "h5ad" / f"Auto_scvelo_{sample}.h5ad"
+    h5ad_eph = OUT_EPH / "h5ad" / f"Auto_scvelo_{sample}.h5ad"
+    loom_dir_live = OUT_LIVE / "looms" / sample
+    loom_dir_eph = OUT_EPH / "looms" / sample
+    return (
+        h5ad_live.exists()
+        or h5ad_eph.exists()
+        or len(list(loom_dir_live.glob("*.loom"))) == 1
+        or len(list(loom_dir_eph.glob("*.loom"))) == 1
+    )
+
+
+def load_loom_and_match(sample: str, meta: pd.DataFrame) -> ad.AnnData:
+    """Load loom file, match barcodes to metadata, return raw AnnData."""
+    loom_dir_live = OUT_LIVE / "looms" / sample
+    loom_dir_eph = OUT_EPH / "looms" / sample
+    looms = sorted(loom_dir_live.glob("*.loom"))
     if len(looms) != 1:
-        raise FileNotFoundError(f"Expected exactly one loom in {loom_dir}, found {len(looms)}")
+        looms = sorted(loom_dir_eph.glob("*.loom"))
+    if len(looms) != 1:
+        raise FileNotFoundError(f"Expected exactly one loom in {loom_dir_live} or {loom_dir_eph}, found {len(looms)}")
 
     sample_meta = meta[meta["sample"] == sample].copy()
     raw_to_cell = dict(zip(sample_meta["raw_barcode"], sample_meta["cell_id"]))
@@ -144,10 +226,21 @@ def load_sample(sample: str, meta: pd.DataFrame) -> ad.AnnData:
     for col in sample_meta.columns:
         adata.obs[col] = sample_meta[col].values
 
-    adata.obs["state_final"] = adata.obs["state_final"].fillna("Unassigned").astype(str)
-    adata.obs["state_direction"] = adata.obs["state_direction"].fillna("Unassigned").astype(str)
+    # State assignments from centred refined noreg
+    adata.obs["state_noreg"] = adata.obs["state_noreg"].fillna("Unassigned").astype(str)
+    # Direction states: only 5 primary states used for direction scoring
+    adata.obs["state_direction"] = adata.obs["state_noreg"].apply(
+        lambda x: x if x in MAJOR_STATES else "Unassigned"
+    )
+    # state_final = state_noreg (no 3CA relabeling)
+    adata.obs["state_final"] = adata.obs["state_noreg"].astype(str)
+
+    if "dominant_basal_mp" in adata.obs.columns:
+        adata.obs["dominant_basal_mp"] = adata.obs["dominant_basal_mp"].fillna("Unassigned").astype(str)
+    if "dominant_smg_mp" in adata.obs.columns:
+        adata.obs["dominant_smg_mp"] = adata.obs["dominant_smg_mp"].fillna("Unassigned").astype(str)
     adata.obs["dataset"] = adata.obs.get("study", "unknown").astype(str)
-    adata.obsm["X_umap"] = sample_meta[["umap_1", "umap_2"]].to_numpy(dtype=float)
+
     return adata
 
 
@@ -161,8 +254,8 @@ def sanitise_velocity_fields(adata: ad.AnnData) -> None:
             adata.obs[col] = np.nan_to_num(vals, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-def run_velocity(sample: str, meta: pd.DataFrame) -> ad.AnnData:
-    adata = load_sample(sample, meta)
+def run_velocity_local_umap(adata: ad.AnnData) -> ad.AnnData:
+    """Run the full scVelo pipeline with per-sample UMAP recomputation."""
     scv.settings.verbosity = 2
     scv.pp.filter_genes(adata, min_shared_counts=20)
     scv.pp.normalize_per_cell(adata)
@@ -173,6 +266,8 @@ def run_velocity(sample: str, meta: pd.DataFrame) -> ad.AnnData:
     n_neighbors = max(5, min(30, adata.n_obs - 1))
     sc.tl.pca(adata, svd_solver="arpack", n_comps=n_pcs)
     sc.pp.neighbors(adata, n_neighbors=n_neighbors, n_pcs=n_pcs)
+    # Recompute UMAP locally for this sample
+    sc.tl.umap(adata)
     scv.pp.moments(adata, n_pcs=n_pcs, n_neighbors=n_neighbors)
     scv.tl.velocity(adata, mode="stochastic")
     scv.tl.velocity_graph(adata)
@@ -182,59 +277,54 @@ def run_velocity(sample: str, meta: pd.DataFrame) -> ad.AnnData:
     return adata
 
 
-def load_or_run_velocity(sample: str, meta: pd.DataFrame) -> ad.AnnData:
-    h5ad_path = OUT / "h5ad" / f"Auto_scvelo_{sample}.h5ad"
-    if h5ad_path.exists():
-        adata = ad.read_h5ad(h5ad_path)
-        required_obsm = {"X_umap", "velocity_umap"}
-        required_obs = {"state_final", "state_direction", "sample", "dataset"}
-        if required_obsm.issubset(adata.obsm.keys()) and required_obs.issubset(adata.obs.columns):
-            sanitise_velocity_fields(adata)
-            return adata
-    adata = run_velocity(sample, meta)
-    adata.write(h5ad_path, compression="gzip")
+def _cache_is_v2(adata: ad.AnnData) -> bool:
+    """Check if cached h5ad was produced with v2 (local UMAP) pipeline."""
+    if "velocity_cache_version" not in adata.uns:
+        return False
+    return int(adata.uns["velocity_cache_version"]) >= VELOCITY_CACHE_VERSION
+
+
+def load_or_run_velocity(sample: str, meta: pd.DataFrame, force_recompute: bool = False) -> ad.AnnData:
+    h5ad_live = OUT_LIVE / "h5ad" / f"Auto_scvelo_{sample}.h5ad"
+    h5ad_eph = OUT_EPH / "h5ad" / f"Auto_scvelo_{sample}.h5ad"
+
+    if not force_recompute:
+        for h5ad_path in [h5ad_live, h5ad_eph]:
+            if h5ad_path.exists():
+                adata = ad.read_h5ad(h5ad_path)
+                required_obsm = {"X_umap", "velocity_umap"}
+                required_obs = {"state_final", "state_direction", "sample", "dataset"}
+                if (
+                    required_obsm.issubset(adata.obsm.keys())
+                    and required_obs.issubset(adata.obs.columns)
+                    and _cache_is_v2(adata)
+                ):
+                    # Refresh MP assignments from metadata
+                    meta_indexed = meta.set_index("cell_id")
+                    for col in ["dominant_basal_mp", "dominant_smg_mp"]:
+                        if col in meta_indexed.columns:
+                            adata.obs[col] = meta_indexed[col].reindex(adata.obs_names).fillna("Unassigned").astype(str)
+                    sanitise_velocity_fields(adata)
+                    if not h5ad_live.exists():
+                        adata.write(h5ad_live, compression="gzip")
+                    return adata
+
+    # Load from loom and run full pipeline
+    adata = load_loom_and_match(sample, meta)
+    adata = run_velocity_local_umap(adata)
+    adata.uns["velocity_cache_version"] = VELOCITY_CACHE_VERSION
+
+    # Save to both ephemeral (cache) and live (persistent)
+    (OUT_EPH / "h5ad").mkdir(parents=True, exist_ok=True)
+    (OUT_LIVE / "h5ad").mkdir(parents=True, exist_ok=True)
+    adata.write(h5ad_eph, compression="gzip")
+    adata.write(h5ad_live, compression="gzip")
     return adata
 
 
-def prepare_display_basis(adata: ad.AnnData) -> None:
-    xy = np.asarray(adata.obsm["X_umap"], dtype=float)
-    center = np.nanmedian(xy, axis=0)
-    centered = xy - center
-    dist = np.linalg.norm(centered, axis=1)
-    radius = float(np.nanpercentile(dist, 90))
-    if not np.isfinite(radius) or radius <= 0:
-        radius = 1.0
-    compressed_dist = np.where(dist <= radius, dist, radius + 0.15 * (dist - radius))
-    direction = np.divide(
-        centered,
-        np.maximum(dist[:, None], 1e-8),
-        out=np.zeros_like(centered),
-        where=np.isfinite(centered),
-    )
-    display = direction * compressed_dist[:, None]
-    span = float(np.nanpercentile(np.linalg.norm(display, axis=1), 99))
-    if not np.isfinite(span) or span <= 0:
-        span = 1.0
-    scale = 6.0 / span
-    adata.obsm["X_umap_display"] = display * scale
-    if "velocity_umap" in adata.obsm:
-        adata.obsm["velocity_umap_display"] = np.asarray(adata.obsm["velocity_umap"], dtype=float) * scale
-
-
-def set_display_limits(ax: plt.Axes, adata: ad.AnnData) -> None:
-    xy = np.asarray(adata.obsm["X_umap_display"], dtype=float)
-    lo = np.nanmin(xy, axis=0)
-    hi = np.nanmax(xy, axis=0)
-    span = np.maximum(hi - lo, 1e-6)
-    pad = np.maximum(span * 0.08, 0.25)
-    ax.set_xlim(lo[0] - pad[0], hi[0] + pad[0])
-    ax.set_ylim(lo[1] - pad[1], hi[1] + pad[1])
-
-
-def remove_axis_text_labels(ax: plt.Axes) -> None:
-    for txt in list(ax.texts):
-        txt.remove()
-
+# ---------------------------------------------------------------------------
+# State-level direction tables
+# ---------------------------------------------------------------------------
 
 def state_direction_tables(adata: ad.AnnData) -> Tuple[List[dict], List[dict]]:
     xy = adata.obsm["X_umap"]
@@ -299,12 +389,97 @@ def state_direction_tables(adata: ad.AnnData) -> Tuple[List[dict], List[dict]]:
     return node_rows, edge_rows
 
 
-def set_categorical_colors(adata: ad.AnnData, column: str, values: List[str]) -> None:
+# ---------------------------------------------------------------------------
+# MP-level direction tables (Basal / SMG)
+# ---------------------------------------------------------------------------
+
+def mp_direction_tables(adata: ad.AnnData, obs_col: str, mp_list: List[str]) -> Tuple[List[dict], List[dict]]:
+    """Compute velocity direction between dominant MPs within a state subset."""
+    if obs_col not in adata.obs:
+        return [], []
+
+    states = adata.obs[obs_col].astype(str).to_numpy()
+    if not isinstance(adata.obsm.get("velocity_umap"), np.ndarray):
+        return [], []
+
+    V = adata.obsm["velocity_umap"]
+    U = adata.obsm["X_umap"]
+
+    valid_states = [s for s in np.unique(states) if s in mp_list]
+
+    sample = str(adata.obs["sample"].iloc[0])
+    dataset = str(adata.obs["dataset"].iloc[0])
+    total_direction_cells = int(np.isin(states, valid_states).sum())
+    total_major = total_direction_cells
+
+    node_rows = []
+    centers = {}
+    mean_velocities = {}
+    for state in valid_states:
+        mask = states == state
+        cells = int(mask.sum())
+        pct_total = 100 * cells / total_direction_cells if total_direction_cells else 0.0
+        node_rows.append({
+            "sample": sample,
+            "dataset": dataset,
+            "source_group": dataset,
+            "state": state,
+            "cells": cells,
+            "total_cells": total_direction_cells,
+            "major_cells": total_major,
+            "pct_major": pct_total,
+            "pct_total_direction_states": pct_total,
+            "pct_of_major_states": pct_total,
+        })
+        if cells >= 5:
+            centers[state] = U[mask].mean(axis=0)
+            mean_velocities[state] = V[mask].mean(axis=0)
+
+    edge_rows = []
+    for source in valid_states:
+        if source not in centers:
+            continue
+        velocity = mean_velocities[source]
+        velocity_norm = float(np.linalg.norm(velocity))
+        if velocity_norm == 0:
+            continue
+        for target in valid_states:
+            if target == source or target not in centers:
+                continue
+            target_vec = centers[target] - centers[source]
+            target_norm = float(np.linalg.norm(target_vec))
+            if target_norm == 0:
+                continue
+            alignment = float(np.dot(velocity, target_vec) / (velocity_norm * target_norm))
+            edge_rows.append({
+                "sample": sample,
+                "dataset": dataset,
+                "source_group": dataset,
+                "source": source,
+                "target": target,
+                "velocity_alignment": alignment,
+                "source_velocity_norm": velocity_norm,
+                "source_to_target_distance": target_norm,
+                "source_cells": int((states == source).sum()),
+                "target_cells": int((states == target).sum()),
+            })
+    return node_rows, edge_rows
+
+
+# ---------------------------------------------------------------------------
+# Categorical color helpers
+# ---------------------------------------------------------------------------
+
+def set_categorical_colors(adata: ad.AnnData, column: str, values: List[str], color_map: dict) -> None:
     observed = [str(x) for x in adata.obs[column].astype(str).unique()]
     categories = values + [x for x in observed if x not in values]
     adata.obs[column] = pd.Categorical(adata.obs[column].astype(str), categories=categories, ordered=True)
-    adata.uns[f"{column}_colors"] = [STATE_COLORS.get(value, "#808080") for value in categories]
+    adata.uns[f"{column}_colors"] = [color_map.get(value, "#808080") for value in categories]
 
+
+# ---------------------------------------------------------------------------
+# Plot helpers
+# ---------------------------------------------------------------------------
 
 def drop_nonfinite_scatter_offsets(fig: plt.Figure) -> None:
     for ax in fig.axes:
@@ -336,9 +511,14 @@ def remove_axis_legend(ax: plt.Axes) -> None:
         legend.remove()
 
 
+def remove_axis_text_labels(ax: plt.Axes) -> None:
+    for txt in list(ax.texts):
+        txt.remove()
+
+
 def save_raster_page(pdf: PdfPages, fig: plt.Figure, sample: str, suffix: str, figsize: Tuple[float, float]) -> None:
     drop_nonfinite_scatter_offsets(fig)
-    tmp_dir = OUT / "tmp_pages"
+    tmp_dir = OUT_LIVE / "tmp_pages"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp_png = tmp_dir / f"Auto_scatlas_velocity_{suffix}_{sample}.png"
     fig.savefig(tmp_png, dpi=190, bbox_inches="tight")
@@ -353,24 +533,27 @@ def save_raster_page(pdf: PdfPages, fig: plt.Figure, sample: str, suffix: str, f
     plt.close(raster_fig)
 
 
+# ---------------------------------------------------------------------------
+# Per-sample plotting (core + extended pages)
+# ---------------------------------------------------------------------------
+
 def plot_sample_core_page(pdf: PdfPages, adata: ad.AnnData) -> None:
     sample = str(adata.obs["sample"].iloc[0])
-    prepare_display_basis(adata)
     fig, axes = plt.subplots(1, 3, figsize=(17, 5.8))
     axes = axes.ravel()
 
     final_values = [x for x in STATE_COLORS if x in set(adata.obs["state_final"])]
     direction_values = [x for x in MAJOR_STATES + ["Unassigned"] if x in set(adata.obs["state_direction"])]
-    set_categorical_colors(adata, "state_final", final_values)
-    set_categorical_colors(adata, "state_direction", direction_values)
+    set_categorical_colors(adata, "state_final", final_values, STATE_COLORS)
+    set_categorical_colors(adata, "state_direction", direction_values, STATE_COLORS)
     size = point_size(adata)
 
     sc.pl.embedding(
         adata,
-        basis="umap_display",
+        basis="umap",
         color="state_final",
         frameon=False,
-        title="Finalized states",
+        title="Cell states",
         ax=axes[0],
         show=False,
         size=size,
@@ -378,10 +561,10 @@ def plot_sample_core_page(pdf: PdfPages, adata: ad.AnnData) -> None:
     )
     sc.pl.embedding(
         adata,
-        basis="umap_display",
+        basis="umap",
         color="state_direction",
         frameon=False,
-        title="Primary states used for direction scoring",
+        title="Direction states (5 primary)",
         ax=axes[1],
         show=False,
         size=size,
@@ -389,7 +572,7 @@ def plot_sample_core_page(pdf: PdfPages, adata: ad.AnnData) -> None:
     )
     scv.pl.velocity_embedding_stream(
         adata,
-        basis="umap_display",
+        basis="umap",
         color="state_final",
         legend_loc="none",
         title="Velocity stream",
@@ -402,8 +585,6 @@ def plot_sample_core_page(pdf: PdfPages, adata: ad.AnnData) -> None:
     remove_axis_legend(axes[1])
     remove_axis_legend(axes[2])
     remove_axis_text_labels(axes[2])
-    for ax in axes:
-        set_display_limits(ax, adata)
 
     fig.suptitle(sample, fontsize=18, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
@@ -412,17 +593,16 @@ def plot_sample_core_page(pdf: PdfPages, adata: ad.AnnData) -> None:
 
 def plot_sample_extended_page(pdf: PdfPages, adata: ad.AnnData) -> None:
     sample = str(adata.obs["sample"].iloc[0])
-    prepare_display_basis(adata)
     fig, axes = plt.subplots(1, 3, figsize=(17, 5.8))
     axes = axes.ravel()
 
     final_values = [x for x in STATE_COLORS if x in set(adata.obs["state_final"])]
-    set_categorical_colors(adata, "state_final", final_values)
+    set_categorical_colors(adata, "state_final", final_values, STATE_COLORS)
     size = point_size(adata)
 
     scv.pl.velocity_embedding_grid(
         adata,
-        basis="umap_display",
+        basis="umap",
         color="state_final",
         arrow_color="black",
         arrow_size=3.8,
@@ -440,7 +620,7 @@ def plot_sample_extended_page(pdf: PdfPages, adata: ad.AnnData) -> None:
     )
     sc.pl.embedding(
         adata,
-        basis="umap_display",
+        basis="umap",
         color="velocity_length",
         frameon=False,
         title="Velocity length",
@@ -451,7 +631,7 @@ def plot_sample_extended_page(pdf: PdfPages, adata: ad.AnnData) -> None:
     )
     sc.pl.embedding(
         adata,
-        basis="umap_display",
+        basis="umap",
         color="velocity_confidence",
         frameon=False,
         title="Velocity confidence",
@@ -460,13 +640,15 @@ def plot_sample_extended_page(pdf: PdfPages, adata: ad.AnnData) -> None:
         size=size,
         color_map="viridis",
     )
-    for ax in axes:
-        set_display_limits(ax, adata)
 
     fig.suptitle(sample, fontsize=18, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     save_raster_page(pdf, fig, sample, "extended_page", (17, 5.8))
 
+
+# ---------------------------------------------------------------------------
+# State-level direction network plots
+# ---------------------------------------------------------------------------
 
 def draw_direction_network(ax: plt.Axes, node_df: pd.DataFrame, edge_df: pd.DataFrame, title: str) -> None:
     ax.set_title(title, fontsize=14, fontweight="bold", pad=8)
@@ -576,7 +758,7 @@ def draw_direction_page(pdf: PdfPages, panels: List[Tuple[pd.DataFrame, pd.DataF
 
 
 def plot_direction_pdf(nodes: pd.DataFrame, edges: pd.DataFrame) -> None:
-    pdf_path = OUT / "figures" / DIRECTION_PDF
+    pdf_path = OUT_LIVE / "figures" / DIRECTION_PDF
     group_rows = []
     datasets = sorted(nodes["dataset"].dropna().astype(str).unique())
 
@@ -611,17 +793,24 @@ def plot_direction_pdf(nodes: pd.DataFrame, edges: pd.DataFrame) -> None:
 
     if group_rows:
         pd.concat(group_rows, axis=0).to_csv(
-            OUT / "tables" / "Auto_scatlas_velocity_group_state_direction_edges.csv",
+            OUT_LIVE / "tables" / "Auto_scatlas_velocity_group_state_direction_edges.csv",
             index=False,
         )
 
 
-def main() -> None:
-    for subdir in ["figures", "h5ad", "tables", "logs"]:
-        (OUT / subdir).mkdir(parents=True, exist_ok=True)
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
-    meta = pd.read_csv(OUT / "tables" / "Auto_scatlas_velocity_cell_metadata.csv")
-    manifest = pd.read_csv(OUT / "tables" / "Auto_scatlas_velocity_sample_manifest.csv")
+def main() -> None:
+    import os
+    force_recompute = os.environ.get("SCATLAS_FORCE_VELOCITY_RECOMPUTE", "FALSE").upper() == "TRUE"
+
+    for subdir in ["figures", "h5ad", "tables", "logs", "tmp_pages"]:
+        (OUT_LIVE / subdir).mkdir(parents=True, exist_ok=True)
+
+    meta = pd.read_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_cell_metadata.csv")
+    manifest = pd.read_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_sample_manifest.csv")
     samples = manifest.sort_values(["dataset", "sample"])["sample"].tolist()
     missing_inputs = [sample for sample in samples if not sample_has_velocity_input(sample)]
     if missing_inputs:
@@ -636,19 +825,32 @@ def main() -> None:
     all_obs = []
     all_nodes = []
     all_edges = []
+    all_basal_nodes = []
+    all_basal_edges = []
+    all_smg_nodes = []
+    all_smg_edges = []
     failures = []
-    core_pdf_path = OUT / "figures" / CORE_PDF
-    extended_pdf_path = OUT / "figures" / EXTENDED_PDF
+
+    core_pdf_path = OUT_LIVE / "figures" / CORE_PDF
+    extended_pdf_path = OUT_LIVE / "figures" / EXTENDED_PDF
     with PdfPages(core_pdf_path) as core_pdf, PdfPages(extended_pdf_path) as extended_pdf:
         for sample in samples:
             print(f"Loading/scVelo for {sample}", flush=True)
             try:
-                adata = load_or_run_velocity(sample, meta)
+                adata = load_or_run_velocity(sample, meta, force_recompute=force_recompute)
                 plot_sample_core_page(core_pdf, adata)
                 plot_sample_extended_page(extended_pdf, adata)
                 node_rows, edge_rows = state_direction_tables(adata)
                 all_nodes.extend(node_rows)
                 all_edges.extend(edge_rows)
+
+                basal_node_rows, basal_edge_rows = mp_direction_tables(adata, "dominant_basal_mp", BASAL_MPS)
+                all_basal_nodes.extend(basal_node_rows)
+                all_basal_edges.extend(basal_edge_rows)
+
+                smg_node_rows, smg_edge_rows = mp_direction_tables(adata, "dominant_smg_mp", SMG_MPS)
+                all_smg_nodes.extend(smg_node_rows)
+                all_smg_edges.extend(smg_edge_rows)
 
                 obs = adata.obs.copy()
                 obs["velocity_umap_1"] = adata.obsm["velocity_umap"][:, 0]
@@ -659,16 +861,24 @@ def main() -> None:
                 print(f"FAILED {sample}: {exc}", flush=True)
 
     if failures:
-        pd.DataFrame(failures).to_csv(OUT / "tables" / "Auto_scatlas_velocity_scvelo_failures.csv", index=False)
+        pd.DataFrame(failures).to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_scvelo_failures.csv", index=False)
     if not all_nodes:
         raise RuntimeError("No samples completed scVelo; see Auto_scatlas_velocity_scvelo_failures.csv")
 
     obs_all = pd.concat(all_obs, axis=0)
     nodes = pd.DataFrame(all_nodes)
     edges = pd.DataFrame(all_edges)
-    obs_all.to_csv(OUT / "tables" / "Auto_scatlas_velocity_scvelo_cell_metadata.csv")
-    nodes.to_csv(OUT / "tables" / "Auto_scatlas_velocity_state_nodes.csv", index=False)
-    edges.to_csv(OUT / "tables" / "Auto_scatlas_velocity_state_direction_edges.csv", index=False)
+    obs_all.to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_scvelo_cell_metadata.csv")
+    nodes.to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_state_nodes.csv", index=False)
+    edges.to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_state_direction_edges.csv", index=False)
+
+    if all_basal_nodes:
+        pd.DataFrame(all_basal_nodes).to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_basal_mp_nodes.csv", index=False)
+        pd.DataFrame(all_basal_edges).to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_basal_mp_direction_edges.csv", index=False)
+
+    if all_smg_nodes:
+        pd.DataFrame(all_smg_nodes).to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_smg_mp_nodes.csv", index=False)
+        pd.DataFrame(all_smg_edges).to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_smg_mp_direction_edges.csv", index=False)
 
     if len(edges):
         top_edges = (
@@ -676,7 +886,7 @@ def main() -> None:
             .groupby(["sample", "source"], as_index=False)
             .head(1)
         )
-        top_edges.to_csv(OUT / "tables" / "Auto_scatlas_velocity_top_state_direction_per_source.csv", index=False)
+        top_edges.to_csv(OUT_LIVE / "tables" / "Auto_scatlas_velocity_top_state_direction_per_source.csv", index=False)
         positive_top = top_edges[top_edges["velocity_alignment"] > 0].copy()
         audit_rows = []
         for label, sample_set in {"All raw-BAM scATLAS": set(nodes["sample"].unique())}.items():
@@ -703,7 +913,7 @@ def main() -> None:
                     "median_alignment_to_target": float(sub_edges.loc[sub_edges["target"] == target, "velocity_alignment"].median()),
                 })
         pd.DataFrame(audit_rows).to_csv(
-            OUT / "tables" / "Auto_scatlas_velocity_direction_audit_summary.csv",
+            OUT_LIVE / "tables" / "Auto_scatlas_velocity_direction_audit_summary.csv",
             index=False,
         )
 

@@ -1,4 +1,12 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cell_states/Auto_drug_reversal/Auto_drug_reversal_scdrugprio_visuals.R
+#   Methodology: not required (superseded exploratory drug-reversal branch)
+#   Map: analysis/ANALYSIS_MAP.md
+####################
+
+####################
 # Auto_drug_reversal_scdrugprio_visuals.R
 #
 # Focused visualization of scDrugPrio results with a full-hub PPI network overlay.
@@ -18,7 +26,7 @@ suppressPackageStartupMessages({
 # setup
 ####################
 
-project_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
 base_dir <- "Auto_drug_reversal"
@@ -26,21 +34,19 @@ out_dir <- file.path(base_dir, "scdrugprio_visuals")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
+  "Classic proliferation",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
   "Stress-adaptive",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
+  "Cancer-cell immune mimicry"
 )
 
 state_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "SMG-like Metaplasia" = "#FF7F00",
+  "Classic proliferation" = "#E41A1C",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
   "Stress-adaptive" = "#984EA3",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#A65628"
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 ####################

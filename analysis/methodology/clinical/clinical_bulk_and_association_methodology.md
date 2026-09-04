@@ -7,12 +7,12 @@ This document covers clinical association plotting and TCGA/GEO bulk survival wo
 Final clinical association plots should use:
 
 - `ref_outs/meta_full_epi.rds`
-- `ref_outs/Auto_final_states.rds`
-- `ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds`
-- `ref_outs/UCell_3CA_MPs.rds` when retained 3CA states are shown
+- `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds`
+- `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds`
+- `ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv`
 - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx`, sheet 3
 
-`clinical_association_final_boxplots.R` renders sample-level MP and state boxplots and writes statistical summaries. `clinical_association_final_stacked.R` renders stacked state composition plots and is currently untracked. Future cleanup should merge both plotting modes into one tracked script with separate output sections for boxplots and stacked bars.
+`clinical_association_final_boxplots.R` renders sample-level MP and state boxplots and writes Wilcoxon/Kruskal-Wallis summaries with BH adjustment within clinical variable and feature type. `clinical_association_final_stacked.R` renders current-state composition by clinical group. `clinical_association_mp_ucell_plots.R` summarizes sample-mean current UCell scores before group-level plotting; no per-cell test is used as a substitute for sample replication.
 
 Clinical variables are normalized before plotting:
 
@@ -24,15 +24,13 @@ Clinical variables are normalized before plotting:
 
 ## TCGA Survival
 
-`tcga_mp_state_survival_reg_noreg.R` is the reference TCGA script. It compares MP/state gene-set scoring strategies across split methods:
+`analysis/metaprograms/centred/tcga_mp_survival_volcano_centred.R` is the current TCGA-ESCA MP survival workflow. Historical reg/noreg and QC-filtered nMP=19 scripts carry `legacy_` filenames. Current survival workflows use the final 17 merged refined gene lists and five centred state groups. Models may compare:
 
 - continuous score
 - median split
 - q1 versus q4
 
-It uses MP gene sets from the nMP19 object, DGE-derived state gene sets where available, and state labels from the current final or noreg state vectors. New TCGA scripts should default to noreg/final labels and avoid `state_temp.rds`.
-
-`tcga_mp_state_survival_qc_filtered.R` repeats this workflow on TCGA samples retained by cross-platform QC.
+All model tables must record cohort definition, event/time fields, score scaling, covariates, split rule, hazard ratio, confidence interval, raw p-value, and multiplicity adjustment. State gene sets are unions of the current refined MP genes in each state; cell-cycle MPs do not define states.
 
 ## GEO And Cross-Platform Survival
 
@@ -46,8 +44,14 @@ It uses MP gene sets from the nMP19 object, DGE-derived state gene sets where av
 4. Standardize each dataset by gene-level z-scores.
 5. Use PCA, expression-strength metrics, and histology checks to mark samples as retained or removed.
 
-`bulk_tcga_geo_integrated_survival.R` recomputes MP/state scores on the harmonized expression matrix and runs dataset-aware Cox models, including direction and interaction summaries.
+`bulk_tcga_geo_integrated_survival.R` recomputes the current centred MP/state scores on the harmonized expression matrix and runs dataset-aware Cox models, including direction and interaction summaries. `bulk_tcga_geo_meta_survival.R` fits dataset-specific Cox models and combines log hazard ratios by random-effects meta-analysis. `bulk_tcga_geo_feature_presence.R` is a coverage/QC visualization, not an inferential survival result. The GEO-only script is retained for cohort-specific checking but uses the same current signatures.
 
 ## Output And Replot Policy
 
-Survival scripts should save model-ready score matrices and Cox result tables before plotting. Volcano/KM style plots should be reproducible from those tables without recomputing GSVA or gene-set scores.
+All inputs, model-ready score matrices, Cox/meta-analysis result tables, figures, and compact summaries are written to live. Raw GEO downloads are also retained in live because they are required to reproduce the prepared expression matrices. Volcano/KM style plots should be reproducible from persistent tables without recomputing GSVA or gene-set scores. Network downloads and GSVA/Cox work must run through PBS.
+
+<!-- #################### -->
+## OCCAMS Bulk Cohort
+
+The current OCCAMS workflow is implemented by `Auto_occams_bulk_mp_survival.R` and `Auto_occams_bulk_clinical_associations.R`. It uses exactly the 281 subjects passing the documented GRCh37 annotation-compatibility QC flag, the current 17 centred refined MPs, and five non-cell-cycle state unions. Detailed endpoint construction, repeated-row handling, clinical-variable selection, minimum group sizes, tests, cache semantics, and limitations are in `Auto_occams_bulk_clinical_methodology.md`.
+<!-- #################### -->

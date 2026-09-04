@@ -1,16 +1,25 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/spatial/map_scatlas_states_visium.sh
+#   Methodology: not required (PBS/submit wrapper; method is documented by the invoked analysis script)
+#   Map: analysis/ANALYSIS_MAP.md
+#   Description: Execution wrapper; resources, dependencies, and arguments are defined below.
+####################
 #PBS -l select=1:ncpus=4:mem=64gb
 #PBS -l walltime=06:00:00
 #PBS -N visium_scatlas_states
 #PBS -koed
+set -euo pipefail
 echo $(date +%T)
 module purge
 module load tools/dev
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
-WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 OUT=$WD/ref_outs/visium_scatlas_states
-cd $WD
-Rscript analysis/spatial/export_scatlas_visium_signatures.R $OUT
-python analysis/spatial/map_scatlas_states_visium.py --output-dir $OUT
+cd "$WD"
+Rscript analysis/spatial/export_scatlas_visium_signatures.R "$OUT"
+python analysis/spatial/map_scatlas_states_visium.py --output-dir "$OUT"
 echo $(date +%T)

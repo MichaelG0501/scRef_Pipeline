@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 ####################
 # scatlas_velocity_prepare_refs.py
+# Status: active upstream
+# Script: analysis/trajectory/scatlas_velocity_prepare_refs.py
+# Methodology: analysis/methodology/trajectory/scatlas_velocity_methodology.md
+# Inputs: external GRCh38-2024-A genes.gtf.gz; optional SCATLAS_REPEATMASKER_GTF,
+#   otherwise UCSC hg38 rmsk.txt.gz download.
+# Outputs: ref_outs/Auto_velocity_scATLAS/ref/{genes.GRCh38-2024-A.gtf,repeatmasker.hg38.gtf,rmsk.hg38.txt.gz}.
+# Cache/replot: reuses non-empty references; downloads/rebuilds only missing files.
+# Run: qsub analysis/trajectory/scatlas_velocity_submit.sh (reference preparation stage)
+# Conda env: velocity
 #
 # Prepare reference GTF and RepeatMasker GTF for velocyto on scATLAS Cell
 # Ranger GRCh38 BAMs.
@@ -15,7 +24,7 @@ from pathlib import Path
 from typing import List
 
 
-WD = Path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline")
+WD = Path("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline")
 OUT = WD / "ref_outs" / "Auto_velocity_scATLAS"
 REF_IN = Path("/rds/general/project/tumourheterogeneity1/live/ITH_sc/refdata-gex-GRCh38-2024-A/genes/genes.gtf.gz")
 

@@ -2,16 +2,34 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/metaprograms/centred/02_nmf_rank_selection_diagnostics.R
+#   Methodology: analysis/methodology/metaprograms/centred_refinement_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#
 #   Description:
-#     Replicates analysis/metaprograms/nmf_rank_selection_diagnostics.R but uses
-#     outputs from the centred workflow.
+#     Calculates average silhouette width and cosine-distance WSS for each
+#     centred nMP=8:30 solution. It selects the silhouette curve knee as the
+#     working nMP, saves it, and produces rank, program-similarity, and initial
+#     enrichment diagnostics after excluding MPs with silhouette <0.
+#   Inputs:
+#     - ref_outs/Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_<8:30>.rds
+#     - external 3CA and developmental gene-set files used for enrichment
+#   Outputs:
+#     - ref_outs/Metaprogrammes_Results/centred/optimal_nMP.rds
+#     - ref_outs/Metaprogrammes_Results/centred/rank_selection_diagnostics_centred.pdf
+#     - ref_outs/Metaprogrammes_Results/centred/Auto_centred_nMP_<optimal>_custom_heatmap.pdf
+#     - ref_outs/Metaprogrammes_Results/centred/New_nMP_optimal_anno_initial.pdf
+#     - updates/new_updates/summaries/centred_nmp_rank_selection_summary.csv
+#   Cache/replot behavior: plot-only over existing candidate nMP objects.
+#   Run command:
+#     Rscript analysis/metaprograms/centred/02_nmf_rank_selection_diagnostics.R
+#   Conda env: dmtcp
 ####################
 
 library(cluster)
 library(ggplot2)
 library(patchwork)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 results_dir <- "Metaprogrammes_Results/centred"
 k_vals <- 8:30
@@ -53,6 +71,14 @@ for (i in seq_along(k_vals)) {
 
 df_metrics <- data.frame(nMP = k_vals, Silhouette = avg_sil_widths, WSS = wss_vals)
 
+####################
+# Require a complete candidate curve before applying the geometric knee rule.
+missing_candidates <- df_metrics$nMP[!is.finite(df_metrics$Silhouette) | !is.finite(df_metrics$WSS)]
+if (length(missing_candidates) > 0) {
+  stop("Missing or non-finite rank diagnostics for nMP: ", paste(missing_candidates, collapse = ", "))
+}
+####################
+
 # Print metrics table for easy inspection
 print(df_metrics)
 
@@ -78,6 +104,23 @@ message(paste0("Silhouette inflection point: nMP = ", sil_knee))
 message(paste0("WSS elbow point: nMP = ", wss_knee))
 message(paste0("Selected optimal nMP: ", optimal_nMP))
 saveRDS(optimal_nMP, file.path(results_dir, "optimal_nMP.rds"))
+
+####################
+# Compact machine-readable result summary for update generation.
+summary_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/updates/new_updates/summaries"
+dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
+rank_summary <- transform(
+  df_metrics,
+  silhouette_knee = nMP == sil_knee,
+  wss_knee = nMP == wss_knee,
+  selected = nMP == optimal_nMP
+)
+write.csv(
+  rank_summary,
+  file.path(summary_dir, "centred_nmp_rank_selection_summary.csv"),
+  row.names = FALSE
+)
+####################
 
 p1 <- ggplot(df_metrics, aes(x = nMP, y = Silhouette)) +
   geom_line(color = "steelblue", linewidth = 1) +
@@ -244,6 +287,91 @@ run_enrichment_and_plot <- function(mp_list, valid_cluster_ids, mp_tree_order, o
   cat("Saved combined PDF:", out_pdf, "\n")
 }
 cols_palette <- colorRampPalette(c("#ffffff", "#ffcccc", "#ff6666", "#cc0000", "#660000"))(100)
+
+geneNMF.metaprograms <- readRDS(file.path(results_dir, paste0("geneNMF_metaprograms_nMP_", optimal_nMP, ".rds")))
+
+cat("Generating custom style heatmap for optimal nMP:", optimal_nMP, "\n")
+suppressPackageStartupMessages({
+  library(ComplexHeatmap)
+  library(circlize)
+  library(RColorBrewer)
+  library(viridis)
+})
+
+sim_matrix <- geneNMF.metaprograms$programs.similarity
+mp_clusters <- geneNMF.metaprograms$programs.clusters
+keep_names <- names(mp_clusters)[!is.na(mp_clusters)]
+ordered_names <- geneNMF.metaprograms$programs.tree$labels[geneNMF.metaprograms$programs.tree$order]
+final_ordered_names <- ordered_names[ordered_names %in% keep_names]
+sim_matrix <- sim_matrix[final_ordered_names, final_ordered_names, drop = FALSE]
+
+annotation_df <- data.frame(
+  Metaprogram = paste0("MP", mp_clusters[final_ordered_names]),
+  study = vapply(strsplit(sub("\\..*$", "", final_ordered_names), "_"),
+                 function(x) paste(head(x, 2), collapse = "_"), character(1)),
+  row.names = final_ordered_names,
+  stringsAsFactors = FALSE
+)
+annotation_df$Metaprogram <- factor(annotation_df$Metaprogram, levels = unique(annotation_df$Metaprogram))
+mp_cols <- setNames(
+  colorRampPalette(brewer.pal(8, "Paired"))(length(levels(annotation_df$Metaprogram))),
+  levels(annotation_df$Metaprogram)
+)
+study_cols <- setNames(viridis::viridis(length(unique(annotation_df$study)), option = "turbo"),
+                       unique(annotation_df$study))
+
+top_ha <- HeatmapAnnotation(
+  df = annotation_df[, c("Metaprogram", "study"), drop = FALSE],
+  col = list(Metaprogram = mp_cols, study = study_cols),
+  show_annotation_name = FALSE,
+  show_legend = TRUE,
+  simple_anno_size = unit(2, "mm")
+)
+left_ha <- rowAnnotation(
+  df = annotation_df[, c("Metaprogram", "study"), drop = FALSE],
+  col = list(Metaprogram = mp_cols, study = study_cols),
+  show_annotation_name = FALSE,
+  show_legend = FALSE,
+  simple_anno_size = unit(2, "mm")
+)
+col_fun <- colorRamp2(
+  c(0.00, 0.12, 0.22, 0.70, 1.00),
+  c("#FFFFFF", "#F6E8A6", "#E76F51", "#5E2A84", "#000000")
+)
+
+ht <- Heatmap(
+  sim_matrix,
+  name = "Similarity",
+  col = col_fun,
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  row_split = annotation_df$Metaprogram,
+  column_split = annotation_df$Metaprogram,
+  cluster_row_slices = FALSE,
+  cluster_column_slices = FALSE,
+  rect_gp = gpar(col = NA),
+  border = FALSE,
+  row_gap = unit(0.4, "mm"),
+  column_gap = unit(0.4, "mm"),
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  top_annotation = top_ha,
+  left_annotation = left_ha,
+  use_raster = TRUE,
+  raster_quality = 3,
+  width = unit(16, "cm"),
+  height = unit(16, "cm"),
+  column_title_rot = 90,
+  row_title_rot = 0,
+  row_title_gp = gpar(fontsize = 11),
+  column_title_gp = gpar(fontsize = 11)
+)
+
+custom_heatmap_pdf <- file.path(results_dir, paste0("Auto_centred_nMP_", optimal_nMP, "_custom_heatmap.pdf"))
+pdf(custom_heatmap_pdf, width = 10, height = 10)
+draw(ht)
+dev.off()
+cat("Saved custom heatmap to:", custom_heatmap_pdf, "\n")
 
 mp_gene_lists <- geneNMF.metaprograms$metaprograms.genes
 mp_assignments <- geneNMF.metaprograms$programs.clusters

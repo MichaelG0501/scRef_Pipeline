@@ -3,6 +3,7 @@
 #
 # Analysis registry
 # Status: active upstream validation.
+# Script: analysis/raw_data/Auto_stage_validate_scatlas_cellranger_outputs.R
 # Short description: mirror the historical Cell Ranger post-processing for
 # Carroll/Alcindor by staging filtered_feature_bc_matrix outputs as matrix_all,
 # optionally exporting count CSVs with the original write.sh logic, and comparing

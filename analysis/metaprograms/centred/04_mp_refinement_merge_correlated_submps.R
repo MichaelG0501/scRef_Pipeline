@@ -1,39 +1,38 @@
 ####################
 # Analysis registry:
 #   Status: active
-#   Script: analysis/metaprograms/centred/mp_refinement_merge_correlated_submps.R
-#   Methodology: analysis/methodology/metaprograms/mp_refinement_merge_correlated_submps_methodology.md
+#   Script: analysis/metaprograms/centred/04_mp_refinement_merge_correlated_submps.R
+#   Methodology: analysis/methodology/metaprograms/centred_refinement_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
 #
 # Description:
-#   Downstream merge layer for analysis/metaprograms/mp_refinement_submp.R.
+#   Downstream merge layer for analysis/metaprograms/centred/03_mp_refinement_submp.R.
 #   After sub-MP refinement, merge sub-MPs from the same parent MP when each
 #   sub-MP has Spearman mean rho > 0.4 with at least 25% of the other sub-MPs
 #   from that parent. Re-derive merged MP gene lists from the pooled parent NMF
-#   programs using the same GeneNMF-style consensus method as mp_refinement_submp.R.
+#   programs using the same GeneNMF-style consensus method as step 03. It then
+#   requires >=3 contributing samples and >=5 genes, and applies the documented
+#   MP18a exclusion. The resulting 17-MP panel excludes MP2x, MP11c, and MP18a.
 #
 # Inputs:
-#   - ref_outs/Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_19.rds
-#   - ref_outs/geneNMF_outs.rds
+#   - ref_outs/Metaprogrammes_Results/centred/optimal_nMP.rds
+#   - ref_outs/Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_<optimal>.rds
+#   - ref_outs/Metaprogrammes_Results/centred/geneNMF_outs.rds
 #   - ref_outs/EAC_Ref_epi.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/split_results.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/refined_mp_genes.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/refined_mp_gene_weights.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/refined_ucell_scores.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/split_results.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/refined_mp_genes.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/refined_mp_gene_weights.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/refined_ucell_scores.rds
 #
 # Outputs:
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_mp_genes.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_mp_gene_weights.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_mp_assignments.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_ucell_scores.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_mp_correlation_matrices.rds
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/tables/merged_refined_mp_merge_decisions.csv
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/tables/merged_refined_mp_gene_sizes.csv
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/tables/merged_refined_mp_correlation_mean_rho.csv
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/tables/merged_refined_MP_genes_summary.xlsx
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/figures/refined_mp_correlation_heatmap_unsupervised_merged.pdf
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/figures/refined_mp_correlation_heatmap_unsupervised_merged_all.pdf
-#   - ref_outs/Metaprogrammes_Results/mp_refinement/figures/merged_refined_mp_enrichment_anno.pdf
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_gene_weights.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_assignments.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_correlation_matrices.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/cluster_enrich_centred.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/*merge*, *metrics*, and gene-summary files
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/figures/*merged* and enrichment PDFs
 #   - updates/new_updates/summaries/mp_refinement_merge_correlated_submps_summary.csv
 #
 # Cache/replot behavior:
@@ -43,7 +42,7 @@
 # Run command:
 #   eval "$(~/miniforge3/bin/conda shell.bash hook)"
 #   source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
-#   Rscript analysis/metaprograms/mp_refinement_merge_correlated_submps.R
+#   Rscript analysis/metaprograms/centred/04_mp_refinement_merge_correlated_submps.R
 #
 # Conda env: dmtcp
 ####################
@@ -64,13 +63,16 @@ library(pheatmap)
 library(openxlsx)
 
 
-project_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
+project_dir_ephemeral <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
 ref_dir <- file.path(project_dir, "ref_outs")
 setwd(ref_dir)
 
 outdir <- "Metaprogrammes_Results/centred/mp_refinement"
+outdir_ephemeral <- file.path(project_dir_ephemeral, "ref_outs", outdir)
 for (sub in c("intermediate", "tables", "figures", "logs")) {
   dir.create(file.path(outdir, sub), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(outdir_ephemeral, sub), recursive = TRUE, showWarnings = FALSE)
 }
 dir.create(file.path(project_dir, "updates/new_updates/summaries"),
            recursive = TRUE, showWarnings = FALSE)
@@ -109,7 +111,17 @@ cat(paste0("Loading nMP", optimal_nMP, " refinement inputs...\n"))
 geneNMF.metaprograms <- readRDS(
   paste0("Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_", optimal_nMP, ".rds")
 )
-split_results <- readRDS(file.path(outdir, "intermediate", "split_results.rds"))
+split_results_file_live <- file.path(outdir, "intermediate", "split_results.rds")
+split_results_file_ephemeral <- file.path(outdir_ephemeral, "intermediate", "split_results.rds")
+split_results_file <- if (file.exists(split_results_file_live)) {
+  split_results_file_live
+} else {
+  split_results_file_ephemeral
+}
+if (!file.exists(split_results_file)) {
+  stop("Missing step-03 split results: ", split_results_file_live)
+}
+split_results <- readRDS(split_results_file)
 refined_mp_genes <- readRDS(file.path(outdir, "intermediate", "refined_mp_genes.rds"))
 refined_mp_gene_weights <- readRDS(file.path(outdir, "intermediate", "refined_mp_gene_weights.rds"))
 refined_ucell <- readRDS(file.path(outdir, "intermediate", "refined_ucell_scores.rds"))
@@ -628,33 +640,79 @@ if (force_rebuild || !ucell_cache_valid) {
   cat("Loading cached merged refined UCell scores...\n")
 }
 
-merged_state_groups <- list()
-cc_mps <- c()
-
-merged_mps_ordered <- character(0)
-full_all_mps_ordered <- character(0)
-
 ####################
-# Build extended MP groups for MP7 submps and cell cycle MPs
-cc_mps <- intersect(c("MP1", "MP9"), names(merged_mp_genes))
-mp7_features <- character(0)
-if ("MP7" %in% split_mps && !is.null(merge_plan[["MP7"]])) {
-  mp7_features <- merge_plan[["MP7"]]$feature_order
-} else if ("MP7" %in% names(merged_mp_genes)) {
-  mp7_features <- "MP7"
+# Final filtering of refined MPs:
+#   1. Coverage < 3 samples → remove (catches MP2x, MP11c)
+#   2. nGenes < 5           → remove (currently n=0)
+#   3. Explicit removal      → MP18a (low coverage/quality, user decision)
+####################
+cat("\n=== Final Filtering of Refined MPs ===\n")
+n_total_samples <- length(unique(gsub("\\.k\\d+\\.\\d+$", "", colnames(geneNMF.metaprograms$programs.similarity))))
+refined_mp_names <- names(merged_mp_genes)
+
+# Compute per-refined-MP sample coverage
+refined_coverage <- vapply(refined_mp_names, function(mp) {
+  progs <- names(prog_to_mp_map)[prog_to_mp_map == mp]
+  progs <- progs[progs %in% colnames(geneNMF.metaprograms$programs.similarity)]
+  mp_samples <- unique(gsub("\\.k\\d+\\.\\d+$", "", progs))
+  length(mp_samples)
+}, integer(1))
+
+refined_n_genes <- vapply(merged_mp_genes, length, integer(1))
+
+# Apply thresholds
+coverage_min <- 3
+ngenes_min <- 5
+explicit_remove <- c("MP18a")
+
+remove_coverage <- refined_mp_names[refined_coverage < coverage_min]
+remove_ngenes <- refined_mp_names[refined_n_genes < ngenes_min]
+remove_explicit <- intersect(explicit_remove, refined_mp_names)
+all_remove <- unique(c(remove_coverage, remove_ngenes, remove_explicit))
+
+cat(sprintf("  Total refined MPs before filtering: %d\n", length(refined_mp_names)))
+cat(sprintf("  Coverage < %d samples (n=%d): %s\n", coverage_min,
+            length(remove_coverage),
+            if (length(remove_coverage) > 0) paste(remove_coverage, sprintf("(%d/%d)", refined_coverage[remove_coverage], n_total_samples), collapse = ", ") else "none"))
+cat(sprintf("  nGenes < %d (n=%d): %s\n", ngenes_min,
+            length(remove_ngenes),
+            if (length(remove_ngenes) > 0) paste(remove_ngenes, sprintf("(%d genes)", refined_n_genes[remove_ngenes]), collapse = ", ") else "none"))
+cat(sprintf("  Explicitly removed (n=%d): %s\n", length(remove_explicit),
+            if (length(remove_explicit) > 0) paste(remove_explicit, collapse = ", ") else "none"))
+
+if (length(all_remove) > 0) {
+  cat(sprintf("  Removing %d refined MPs: %s\n", length(all_remove), paste(all_remove, collapse = ", ")))
+  merged_mp_genes <- merged_mp_genes[!names(merged_mp_genes) %in% all_remove]
+  merged_mp_gene_weights <- merged_mp_gene_weights[!names(merged_mp_gene_weights) %in% all_remove]
+  merged_ucell <- merged_ucell[, !colnames(merged_ucell) %in% all_remove, drop = FALSE]
+
+  # Re-save filtered objects
+  attr(merged_mp_genes, "algorithm_version") <- algorithm_version
+  attr(merged_mp_gene_weights, "algorithm_version") <- algorithm_version
+  merged_ucell_signature <- make_gene_signature(merged_mp_genes)
+  attr(merged_ucell, "gene_signature") <- merged_ucell_signature
+  saveRDS(merged_mp_genes, cached_genes)
+  saveRDS(merged_mp_gene_weights, cached_weights)
+  saveRDS(merged_ucell, cached_ucell)
+  cat("  Re-saved filtered merged_refined_mp_genes, weights, and UCell scores.\n")
+
+  # Update prog_to_mp_map to exclude removed MPs
+  prog_to_mp_map <- prog_to_mp_map[!prog_to_mp_map %in% all_remove]
 }
-mp7_features <- mp7_features[mp7_features %in% names(merged_mp_genes)]
-mp7_parent <- mp7_features[!grepl("[a-z]$", mp7_features)]
-mp7_submps <- mp7_features[grepl("[a-z]$", mp7_features)]
+cat(sprintf("  Final retained refined MPs: %d\n", length(merged_mp_genes)))
+cat("  ", paste(names(merged_mp_genes), collapse = ", "), "\n")
+####################
 
-# Generate data-driven mp ordering
-all_available_mps <- names(merged_mp_genes)
-mp_numbers <- as.integer(sub("^MP", "", sub("[a-z\\+]*$", "", all_available_mps)))
-user_mp_order <- all_available_mps[order(mp_numbers, all_available_mps)]
-
-# Keep only features that actually exist in merged_mp_genes
-full_all_mps_ordered <- user_mp_order[user_mp_order %in% names(merged_mp_genes)]
-# merged_mps_ordered is the subset used for the state-only heatmap
+merged_state_groups <- list(
+  "Classic proliferation" = c("MP2+"),
+  "Squamous-to-intestinal" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "Glandular-to-intestinal" = c("MP18b", "MP16", "MP17", "MP8b", "MP8+"),
+  "Stress-adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
+)
+cc_mps <- intersect(c("MP1", "MP5", "MP13+"), names(merged_mp_genes))
+final_mp_order <- c(cc_mps, unlist(merged_state_groups, use.names = FALSE))
+full_all_mps_ordered <- intersect(final_mp_order, names(merged_mp_genes))
 merged_mps_ordered <- full_all_mps_ordered
 ####################
 
@@ -673,7 +731,7 @@ sample_vec_merged <- tmdata_all$orig.ident[match(rownames(merged_ucell), Cells(t
 sample_vec_merged[is.na(sample_vec_merged)] <- rownames(merged_ucell)[is.na(sample_vec_merged)]
 
 ####################
-# Compute correlation on full set (state MPs + CC + MP7)
+# Compute correlation on the final set (state-defining plus cell-cycle MPs)
 cat("Computing merged refined final correlation matrix (full set)...\n")
 full_cor <- compute_fisher_cor_p(merged_ucell[, full_all_mps_ordered, drop = FALSE],
                                   sample_vec_merged, min_cells = 10)
@@ -757,10 +815,10 @@ dev.off()
 cat("Saved: figures/refined_mp_correlation_heatmap_unsupervised_merged.pdf\n")
 
 ####################
-# Additional correlation heatmap: All merged MPs + MP7 submps + cell cycle MPs
+# Additional correlation heatmap: all final merged and cell-cycle MPs
 full_plot_features <- full_all_mps_ordered
 if (length(full_plot_features) >= 2) {
-  cat("Generating full (All MPs + MP7 + CC) correlation heatmap...\n")
+  cat("Generating full final-panel correlation heatmap...\n")
   full_plot_rho <- full_mean_rho_final[full_plot_features, full_plot_features]
   full_plot_pvals <- full_p_vals[full_plot_features, full_plot_features]
 
@@ -885,7 +943,7 @@ mp_term2name <- data.frame(
   name = unique(mp_term2gene$term)
 )
 
-individual_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/per_stage/"
+individual_dir <- file.path("developmental_reference", "per_stage")
 custom_files <- list.files(individual_dir, pattern = "\\.rds$", full.names = TRUE)
 custom_refs <- lapply(custom_files, readRDS)
 names(custom_refs) <- sub(".*enrich_dev_", "", basename(custom_files)) %>% sub("\\.rds$", "", .)
@@ -946,6 +1004,15 @@ cluster_enrich <- lapply(names(mp_gene_lists), function(mp_name) {
   return(c(base_results, res_custom_list))
 })
 names(cluster_enrich) <- names(mp_gene_lists)
+
+####################
+# Persist enrichment results in live because other scripts and replotting use it.
+####################
+saveRDS(
+  cluster_enrich,
+  file.path(outdir, "intermediate", "cluster_enrich_centred.rds")
+)
+cat("Saved: intermediate/cluster_enrich_centred.rds\n")
 
 enrich_heatmap <- function(cluster_enrich, element,
                            top_per_program = 8, top_n = 80, cap = 7, 
@@ -1080,7 +1147,7 @@ enrich_heatmap <- function(cluster_enrich, element,
   ht@column_names_param$rot <- 35
   ComplexHeatmap::draw(ht, padding = grid::unit(c(2, 35, 2, 2), "mm"))
                      
-  target_mps <- c("MP17", "MP18a", "MP15")
+  target_mps <- c("MP17", "MP12", "MP15")
   num_slices <- if (is.null(row_gaps)) 1 else length(row_gaps) + 1
   for (tmp in target_mps) {
     idx <- match(tmp, colnames(mat))
@@ -1486,7 +1553,7 @@ ucell_heatmap <- function(external_summary, element, cols = colorRampPalette(c("
     ht@column_names_param$rot <- 35
     ComplexHeatmap::draw(ht, padding = grid::unit(c(2, 35, 2, 2), "mm"))
     
-    target_mps <- c("MP17", "MP18a", "MP15")
+    target_mps <- c("MP17", "MP12", "MP15")
     num_slices <- 1
     for (tmp in target_mps) {
       idx <- match(tmp, colnames(mat))
@@ -1561,7 +1628,7 @@ ucell_heatmap <- function(external_summary, element, cols = colorRampPalette(c("
   ht@column_names_param$rot <- 35
   ComplexHeatmap::draw(ht, padding = grid::unit(c(2, 35, 2, 2), "mm"))
   
-  target_mps <- c("MP17", "MP18a", "MP15")
+  target_mps <- c("MP17", "MP12", "MP15")
   num_slices <- 1
   for (tmp in target_mps) {
     idx <- match(tmp, colnames(mat))
@@ -1600,23 +1667,24 @@ for (ref in names(custom_refs)) {
 cat("\n=== Generating Excel MP Gene Summary ===\n")
 
 mp_descriptions <- c(
-  "MP1"  = "G2M Cell Cycle",
-  "MP9"  = "G1S Cell Cycle",
-  "MP2"  = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5"  = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8"  = "Intestinal Diff.",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP7"  = "DNA Damage Repair",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi."
+  "MP1" = "G2/M cell cycle", "MP5" = "G1/S cell cycle",
+  "MP13+" = "Single-nucleus cell cycle",
+  "MP2+" = "MYC driven biosynthesis", "MP14" = "Squamoid/basal transition",
+  "MP3+" = "Basal-columnar invasive epithelium",
+  "MP6+" = "Inflammatory-reactive columnar epithelium",
+  "MP11+" = "Epithelial type I interferon response",
+  "MP9+" = "Metabolic columnar epithelium", "MP10+" = "Intestinal metaplasia",
+  "MP18b" = "Mucous-secretory differentiation",
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP17" = "MHC-II glandular progenitor",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP12" = "Hypoxic-inflammatory adaptive plasticity",
+  "MP15" = "Cancer-cell immune mimicry"
 )
 
 get_desc <- function(mp_name) {
+  if (mp_name %in% names(mp_descriptions)) return(mp_descriptions[mp_name])
   if (mp_name %in% names(submp_desc_map)) return(submp_desc_map[mp_name])
   if (grepl("[a-z]$", mp_name)) return("")
   parent <- parent_id(mp_name)
@@ -1624,7 +1692,7 @@ get_desc <- function(mp_name) {
   return(paste0(parent, "_unknown"))
 }
 
-# full_all_mps_ordered already contains all features including MP7 submps and CC
+# full_all_mps_ordered contains the complete final 17-MP panel
 all_merged_names <- names(merged_mp_genes)
 
 # Use user-specified order for Excel pages too
@@ -1717,7 +1785,7 @@ cat("Merged parent-plus features:",
     paste(names(merged_mp_genes)[grepl("\\+$", names(merged_mp_genes))],
           collapse = ", "), "\n")
 cat("Final state-associated features:", length(merged_mps_ordered), "\n")
-cat("Full features (incl. CC + MP7):", length(full_all_mps_ordered), "\n")
+cat("Full final-panel features (including CC):", length(full_all_mps_ordered), "\n")
 
 cat("\nRunning merged enrichment annotation...\n")
 library(clusterProfiler)
@@ -1747,7 +1815,7 @@ run_enrichment_and_plot <- function(mp_list, valid_cluster_ids, mp_tree_order, o
     name = unique(mp_term2gene$term)
   )
   
-  individual_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/per_stage/"
+  individual_dir <- file.path("developmental_reference", "per_stage")
   custom_files <- list.files(individual_dir, pattern = "\\.rds$", full.names = TRUE)
   custom_refs <- lapply(custom_files, readRDS)
   names(custom_refs) <- sub(".*enrich_dev_", "", basename(custom_files)) %>% sub("\\.rds$", "", .)

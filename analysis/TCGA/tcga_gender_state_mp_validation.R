@@ -8,13 +8,10 @@
 #     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds
 #     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_tpm_matrix.rds
 #     - ref_outs/meta_full_epi.rds
-#     - ref_outs/Auto_final_states.rds
-#     - ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
-#     - ref_outs/UCell_3CA_MPs.rds
-#     - ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
+#     - canonical centred refined states, UCell scores, MP genes, and grouping table
 #     - /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx
 #   Outputs:
-#     - ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores.rds
+#     - ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores_centred17.rds
 #     - ref_outs/TCGA/gender_validation/tables/Auto_tcga_gender_*csv
 #     - ref_outs/TCGA/gender_validation/figures/Auto_tcga_gender_scRef_concordance.pdf/png
 #     - updates/new_updates/summaries/Auto_tcga_gender_scRef_concordance_summary.csv
@@ -37,8 +34,8 @@ library(scales)
 library(stringr)
 library(tidyr)
 
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_config.R")
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_helpers.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_helpers.R")
 
 setwd(SCREF_PROJECT_DIR)
 
@@ -55,11 +52,10 @@ dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 tcga_meta_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_meta.rds")
 tcga_matrix_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_tpm_matrix.rds")
 tcga_mixture_path <- file.path(tcga_recon_dir, "tables", "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
-gsva_cache_path <- file.path(tiers[["intermediate"]], "Auto_tcga_gender_gsva_scores.rds")
+gsva_cache_path <- file.path(tiers[["intermediate"]], "Auto_tcga_gender_gsva_scores_centred17.rds")
 
 state_groups <- SCREF_STATE_GROUPS
-state_groups[["Classic Proliferative"]] <- c(state_groups[["Classic Proliferative"]], "X3CA_mp_30.Respiration.1")
-core_state_order <- c(SCREF_PRIMARY_STATE_ORDER, "3CA_EMT_and_Protein_maturation")
+core_state_order <- SCREF_PRIMARY_STATE_ORDER
 sex_palette <- c("Female" = "#B24745", "Male" = "#2F7FB8")
 
 run_summary <- start_run_summary(
@@ -70,8 +66,8 @@ run_summary <- start_run_summary(
     SCREF_META_FULL_EPI_RDS,
     SCREF_FINAL_STATE_RDS,
     SCREF_MP_UCELL_RDS,
-    SCREF_3CA_UCELL_RDS,
-    SCREF_MP_OBJECT_RDS,
+    SCREF_MP_GENES_RDS,
+    SCREF_MP_GROUPING_CSV,
     SCREF_CLINICAL_XLSX
   ),
   output_files = c(
@@ -96,12 +92,6 @@ normalise_sex <- function(x) {
     x %in% c("male", "m") ~ "Male",
     TRUE ~ NA_character_
   )
-}
-
-clean_3ca_name <- function(x) {
-  x <- gsub("^X3CA_", "3CA_", x)
-  x <- gsub("\\.", " ", x)
-  x
 }
 
 cliffs_delta <- function(x, y) {
@@ -151,26 +141,9 @@ feature_test_table <- function(long_df, cohort_label) {
     ungroup()
 }
 
-load_3ca_gene_sets <- function() {
-  nmf3ca_path <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
-  if (!file.exists(nmf3ca_path)) {
-    return(list())
-  }
-  mp_df <- read.csv(nmf3ca_path, check.names = FALSE)
-  mp_list <- as.list(mp_df)
-  mp_list <- lapply(mp_list, function(x) unique(x[x != "" & !is.na(x)]))
-  names(mp_list) <- make.names(sub("^MP", "3CA_mp_", names(mp_list)))
-  target_3ca <- c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1")
-  mp_list[intersect(target_3ca, names(mp_list))]
-}
-
 make_feature_labels <- function(mp_features, state_features) {
   mp_labels <- label_mps(mp_features)
   names(mp_labels) <- mp_features
-  three_ca <- grep("^X3CA_", mp_features, value = TRUE)
-  if (length(three_ca) > 0) {
-    mp_labels[three_ca] <- clean_3ca_name(three_ca)
-  }
   state_labels <- setNames(state_features, state_features)
   c(mp_labels, state_labels)
 }
@@ -266,36 +239,21 @@ plot_tcga_boxes <- function(tcga_long_eac, tcga_stats_eac, features, feature_lab
 ####################
 # 3) Gene sets for TCGA scoring
 ####################
-geneNMF.metaprograms <- readRDS(SCREF_MP_OBJECT_RDS)
-mp_genes <- filter_silhouette_mps(
-  geneNMF.metaprograms$metaprograms.genes,
-  geneNMF.metaprograms$metaprograms.metrics$silhouette
-)
+mp_genes <- readRDS(SCREF_MP_GENES_RDS)
 
 preferred_mp_order <- c(
-  "MP2",
-  "MP17", "MP14", "MP5", "MP10", "MP8",
-  "MP18", "MP16",
-  "MP13", "MP12",
-  "MP15",
-  "MP1", "MP7", "MP9",
-  "X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1"
+  "MP1", "MP5", "MP13+", "MP2+", "MP14", "MP3+", "MP6+", "MP11+",
+  "MP9+", "MP10+", "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP12", "MP15"
 )
 mp_genes <- mp_genes[intersect(c(preferred_mp_order, setdiff(names(mp_genes), preferred_mp_order)), names(mp_genes))]
-pan_mp_sets <- load_3ca_gene_sets()
-mp_sets <- c(mp_genes, pan_mp_sets)
+mp_sets <- mp_genes
 
 state_sets <- lapply(state_groups, function(mps) {
   unique(c(
-    unlist(mp_genes[intersect(mps, names(mp_genes))], use.names = FALSE),
-    unlist(pan_mp_sets[intersect(mps, names(pan_mp_sets))], use.names = FALSE)
+    unlist(mp_genes[intersect(mps, names(mp_genes))], use.names = FALSE)
   ))
 })
 state_sets <- state_sets[sapply(state_sets, length) >= 5]
-emt_protein_sources <- intersect(c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III"), names(pan_mp_sets))
-if (length(emt_protein_sources) > 0) {
-  state_sets[["3CA_EMT_and_Protein_maturation"]] <- unique(unlist(pan_mp_sets[emt_protein_sources], use.names = FALSE))
-}
 state_sets <- state_sets[intersect(core_state_order, names(state_sets))]
 feature_labels <- make_feature_labels(names(mp_sets), names(state_sets))
 
@@ -391,17 +349,6 @@ tcga_stats <- bind_rows(
 meta_full_epi <- readRDS(SCREF_META_FULL_EPI_RDS)
 final_states <- readRDS(SCREF_FINAL_STATE_RDS)
 ucell_scores <- readRDS(SCREF_MP_UCELL_RDS)
-if (file.exists(SCREF_3CA_UCELL_RDS)) {
-  ucell_3ca <- readRDS(SCREF_3CA_UCELL_RDS)
-  common_3ca <- intersect(rownames(ucell_scores), rownames(ucell_3ca))
-  keep_3ca_cols <- intersect(names(pan_mp_sets), colnames(ucell_3ca))
-  if (length(keep_3ca_cols) > 0) {
-    ucell_scores <- cbind(
-      ucell_scores[common_3ca, , drop = FALSE],
-      ucell_3ca[common_3ca, keep_3ca_cols, drop = FALSE]
-    )
-  }
-}
 
 clinical_sheet <- read_excel(SCREF_CLINICAL_XLSX, sheet = 3, skip = 1) |>
   mutate(orig.ident = paste(Author, Year, `Sample Name`, sep = "_"))

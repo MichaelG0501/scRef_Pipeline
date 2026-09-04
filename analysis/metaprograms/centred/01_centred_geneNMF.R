@@ -2,11 +2,25 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/metaprograms/centred/01_centred_geneNMF.R
+#   Methodology: analysis/methodology/metaprograms/centred_refinement_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+#
 #   Description:
-#     Replicates geneNMF.R but uses center=TRUE in multiNMF. This natively
-#     transforms the log normalised matrix by making it centered per gene 
-#     (subtracting gene mean) and sets negative values to zero before running 
-#     NMF factorization. Extracts metaprograms for k=8:30.
+#     Builds per-sample malignant epithelial NMF programs with GeneNMF
+#     multiNMF(center=TRUE, k=4:9), which gene-centres log-normalised expression
+#     and truncates negative residuals to zero. It then extracts candidate
+#     metaprogram solutions for nMP=8:30.
+#   Inputs:
+#     - ref_outs/by_samples/<sample>/<sample>_epi_f.rds
+#   Outputs:
+#     - ref_outs/Metaprogrammes_Results/centred/geneNMF_outs.rds
+#     - ref_outs/Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_<8:30>.rds
+#     - ref_outs/Metaprogrammes_Results/centred/metaprograms_heatmap_nMP_<8:30>.png
+#   Cache/replot behavior:
+#     Existing NMF and nMP RDS files are reused; missing plots are regenerated.
+#   Run command:
+#     Rscript analysis/metaprograms/centred/01_centred_geneNMF.R
+#   Conda env: gnmf
 ####################
 
 library(GeneNMF)
@@ -16,7 +30,7 @@ library(fgsea)
 library(UCell)
 library(Seurat)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 outdir <- "Metaprogrammes_Results/centred"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)

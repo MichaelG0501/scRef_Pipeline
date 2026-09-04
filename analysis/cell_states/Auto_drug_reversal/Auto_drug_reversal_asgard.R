@@ -1,4 +1,12 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cell_states/Auto_drug_reversal/Auto_drug_reversal_asgard.R
+#   Methodology: not required (superseded exploratory drug-reversal branch)
+#   Map: analysis/ANALYSIS_MAP.md
+####################
+
+####################
 # Auto_drug_reversal_asgard.R
 #
 # Run ASGARD mono-drug reversal from prepared scRef state-vs-rest DEG lists.
@@ -14,7 +22,7 @@ suppressPackageStartupMessages({
 # setup
 ####################
 
-project_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
 out_dir <- file.path("Auto_drug_reversal", "asgard")
@@ -24,12 +32,11 @@ input_dir <- file.path("Auto_drug_reversal", "asgard_inputs")
 gene_list_path <- file.path(input_dir, "Auto_asgard_gene_list.rds")
 
 state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
+  "Classic proliferation",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
   "Stress-adaptive",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
+  "Cancer-cell immune mimicry"
 )
 
 ####################

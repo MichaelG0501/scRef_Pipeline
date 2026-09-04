@@ -1,4 +1,12 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cell_states/Auto_drug_reversal/Auto_drug_reversal_method_visuals.R
+#   Methodology: not required (superseded exploratory drug-reversal branch)
+#   Map: analysis/ANALYSIS_MAP.md
+####################
+
+####################
 # Auto_drug_reversal_method_visuals.R
 #
 # Unified visualization script for drug reversal analysis.
@@ -27,7 +35,7 @@ flog.threshold(ERROR) # silence VennDiagram logs
 # setup
 ####################
 
-project_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
 base_dir <- "Auto_drug_reversal"
@@ -35,21 +43,19 @@ out_dir <- file.path(base_dir, "method_visuals")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
+  "Classic proliferation",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
   "Stress-adaptive",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
+  "Cancer-cell immune mimicry"
 )
 
 state_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "SMG-like Metaplasia" = "#FF7F00",
+  "Classic proliferation" = "#E41A1C",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
   "Stress-adaptive" = "#984EA3",
-  "Immune Infiltrating" = "#377EB8",
-  "3CA_EMT_and_Protein_maturation" = "#A65628"
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 method_order <- c("ASGARD", "scDrugPrio", "CLUE_FALLBACK_LOCAL")
@@ -101,7 +107,7 @@ standardize_rank_file <- function(path, method_name) {
 
   state_col <- pick(c("state", "State", "state_query"))
   drug_col <- pick(c("drug", "Drug", "pert_iname", "compound", "drug_name", "name"))
-  rank_col <- pick(c("rank", "Rank"))
+  rank_col <- pick(c("rank", "Rank", "network_rank"))
   score_col <- pick(c("score", "drug_score", "connectivity_score", "rank_metric"))
   p_col <- pick(c("p_value", "pvalue", "P.Value", "P"))
   fdr_col <- pick(c("fdr", "FDR", "adj.P.Val"))
@@ -265,7 +271,7 @@ load_state5 <- function() {
   }
 
   sc_ref_all <- readRDS("EAC_Ref_epi.rds")
-  state_labels <- readRDS("Auto_final_states.rds")
+  state_labels <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
   DefaultAssay(sc_ref_all) <- "RNA"
   common_cells <- intersect(colnames(sc_ref_all), names(state_labels))
   keep_cells <- common_cells[state_labels[common_cells] %in% state_order]
@@ -670,12 +676,12 @@ if (nrow(profile_all) > 0) {
 
   # Canonical colors for the states
   state_colors <- c(
-    "Classic Proliferative" = "#E41A1C",
-    "Basal to Intestinal Metaplasia" = "#4DAF4A",
-    "SMG-like Metaplasia" = "#FF7F00",
-    "Stress-adaptive" = "#984EA3",
-    "3CA_EMT_and_Protein_maturation" = "#377EB8"
-  )
+  "Classic proliferation" = "#E41A1C",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
+  "Stress-adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8"
+)
 
   p_profile <- ggplot(profile_summary, aes(x = direction, y = mean_l1000_rank)) +
     geom_hline(yintercept = 0.5, linetype = "dotted", color = "grey40", linewidth = 0.6) +

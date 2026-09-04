@@ -6,8 +6,7 @@
 #   Map: analysis/ANALYSIS_MAP.md
 #   Inputs:
 #     ref_outs/EAC_Ref_epi.rds
-#     ref_outs/Auto_final_states.rds
-#     ref_outs/Auto_topmp_v2_noreg_states_B.rds
+#     ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
 #     /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files/*_possorted_genome_bam.bam
 #   Outputs:
 #     ref_outs/Auto_velocity_scATLAS/tables/Auto_scatlas_velocity_cell_metadata.csv
@@ -33,7 +32,7 @@ suppressPackageStartupMessages({
   library(data.table)
 })
 
-root_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+root_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(root_dir, "ref_outs"))
 
 out_dir <- "Auto_velocity_scATLAS"
@@ -47,17 +46,17 @@ raw_bam_root <- Sys.getenv(
 )
 
 primary_states <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
-  "Stress-adaptive",
-  "Immune Infiltrating"
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "SMG to intestinal metaplasia",
+  "Stress adaptive",
+  "Cancer-cell immune mimicry"
 )
 
 message("Loading scATLAS epithelial object and state vectors...")
 epi <- readRDS("EAC_Ref_epi.rds")
-state_final <- readRDS("Auto_final_states.rds")
-state_noreg <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+state_final <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
+state_noreg <- state_final
 
 state_final_names <- names(state_final)
 state_final <- as.character(state_final)
@@ -94,9 +93,6 @@ message("Matched ", length(samples_with_bam), " epithelial samples with raw BAMs
 meta <- meta %>% filter(.data$sample %in% samples_with_bam)
 cells <- meta$cell_id
 
-umap <- Embeddings(epi, "umap")
-umap <- umap[cells, 1:2, drop = FALSE]
-
 meta$raw_barcode <- mapply(
   function(cell_id, sample) {
     prefix <- paste0(sample, "_")
@@ -112,15 +108,44 @@ meta$raw_barcode <- mapply(
 )
 meta$state_final <- state_final[meta$cell_id]
 meta$state_noreg <- state_noreg[meta$cell_id]
-meta$state_direction <- ifelse(meta$state_noreg %in% primary_states, meta$state_noreg, "Unassigned")
-meta$umap_1 <- umap[, 1]
-meta$umap_2 <- umap[, 2]
+
+message("Computing dominant MPs for Basal and SMG states...")
+mp_adj <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds")
+
+basal_mps <- c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+")
+smg_mps <- c("MP8+", "MP8b", "MP16", "MP18b", "MP17")
+
+meta$dominant_basal_mp <- NA_character_
+basal_cells <- meta$cell_id[meta$state_noreg == "Basal to intestinal metaplasia"]
+basal_cells <- intersect(basal_cells, rownames(mp_adj))
+if (length(basal_cells) > 0) {
+  basal_scores <- mp_adj[basal_cells, intersect(basal_mps, colnames(mp_adj)), drop = FALSE]
+  basal_best_idx <- max.col(basal_scores, ties.method = "first")
+  basal_sorted <- t(apply(basal_scores, 1, sort, decreasing = TRUE))
+  basal_gap <- basal_sorted[, 1] - basal_sorted[, 2]
+  basal_dom <- colnames(basal_scores)[basal_best_idx]
+  basal_dom[basal_gap < 0.1] <- "Hybrid"
+  meta[basal_cells, "dominant_basal_mp"] <- basal_dom
+}
+
+meta$dominant_smg_mp <- NA_character_
+smg_cells <- meta$cell_id[meta$state_noreg == "SMG to intestinal metaplasia"]
+smg_cells <- intersect(smg_cells, rownames(mp_adj))
+if (length(smg_cells) > 0) {
+  smg_scores <- mp_adj[smg_cells, intersect(smg_mps, colnames(mp_adj)), drop = FALSE]
+  smg_best_idx <- max.col(smg_scores, ties.method = "first")
+  smg_sorted <- t(apply(smg_scores, 1, sort, decreasing = TRUE))
+  smg_gap <- smg_sorted[, 1] - smg_sorted[, 2]
+  smg_dom <- colnames(smg_scores)[smg_best_idx]
+  smg_dom[smg_gap < 0.1] <- "Hybrid"
+  meta[smg_cells, "dominant_smg_mp"] <- smg_dom
+}
 
 fallback_cols <- c(
   "cell_id", "sample", "raw_barcode", "study", "Author", "Year", "Patient",
   "Sample Name", "Sampling Time", "Treatment", "Treatment Strategy",
   "Diagnosis", "Tumor Type", "malignancy", "celltype_update",
-  "state_direction", "state_noreg", "state_final", "umap_1", "umap_2",
+  "state_noreg", "state_final", "dominant_basal_mp", "dominant_smg_mp",
   "nCount_RNA", "nFeature_RNA", "percent.mt"
 )
 keep_cols <- fallback_cols[fallback_cols %in% colnames(meta)]
@@ -161,8 +186,8 @@ missing_tbl <- data.frame(sample = samples_in_object, stringsAsFactors = FALSE) 
 fwrite(missing_tbl, file.path(out_dir, "tables", "Auto_scatlas_velocity_raw_bam_missing_samples.csv"))
 
 summary_tbl <- meta_out %>%
-  count(.data$sample, .data$study, .data$state_direction, name = "cells") %>%
-  arrange(.data$study, .data$sample, .data$state_direction)
+  count(.data$sample, .data$study, .data$state_noreg, name = "cells") %>%
+  arrange(.data$study, .data$sample, .data$state_noreg)
 fwrite(summary_tbl, file.path(out_dir, "tables", "Auto_scatlas_velocity_state_summary.csv"))
 
 message("Wrote velocity metadata for ", nrow(meta_out), " cells and ", nrow(manifest), " raw-BAM samples.")

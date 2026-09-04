@@ -1,6 +1,6 @@
 # Unified Developmental MP Enrichment Methodology
 
-`analysis/developmental/developmental_mp_enrichment_unified.R` validates scATLAS metaprogrammes against the developmental reference databases using three complementary analyses.
+`analysis/developmental/legacy_developmental_mp_enrichment_unified.R` records the historical nMP19 validation against developmental reference databases. It is retained for provenance; centred step 04 is the current workflow.
 The runtime computational core is in `analysis/developmental/developmental_mp_enrichment_unified_original_aligned_core.R`; this was split out so the original-script-aligned logic is explicit and auditable.
 
 ## Inputs

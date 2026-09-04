@@ -1,4 +1,12 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/raw_data/Auto_download_alcindor_srr_array.sh
+#   Methodology: not required (PBS/submit wrapper; method is documented by the invoked analysis script)
+#   Map: analysis/ANALYSIS_MAP.md
+#   Description: Execution wrapper; resources, dependencies, and arguments are defined below.
+####################
 #PBS -l select=1:ncpus=4:mem=64gb
 #PBS -l walltime=24:00:00
 #PBS -N Auto_Alc_SRR_array

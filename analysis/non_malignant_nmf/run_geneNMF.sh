@@ -12,6 +12,7 @@
 #PBS -l walltime=08:00:00
 #PBS -N nmf_${celltype}
 #PBS -koed
+set -eo pipefail
 
 echo "Start: $(date +%T)"
 

@@ -1,6 +1,14 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/trajectory/scatlas_velocity_submit.sh
+#   Methodology: not required (PBS/submit wrapper; method is documented by the invoked analysis script)
+#   Map: analysis/ANALYSIS_MAP.md
+#   Description: Execution wrapper; resources, dependencies, and arguments are defined below.
+####################
 #PBS -l select=1:ncpus=1:mem=64gb
-#PBS -l walltime=02:00:00
+#PBS -l walltime=08:00:00
 #PBS -N scAtlas_VelSub
 #PBS -koed
 
@@ -17,13 +25,15 @@ module purge
 module load tools/dev
 
 WD="/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
-OUT="${WD}/ref_outs/Auto_velocity_scATLAS"
-mkdir -p "${OUT}/logs"
-cd "$WD"
+OUT_EPH="${WD}/ref_outs/Auto_velocity_scATLAS"
+OUT_LIVE="/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/Auto_velocity_scATLAS"
+mkdir -p "${OUT_LIVE}/logs" "${OUT_LIVE}/looms" "${OUT_LIVE}/h5ad"
+mkdir -p "${OUT_EPH}/looms" "${OUT_EPH}/h5ad" "${OUT_EPH}/coord" "${OUT_EPH}/ref" "${OUT_EPH}/tmp_pycache" "${OUT_EPH}/logs"
+cd "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
-manifest="${OUT}/tables/Auto_scatlas_velocity_sample_manifest.csv"
-metadata="${OUT}/tables/Auto_scatlas_velocity_cell_metadata.csv"
+manifest="${OUT_LIVE}/tables/Auto_scatlas_velocity_sample_manifest.csv"
+metadata="${OUT_LIVE}/tables/Auto_scatlas_velocity_cell_metadata.csv"
 if [[ "${SCATLAS_FORCE_VELOCITY_METADATA:-FALSE}" == "TRUE" || ! -s "$manifest" || ! -s "$metadata" ]]; then
   source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
   Rscript analysis/trajectory/scatlas_velocity_metadata.R
@@ -33,13 +43,13 @@ fi
 
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 conda activate velocity
-export PYTHONPYCACHEPREFIX="${OUT}/tmp_pycache"
-gene_gtf="${OUT}/ref/genes.GRCh38-2024-A.gtf"
-mask_gtf="${OUT}/ref/repeatmasker.hg38.gtf"
+export PYTHONPYCACHEPREFIX="${OUT_EPH}/tmp_pycache"
+gene_gtf="${OUT_EPH}/ref/genes.GRCh38-2024-A.gtf"
+mask_gtf="${OUT_EPH}/ref/repeatmasker.hg38.gtf"
 if [[ "${SCATLAS_FORCE_VELOCITY_REFS:-FALSE}" == "TRUE" || ! -s "$gene_gtf" || ! -s "$mask_gtf" ]]; then
   python analysis/trajectory/scatlas_velocity_prepare_refs.py
 else
-  echo "Reusing existing velocity references under ${OUT}/ref"
+  echo "Reusing existing velocity references under ${OUT_EPH}/ref"
 fi
 
 if [[ ! -f "$manifest" ]]; then
@@ -76,8 +86,8 @@ while IFS=, read -r sample dataset study bam bai barcodes_file n_cells has_bam h
   jid_sort=$("$qsub_bin" \
     -v sample="$sample" \
     -N "Srt_${short_name}" \
-    -o "${OUT}/logs/Auto_filter_sort_${sample}.log" \
-    -e "${OUT}/logs/Auto_filter_sort_${sample}.err" \
+    -o "${OUT_LIVE}/logs/Auto_filter_sort_${sample}.log" \
+    -e "${OUT_LIVE}/logs/Auto_filter_sort_${sample}.err" \
     analysis/trajectory/scatlas_velocity_filter_sort.sh)
   echo "Submitted filter/sort ${sample}: ${jid_sort}"
 
@@ -86,8 +96,8 @@ while IFS=, read -r sample dataset study bam bai barcodes_file n_cells has_bam h
     -W depend=afterok:${jid_sort} \
     -v sample="$sample" \
     -N "Vel_${short_name}" \
-    -o "${OUT}/logs/Auto_velocyto_${sample}.log" \
-    -e "${OUT}/logs/Auto_velocyto_${sample}.err" \
+    -o "${OUT_LIVE}/logs/Auto_velocyto_${sample}.log" \
+    -e "${OUT_LIVE}/logs/Auto_velocyto_${sample}.err" \
     analysis/trajectory/scatlas_velocity_run_velocyto.sh)
   echo "Submitted velocyto ${sample}: ${jid_vel}"
   velocyto_jobs+=("$jid_vel")
@@ -102,16 +112,16 @@ dep=$(IFS=:; echo "${velocyto_jobs[*]}")
 throttle
 jid_vis=$("$qsub_bin" \
   -W depend=afterok:${dep} \
-  -o "${OUT}/logs/Auto_scvelo_visualisation.log" \
-  -e "${OUT}/logs/Auto_scvelo_visualisation.err" \
+  -o "${OUT_LIVE}/logs/Auto_scvelo_visualisation.log" \
+  -e "${OUT_LIVE}/logs/Auto_scvelo_visualisation.err" \
   analysis/trajectory/scatlas_velocity_run_scvelo_visualisation.sh)
 echo "Submitted dependent scVelo visualisation: ${jid_vis}"
 
 throttle
 jid_nodes=$("$qsub_bin" \
   -W depend=afterok:${jid_vis} \
-  -o "${OUT}/logs/Auto_velocity_nodeplots.log" \
-  -e "${OUT}/logs/Auto_velocity_nodeplots.err" \
+  -o "${OUT_LIVE}/logs/Auto_velocity_nodeplots.log" \
+  -e "${OUT_LIVE}/logs/Auto_velocity_nodeplots.err" \
   analysis/trajectory/scatlas_velocity_run_nodeplots.sh)
 echo "Submitted dependent R nodeplots: ${jid_nodes}"
 

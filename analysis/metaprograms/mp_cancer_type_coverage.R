@@ -5,7 +5,14 @@
 #   Script: analysis/metaprograms/mp_cancer_type_coverage.R
 #   Methodology: analysis/methodology/metaprograms/metaprogram_scoring_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Summarize cancer-type breadth of the external 3CA metaprogram
+#     catalogue and plot general/shared/specific coverage categories.
+#   Inputs: ref_outs/43018_2025_957_MOESM3_ESM.csv.
+#   Outputs: ref_outs/Auto_mp_cancer_type_coverage_heatmap_v3.{pdf,png} and
+#     ref_outs/Auto_mp_cancer_type_coverage_summary_v3.csv.
+#   Cache/replot: deterministic from the source CSV; no hidden cache.
+#   Run: Rscript analysis/metaprograms/mp_cancer_type_coverage.R (PBS required)
+#   Conda env: dmtcp
 ####################
 
 
@@ -181,4 +188,3 @@ cat("Figure written:", pdf_file, "\n")
 cat("Figure written:", png_file, "\n")
 cat("Summary written: Auto_mp_cancer_type_coverage_summary_v3.csv\n")
 cat("Done.\n")
-

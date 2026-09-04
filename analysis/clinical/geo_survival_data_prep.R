@@ -36,7 +36,7 @@ library(data.table)
 library(dplyr)
 library(matrixStats)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 out_dir <- "geo_survival"
 raw_dir <- file.path(out_dir, "raw")
@@ -139,14 +139,14 @@ strip_characteristic_prefix <- function(x) {
 }
 
 collapse_expression_by_gene <- function(expr_df, annot_df) {
-  probe_ids <- expr_df[[1]]
+  probe_ids <- as.character(expr_df[[1]])
   expr_mat <- as.matrix(expr_df[, -1, drop = FALSE])
   mode(expr_mat) <- "numeric"
   rownames(expr_mat) <- probe_ids
 
   annot_map <- annot_df %>%
     transmute(
-      probe_id = ID,
+      probe_id = as.character(ID),
       gene_symbol = clean_gene_symbol(`Gene symbol`)
     )
 
@@ -160,7 +160,11 @@ collapse_expression_by_gene <- function(expr_df, annot_df) {
   probe_vars[is.na(probe_vars)] <- -Inf
   probe_means[is.na(probe_means)] <- -Inf
 
-  ord <- order(gene_symbol, -probe_vars, -probe_means, rownames(expr_mat))
+  probe_order_ids <- as.character(rownames(expr_mat))
+  if (length(probe_order_ids) != nrow(expr_mat)) {
+    stop("Probe identifiers were lost while preparing the expression matrix")
+  }
+  ord <- order(gene_symbol, -probe_vars, -probe_means, probe_order_ids)
   expr_mat <- expr_mat[ord, , drop = FALSE]
   gene_symbol <- gene_symbol[ord]
   probe_vars <- probe_vars[ord]

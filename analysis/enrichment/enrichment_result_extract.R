@@ -5,17 +5,23 @@
 #   Script: analysis/enrichment/enrichment_result_extract.R
 #   Methodology: analysis/methodology/enrichment/enrichment_external_reference_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Extract the most significant developmental enrichment terms
+#     and overlap genes from the current centred final-MP enrichment object.
+#   Inputs: ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/cluster_enrich_centred.rds.
+#   Outputs: ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/enrichment_topgenes_summary.xlsx.
+#   Cache/replot: deterministic workbook export; no hidden cache.
+#   Run: qsub analysis/enrichment/merged_refined_mp_annotation_excel_export.sh
+#   Conda env: dmtcp
 ####################
 
-# Temp script to extract top N significant enrichment genes
+# Extract top N significant enrichment genes
 # Early Embryogenesis (3), Stomach in Normal_Development_long (3), Organogenesis_sub (1), Organogenesis_major (4)
 
 library(openxlsx)
 library(dplyr)
 
 # Load cluster enrichment results
-cluster_enrich <- readRDS("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/cluster_enrich.rds")
+cluster_enrich <- readRDS("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/cluster_enrich_centred.rds")
 
 # Function to extract enrichment results
 extract_enrich <- function(enrich_obj, top_n = 100) {
@@ -161,7 +167,7 @@ if (!is.null(organo_major) && nrow(organo_major) > 0) {
 }
 
 # Save workbook
-output_file <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/enrichment_topgenes_summary.xlsx"
+output_file <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/enrichment_topgenes_summary.xlsx"
 saveWorkbook(wb, output_file, overwrite = TRUE)
 
 message(paste("\nSaved Excel file to:", output_file))

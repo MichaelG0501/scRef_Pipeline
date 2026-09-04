@@ -45,8 +45,8 @@ library(stringr)
 library(tibble)
 library(tidyr)
 
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_config.R")
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_helpers.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_helpers.R")
 
 setwd(SCREF_PROJECT_DIR)
 

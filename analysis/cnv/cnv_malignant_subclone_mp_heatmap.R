@@ -15,9 +15,9 @@
 # Inputs:
 #   ref_outs/by_samples/<sample>/<sample>_outs.rds
 #   ref_outs/by_samples/<sample>/<sample>_epi_f.rds, or <sample>_epi.rds fallback
-#   ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
-#   optional ref_outs/Auto_final_states.rds
-#   optional ref_outs/Auto_topmp_v2_noreg_states_B.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds
 #
 # Outputs:
 #   ref_outs/Auto_malignant_subclone_mp/Auto_malignant_subclone_mp_sample_pages.pdf
@@ -105,17 +105,14 @@ mp_descriptions <- c(
   "MP16" = "Mucous-secretory glandular epithelium",
   "MP18b" = "Mucous-secretory differentiation",
   "MP17" = "Immune-interactive glandular progenitor",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
   "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry",
-  "MP11c" = "Excluded",
-  "MP18a" = "Excluded"
+  "MP15" = "T/NK-like cancer-cell immune mimicry"
 )
 
 state_groups <- list(
   "Classic proliferation" = c("MP2+"),
   "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
   "Stress adaptive" = c("MP12"),
   "Cancer-cell immune mimicry" = c("MP15")
 )
@@ -161,11 +158,8 @@ mp_cols <- c(
   "MP16" = "#FFD92F",
   "MP18b" = "#FF7F00",
   "MP17" = "#4DAF4A",
-  "MP2x" = "#E41A1C",
   "MP12" = "#984EA3",
-  "MP15" = "#377EB8",
-  "MP11c" = "grey80",
-  "MP18a" = "grey80"
+  "MP15" = "#377EB8"
 )
 names(mp_cols) <- paste0(names(mp_cols), "_", mp_descriptions[names(mp_cols)])
 
@@ -189,7 +183,7 @@ if (!file.exists(mp_adj_path)) {
 }
 mp_adj_noncc <- as.matrix(readRDS(mp_adj_path))
 
-excluded_mps <- c("MP11c", "MP18a")
+excluded_mps <- character(0)
 plot_mp_order <- c(cc_mps, unlist(state_groups, use.names = FALSE), excluded_mps)
 mp_names <- plot_mp_order[plot_mp_order %in% names(mp_descriptions)]
 mp_labels <- setNames(label_mp(mp_names), mp_names)
@@ -1086,7 +1080,7 @@ write.csv(state_tests_df, file.path(out_dir, "Auto_malignant_subclone_state_test
 if (nrow(sub_tests_df) > 0) {
   multi_subclone_samples <- sample_df$sample[sample_df$n_subclones >= 2]
   
-  target_mps <- setdiff(mp_names[mp_names %in% names(mp_labels)], c("MP11c", "MP18a"))
+  target_mps <- mp_names[mp_names %in% names(mp_labels)]
   
   true_sig_df <- sub_tests_df %>%
     filter(sample %in% multi_subclone_samples, mp %in% target_mps) %>%
@@ -1291,7 +1285,7 @@ if (nrow(sub_tests_df) > 0) {
     mutate(prop = n / sum(n)) %>%
     ungroup()
   
-  target_states <- c("Classic Proliferative", "Basal to Intestinal Metaplasia", "SMG-like Metaplasia", "Stress-adaptive", "Immune Infiltrating", "3CA_EMT_and_Protein_maturation", "Unresolved", "Hybrid")
+  target_states <- c(names(state_groups), "Unresolved", "Hybrid")
   
   pair_rows_state <- list()
   for (samp in unique(state_counts$sample)) {
@@ -1386,8 +1380,7 @@ if (nrow(sub_tests_df) > 0) {
           plot.margin = margin(4, 6, 4, 6))
 
   # --- Exclusivity Logic for MPs and States ---
-  main_states <- c("Classic Proliferative", "Basal to Intestinal Metaplasia", 
-                   "SMG-like Metaplasia", "Stress-adaptive", "Immune Infiltrating")
+  main_states <- names(state_groups)
   mp_ucell_thresh <- 0.10
 
   valid_cells_ms <- intersect(cell_df$cell, rownames(ucell_scores))
@@ -1461,7 +1454,7 @@ if (nrow(sub_tests_df) > 0) {
           plot.subtitle = element_text(size = 9),
           plot.margin = margin(4, 6, 4, 6))
 
-  cc_mps <- c("MP6", "MP7", "MP1", "MP3")
+  cc_mps <- c("MP1", "MP5", "MP13+")
   sig_counts_sample_no_cc <- mp_tests_df %>%
     filter(sample %in% multi_subclone_samples, !(mp %in% cc_mps)) %>%
     left_join(true_sig_df, by = c("sample", "mp")) %>%
@@ -1614,3 +1607,14 @@ if (nrow(sub_tests_df) > 0) {
 message("Saved sample pages to: ", sample_pdf)
 message("Saved tables and cohort summary to: ", out_dir)
 }
+
+####################
+# Compact update summary for login-node/result auditing
+####################
+summary_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/updates/new_updates/summaries"
+dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
+file.copy(
+  file.path(out_dir, "Auto_malignant_subclone_sig_count_summary.csv"),
+  file.path(summary_dir, "Auto_malignant_subclone_mp_summary.csv"),
+  overwrite = TRUE
+)

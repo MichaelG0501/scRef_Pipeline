@@ -4,7 +4,18 @@
 #   Script: analysis/clinical/clinical_association_final_stacked.R
 #   Methodology: analysis/methodology/clinical/clinical_bulk_and_association_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Sample-level state-composition summaries and per-study clinical
+#     stacked bars for the current centred refined noreg states.
+#   Inputs:
+#     - ref_outs/meta_full_epi.rds
+#     - ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#     - /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx (sheet 3)
+#   Outputs:
+#     - ref_outs/Auto_clinical_assoc_stacked_final_{combined,per_study}.pdf
+#     - updates/new_updates/summaries/Auto_clinical_assoc_stacked_final_summary.csv
+#   Cache/replot: deterministic from persistent inputs; no hidden cache.
+#   Run: Rscript analysis/clinical/clinical_association_final_stacked.R (via current_centred_association_refresh.sh)
+#   Conda env: dmtcp
 ####################
 
 ####################
@@ -12,7 +23,7 @@
 # Clean final-state stacked clinical association workflow for scRef.
 #
 # Consolidates the useful parts of the older stacked-bar scripts:
-#   - Uses Auto_final_states.rds when available.
+#   - Uses the canonical centred refined noreg state vector.
 #   - Keeps full clinical-variable coverage and per-study faceting.
 #   - Writes outputs to the current updates/new_updates/summaries path.
 ####################
@@ -264,7 +275,7 @@ for (cfg in plot_configs) {
 dev.off()
 
 summary_dir <- file.path(
-  "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
+  "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
   "updates", "new_updates", "summaries"
 )
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)

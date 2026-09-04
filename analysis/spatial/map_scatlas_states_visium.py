@@ -5,7 +5,15 @@
 #   Script: analysis/spatial/map_scatlas_states_visium.py
 #   Methodology: analysis/methodology/spatial/spatial_mapping_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Score the final centred 17-MP signatures in the Yates Visium
+#     cohort and assign the five current noreg Approach B states.
+#   Inputs: external Yates Zenodo Visium matrices/sample metadata plus
+#     ref_outs/visium_scatlas_states/Auto_scATLAS_{mp_gene_ranked,state_groups,mp_signature_summary,mp_order}.csv.
+#   Outputs: ref_outs/visium_scatlas_states/ annotation CSV.GZ, overlap/score/
+#     abundance tables, parameter TXT, and slide-readable state/score PDF/PNG figures.
+#   Cache/replot: deterministic from exported signatures and external matrices; no hidden cache.
+#   Run: qsub analysis/spatial/map_scatlas_states_visium.sh
+#   Conda env: dmtcp
 ####################
 
 
@@ -28,38 +36,37 @@ import seaborn as sns
 
 
 MP_DESCRIPTIONS = {
-    "MP1": "G2M Cell Cycle",
-    "MP2": "MYC-related Proliferation",
-    "MP5": "Epithelial IFN Resp.",
-    "MP7": "DNA Damage Repair",
-    "MP8": "Intestinal Diff.",
-    "MP9": "G1S Cell Cycle",
-    "MP10": "Columnar Diff.",
-    "MP12": "Neuro-responsive Epi",
-    "MP13": "Hypoxic Inflam. Epi.",
-    "MP14": "Hypoxia Adapted Epi.",
-    "MP15": "Immune Infiltration",
-    "MP16": "Secretory Diff. (Gastric)",
-    "MP17": "Basal-like Transition",
-    "MP18": "Secretory Diff. (Intest.)",
+    "MP1": "G2/M cell cycle", "MP5": "G1/S cell cycle",
+    "MP13+": "replication-stress-associated cell cycling",
+    "MP2+": "MYC driven biosynthesis", "MP14": "Squamoid/basal transition",
+    "MP3+": "Basal-columnar invasive epithelium",
+    "MP6+": "Stress-reactive columnar epithelium",
+    "MP11+": "Epithelial antiviral interferon response",
+    "MP9+": "Metabolic columnar epithelium", "MP10+": "Intestinal metaplasia",
+    "MP8+": "Glandular intestinal metaplasia", "MP8b": "Metabolic intestinal metaplasia",
+    "MP16": "Mucous-secretory glandular epithelium",
+    "MP18b": "Mucous-secretory differentiation",
+    "MP17": "Immune-interactive glandular progenitor",
+    "MP12": "Hypoxic inflammatory adaptive plasticity",
+    "MP15": "T/NK-like cancer-cell immune mimicry",
 }
 
-CC_MPS = ["MP1", "MP7", "MP9"]
+CC_MPS = ["MP1", "MP5", "MP13+"]
 
 STATE_GROUPS = {
-    "Classic Proliferative": ["MP2"],
-    "Basal to Intestinal Metaplasia": ["MP17", "MP14", "MP5", "MP10", "MP8"],
-    "SMG-like Metaplasia": ["MP18", "MP16"],
-    "Stress-adaptive": ["MP13", "MP12"],
-    "Immune Infiltrating": ["MP15"],
+    "Classic proliferation": ["MP2+"],
+    "Basal to intestinal metaplasia": ["MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"],
+    "SMG to intestinal metaplasia": ["MP8+", "MP8b", "MP16", "MP18b", "MP17"],
+    "Stress adaptive": ["MP12"],
+    "Cancer-cell immune mimicry": ["MP15"],
 }
 
 STATE_COLORS = {
-    "Classic Proliferative": "#E41A1C",
-    "Basal to Intestinal Metaplasia": "#4DAF4A",
-    "SMG-like Metaplasia": "#FF7F00",
-    "Stress-adaptive": "#984EA3",
-    "Immune Infiltrating": "#377EB8",
+    "Classic proliferation": "#E41A1C",
+    "Basal to intestinal metaplasia": "#4DAF4A",
+    "SMG to intestinal metaplasia": "#FF7F00",
+    "Stress adaptive": "#984EA3",
+    "Cancer-cell immune mimicry": "#377EB8",
     "Unresolved": "#8F8F8F",
     "Hybrid": "black",
     "Normal/Mixed": "#E6E6E6",
@@ -67,19 +74,15 @@ STATE_COLORS = {
 
 MP_COLORS = {
     "MP1": "#B0B0B0",
-    "MP2": "#E41A1C",
-    "MP5": "#66C2A5",
-    "MP7": "#999999",
-    "MP8": "#FC8D62",
-    "MP9": "#C0C0C0",
-    "MP10": "#A6D854",
-    "MP12": "#E78AC3",
-    "MP13": "#984EA3",
+    "MP5": "#B0B0B0", "MP13+": "#B0B0B0",
+    "MP2+": "#E41A1C", "MP3+": "#8DA0CB", "MP6+": "#66C2A5",
+    "MP11+": "#FC8D62", "MP9+": "#A6D854", "MP10+": "#E78AC3",
+    "MP8+": "#FF7F00", "MP8b": "#A65628", "MP18b": "#999999",
+    "MP12": "#984EA3",
     "MP14": "#8DA0CB",
     "MP15": "#377EB8",
     "MP16": "#FFD92F",
     "MP17": "#4DAF4A",
-    "MP18": "#FF7F00",
     "Unresolved": "#8F8F8F",
     "Normal/Mixed": "#E6E6E6",
 }
@@ -89,22 +92,22 @@ SMOOTHED_COLORS = {"Normal": "#D9D9D9", "Mixed": "#969696", "Tumor": "#08519C"}
 STAGE_COLORS = {"primary": "#4C78A8", "metastasis": "#F58518", "other": "#54A24B"}
 
 STATE_ORDER = [
-    "Classic Proliferative",
-    "Basal to Intestinal Metaplasia",
-    "SMG-like Metaplasia",
-    "Stress-adaptive",
-    "Immune Infiltrating",
+    "Classic proliferation",
+    "Basal to intestinal metaplasia",
+    "SMG to intestinal metaplasia",
+    "Stress adaptive",
+    "Cancer-cell immune mimicry",
     "Unresolved",
     "Hybrid",
     "Normal/Mixed",
 ]
 
 STATE_SCORE_ORDER = [
-    "Classic Proliferative",
-    "Basal to Intestinal Metaplasia",
-    "SMG-like Metaplasia",
-    "Stress-adaptive",
-    "Immune Infiltrating",
+    "Classic proliferation",
+    "Basal to intestinal metaplasia",
+    "SMG to intestinal metaplasia",
+    "Stress adaptive",
+    "Cancer-cell immune mimicry",
 ]
 
 
@@ -118,7 +121,7 @@ def parse_args():
     )
     parser.add_argument(
         "--output-dir",
-        default="/rds/general/project/spatialtranscriptomics/ephemeral/Auto_Yates2025_EAC_spatial/Auto_scATLAS_visium_initial",
+        default="/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/visium_scatlas_states",
     )
     parser.add_argument(
         "--top-n",

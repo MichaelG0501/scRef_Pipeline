@@ -11,7 +11,7 @@
 - TCGA GDC segment file: `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg`
 - TCGA reconstructed RNA-seq metadata: `ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds`
 - TCGA reconstructed TPM matrix or existing GSVA cache:
-  - `ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores.rds`
+  - `ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores_centred17.rds`
   - fallback: `ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_tpm_matrix.rds`
 - scRef recurrent event summary: `ref_outs/Auto_cna_subclone_expression/tables/Auto_v2_recomputed_recurrent_cna_event_summary.csv`
 - scRef recurrent event feature tests: `ref_outs/Auto_cna_subclone_expression/tables/Auto_v2_recurrent_cna_event_feature_tests.csv`
@@ -45,7 +45,7 @@ The selected threshold is the threshold with the highest F1 score against the cu
 
 ## Expression Association Tests
 
-TCGA MP and state scores are reused from the gender-validation GSVA cache when present. If the cache is absent, the script reconstructs the same silhouette-filtered MP gene sets and final state gene sets, then runs GSVA on `log2(TPM + 1)`.
+TCGA MP and state scores are reused from the versioned final-17 gender-validation GSVA cache when present. If the cache is absent, the script reads the final centred-refined MP genes, builds the five current state unions from `analysis/shared/scRef_config.R`, and runs GSVA on `log2(TPM + 1)`. Legacy nMP19 and appended 3CA gene sets are not accepted by this cache contract.
 
 For each event-feature pair:
 

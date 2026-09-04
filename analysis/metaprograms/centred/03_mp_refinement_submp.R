@@ -1,24 +1,25 @@
 ####################
 # Analysis registry:
 #   Status: active
-#   Script: analysis/metaprograms/centred/mp_refinement_submp.R
-#   Methodology: analysis/methodology/metaprograms/mp_refinement_methodology.md
+#   Script: analysis/metaprograms/centred/03_mp_refinement_submp.R
+#   Methodology: analysis/methodology/metaprograms/centred_refinement_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
 #
 # Description:
-#   Three-tier MP refinement: keep (sil >= 0.2), remove (sil < 0),
-#   split (0 < sil < 0.2).  Sub-splits intermediate MPs via hierarchical
-#   clustering on the NMF-program cosine-similarity matrix.  Derives sub-MP
-#   gene lists using the exact GeneNMF get_metaprogram_consensus() approach.
-#   Produces diagnostic plots, Fisher-Z correlation heatmap, and Jaccard
-#   heatmap following analysis/metaprograms/final_mp_correlation.R style.
+#   Triages centred GeneNMF MPs using silhouette, sample coverage, and gene-count
+#   thresholds. MPs with silhouette >= 0.2, coverage >= 3 samples, and >5 genes
+#   are retained; viable MPs with 0 < silhouette < 0.2 are split by Ward.D2
+#   clustering of program cosine distance. The first split with mean silhouette
+#   >= 0.2 is selected, otherwise the best observed split is used. GeneNMF-style
+#   consensus genes, UCell scores, and correlation/Jaccard diagnostics are saved.
 #
 # Inputs:
-#   - ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
-#   - ref_outs/geneNMF_outs.rds  (raw multiNMF output)
+#   - ref_outs/Metaprogrammes_Results/centred/optimal_nMP.rds
+#   - ref_outs/Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_<optimal>.rds
+#   - ref_outs/Metaprogrammes_Results/centred/geneNMF_outs.rds
 #   - ref_outs/EAC_Ref_epi.rds   (epithelial Seurat object)
 #
-# Outputs (ref_outs/Metaprogrammes_Results/mp_refinement/):
+# Outputs (ref_outs/Metaprogrammes_Results/centred/mp_refinement/):
 #   intermediate/
 #     refined_mp_genes.rds          – named list of gene vectors
 #     refined_mp_gene_weights.rds   – named list of GeneNMF-style weights
@@ -40,10 +41,15 @@
 # Run command:
 #   eval "$(~/miniforge3/bin/conda shell.bash hook)"
 #   source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
-#   Rscript analysis/metaprograms/mp_refinement_submp.R
+#   Rscript analysis/metaprograms/centred/03_mp_refinement_submp.R
 #
 # Conda env: dmtcp (has UCell, ComplexHeatmap, pheatmap, cluster, circlize)
-# Resources observed on 7 Jun 2026: ~6 cores, ~30 GB RAM (interactive OK)
+# Cache/replot behavior:
+#   SCREF_FORCE_REBUILD=TRUE rebuilds split and downstream caches.
+#   SCREF_REPLOT_ONLY=TRUE requires a valid split cache and rebuilds plots/tables.
+#   split_results.rds is persisted in live because step 04 consumes it; a second
+#   ephemeral copy is maintained only as a rerun cache.
+# Resources: submit through PBS; this is not a login-node workflow.
 ####################
 
 library(Seurat)
@@ -58,15 +64,16 @@ library(RColorBrewer)
 library(viridis)
 library(grid)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
-
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 # ============================================================================
 # 1. Output directory setup
 # ============================================================================
 
 outdir <- "Metaprogrammes_Results/centred/mp_refinement"
+outdir_ephemeral <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Metaprogrammes_Results/centred/mp_refinement"
 for (sub in c("intermediate", "tables", "figures", "logs")) {
   dir.create(file.path(outdir, sub), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(outdir_ephemeral, sub), recursive = TRUE, showWarnings = FALSE)
 }
 
 force_rebuild <- Sys.getenv("SCREF_FORCE_REBUILD", "FALSE") == "TRUE"
@@ -123,11 +130,15 @@ metrics      <- geneNMF.metaprograms$metaprograms.metrics
 sil_scores   <- metrics$silhouette
 mp_names_all <- rownames(metrics)
 
+n_samples <- length(unique(sub("\\..*$", "", names(geneNMF.metaprograms$programs.clusters))))
+coverage_samples <- round(metrics$sampleCoverage * n_samples)
+n_genes <- metrics$numberGenes
+
 sil_threshold <- 0.2
 
-keep_mps   <- mp_names_all[sil_scores >= sil_threshold]
-remove_mps <- mp_names_all[sil_scores < 0]
-split_mps  <- mp_names_all[sil_scores > 0 & sil_scores < sil_threshold]
+keep_mps   <- mp_names_all[sil_scores >= sil_threshold & coverage_samples >= 3 & n_genes > 5]
+remove_mps <- mp_names_all[sil_scores < 0 | coverage_samples < 3 | n_genes <= 5]
+split_mps  <- mp_names_all[sil_scores > 0 & sil_scores < sil_threshold & coverage_samples >= 3 & n_genes > 5]
 
 cat("\n=== MP Triage (silhouette threshold:", sil_threshold, ") ===\n")
 for (tier in list(list("Keep", keep_mps), list("Remove", remove_mps), list("Split", split_mps))) {
@@ -152,7 +163,9 @@ cat("Split MPs:", paste(split_mps_for_final, collapse = ", "), "\n")
 # 6. Sub-splitting
 # ============================================================================
 
-cached_split <- file.path(outdir, "intermediate", "split_results.rds")
+cached_split_live <- file.path(outdir, "intermediate", "split_results.rds")
+cached_split_ephemeral <- file.path(outdir_ephemeral, "intermediate", "split_results.rds")
+cached_split <- if (file.exists(cached_split_live)) cached_split_live else cached_split_ephemeral
 split_results <- NULL
 split_cache_valid <- FALSE
 if (file.exists(cached_split)) {
@@ -260,13 +273,22 @@ if (!replot_only && (force_rebuild || !split_cache_valid)) {
   }
 
   attr(split_results, "algorithm_version") <- algorithm_version
-  saveRDS(split_results, cached_split)
-  cat("\nSaved split results:", cached_split, "\n")
+  saveRDS(split_results, cached_split_ephemeral)
+  saveRDS(split_results, cached_split_live)
+  cached_split <- cached_split_live
+  cat("\nSaved split results to live and ephemeral cache locations.\n")
 
 } else if (split_cache_valid) {
   cat("Loading cached split results...\n")
 } else {
   stop("Replot-only mode requested but split cache is missing or outdated. Run without SCREF_REPLOT_ONLY first.")
+}
+
+####################
+# Persist a live copy when a valid pre-policy cache was loaded from ephemeral.
+####################
+if (!file.exists(cached_split_live) && !is.null(split_results)) {
+  saveRDS(split_results, cached_split_live)
 }
 
 split_selection_summary <- do.call(rbind, lapply(names(split_results), function(mp) {

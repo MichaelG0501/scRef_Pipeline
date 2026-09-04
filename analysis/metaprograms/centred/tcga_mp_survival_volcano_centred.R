@@ -16,6 +16,17 @@
 #
 # Outputs:
 #   - ref_outs/Metaprogrammes_Results/centred/survival/
+#   - updates/new_updates/summaries/tcga_centred_mp_survival_summary.csv
+#
+# Cache/replot behavior:
+#   Always rebuilds from intermediate UCell score matrices on each run.
+#
+# Run command:
+#   eval "$(~/miniforge3/bin/conda shell.bash hook)"
+#   source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
+#   Rscript analysis/metaprograms/centred/tcga_mp_survival_volcano_centred.R
+#
+# Conda env: dmtcp
 ####################
 
 library(data.table)
@@ -26,6 +37,8 @@ library(ggrepel)
 library(gridExtra)
 library(survival)
 library(GSVA)
+
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
 
 setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
@@ -148,28 +161,7 @@ make_feature_label <- function(x, feature_type, mp_desc) {
   x
 }
 
-mp_desc <- c(
-  "MP10+" = "Intestinal metaplasia",
-  "MP9+" = "Metabolic columnar epithelium",
-  "MP11+" = "Epithelial antiviral interferon response",
-  "MP6+" = "Stress-reactive columnar epithelium",
-  "MP3+" = "Basal-columnar invasive epithelium",
-  "MP14" = "Squamoid/basal transition",
-  "MP17" = "Immune-interactive glandular progenitor",
-  "MP18b" = "Mucous-secretory differentiation",
-  "MP8+" = "Glandular intestinal metaplasia",
-  "MP16" = "Mucous-secretory glandular epithelium",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
-  "MP18a" = "MP18a",
-  "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP13+" = "replication-stress-associated cell cycling",
-  "MP11c" = "MP11c",
-  "MP15" = "T/NK-like cancer-cell immune mimicry",
-  "MP8b" = "Metabolic intestinal metaplasia",
-  "MP1" = "G2/M cell cycle",
-  "MP5" = "G1/S cell cycle",
-  "MP2+" = "MYC driven biosynthesis"
-)
+mp_desc <- SCREF_MP_DESCRIPTIONS
 
 # Load Metadata
 meta_path <- "TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds"
@@ -203,9 +195,9 @@ retained_mps <- names(mp.genes)
 
 state_groups <- list(
   "Classic proliferation" = c("MP2+"),
-  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x"),
-  "Stress adaptive" = c("MP12"),
+  "Squamous-to-intestinal" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "Glandular-to-intestinal" = c("MP18b", "MP16", "MP17", "MP8b", "MP8+"),
+  "Stress-adaptive" = c("MP12"),
   "Cancer-cell immune mimicry" = c("MP15")
 )
 
@@ -318,6 +310,23 @@ if (nrow(cox_res) > 0) {
     file.path(out_dir, paste0("Auto_", task_prefix, "_survival_mp_cox_methods_splits.csv")),
     row.names = FALSE
   )
+  ####################
+  summary_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/updates/new_updates/summaries"
+  dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
+  compact_summary <- cox_res %>%
+    group_by(feature_type, split_method) %>%
+    summarise(
+      n_features = n_distinct(feature),
+      n_nominal_p_lt_0_05 = sum(P_value < 0.05, na.rm = TRUE),
+      n_bh_fdr_lt_0_05 = sum(padj < 0.05, na.rm = TRUE),
+      .groups = "drop"
+    )
+  write.csv(
+    compact_summary,
+    file.path(summary_dir, "tcga_centred_mp_survival_summary.csv"),
+    row.names = FALSE
+  )
+  ####################
 }
 
 message("Saved filtered TCGA whole-bulk MP volcano outputs for centred MPs.")

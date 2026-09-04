@@ -1,12 +1,20 @@
 ####################
+# Analysis registry:
+#   Status: legacy
+#   Script: analysis/cnv/legacy_cna_subclone_expression_visuals_v2.R
+#   Methodology: analysis/methodology/cnv/legacy_cna_subclone_expression_visuals_v2_methodology.md
+#   Map: analysis/ANALYSIS_MAP.md
+####################
+
+####################
 # Auto_cna_subclone_expression_visuals_v2.R
 #
-# Script status: active, terminal.
+# Script status: legacy; superseded by the integrated current CNA correlation script.
 # Description: presentation-focused v2 visualisation and statistics for
 # CNA-subclone expression/state associations. This reads the completed v1
 # results and regenerates corrected recurrent-event tests plus slide-readable
 # plots.
-# Methodology: analysis/methodology/cnv/Auto_cna_subclone_expression_visuals_v2_methodology.md
+# Methodology: analysis/methodology/cnv/legacy_cna_subclone_expression_visuals_v2_methodology.md
 #
 # Inputs:
 #   - ref_outs/Auto_cna_subclone_expression/rds/Auto_cna_subclone_expression_results.rds

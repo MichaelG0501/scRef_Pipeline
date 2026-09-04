@@ -1,4 +1,12 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/raw_data/Auto_submit_scatlas_raw_rebuild.sh
+#   Methodology: not required (PBS/submit wrapper; method is documented by the invoked analysis script)
+#   Map: analysis/ANALYSIS_MAP.md
+#   Description: Execution wrapper; resources, dependencies, and arguments are defined below.
+####################
 #PBS -l select=1:ncpus=1:mem=4gb
 #PBS -l walltime=01:00:00
 #PBS -N Auto_raw_submit
@@ -15,7 +23,7 @@ echo $(date +%T)
 module purge
 module load tools/dev
 
-WD="/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+WD="/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 RAW_ROOT="${RAW_ROOT:-/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/raw_bam_files}"
 EGA_CREDENTIAL_JSON="${EGA_CREDENTIAL_JSON:-/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Carroll_2023/ega.json}"
 CELLRANGER_BIN="${CELLRANGER_BIN:-/rds/general/project/tumourheterogeneity1/live/ITH_sc/cellranger-8.0.1/bin/cellranger}"

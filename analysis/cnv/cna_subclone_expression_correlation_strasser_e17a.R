@@ -7,7 +7,7 @@
 #   Description: Generates a single-sample MP score boxplot by CNA subclone for Strasser_2025_E17A, styled exactly after the Lee et al. 2020 reference image.
 #   Inputs:
 #     - ref_outs/Auto_malignant_subclone_mp/Auto_malignant_subclone_cells.csv
-#     - ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
+#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
 #   Outputs:
 #     - figures/Auto_Strasser_2025_E17A_subclone_mp_scores.pdf
 ####################
@@ -21,8 +21,8 @@ suppressPackageStartupMessages({
   library(stringr)
 })
 
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_config.R")
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_helpers.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_helpers.R")
 
 setwd(SCREF_PROJECT_DIR)
 set.seed(42)
@@ -77,28 +77,7 @@ e17a_tests <- tests_df %>%
     )
   )
 
-mp_descriptions <- c(
-  "MP1" = "G2/M cell cycle",
-  "MP5" = "G1/S cell cycle",
-  "MP13+" = "replication-stress-associated cell cycling",
-  "MP2+" = "MYC driven biosynthesis",
-  "MP14" = "Squamoid/basal transition",
-  "MP3+" = "Basal-columnar invasive epithelium",
-  "MP6+" = "Stress-reactive columnar epithelium",
-  "MP11+" = "Epithelial antiviral interferon response",
-  "MP9+" = "Metabolic columnar epithelium",
-  "MP10+" = "Intestinal metaplasia",
-  "MP8+" = "Glandular intestinal metaplasia",
-  "MP8b" = "Metabolic intestinal metaplasia",
-  "MP16" = "Mucous-secretory glandular epithelium",
-  "MP18b" = "Mucous-secretory differentiation",
-  "MP17" = "Immune-interactive glandular progenitor",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
-  "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry",
-  "MP11c" = "Excluded",
-  "MP18a" = "Excluded"
-)
+mp_descriptions <- SCREF_MP_DESCRIPTIONS
 
 # Replace MP names with descriptions, formatted for plotting
 df_long <- df_long %>%

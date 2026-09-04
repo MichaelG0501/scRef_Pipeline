@@ -1,39 +1,30 @@
 ####################
 # Analysis registry:
-#   Status: active
+#   Status: active upstream/terminal centred-state marker workflow
 #   Script: analysis/cell_states/final_state_marker_discovery.R
-#   Methodology: analysis/methodology/cell_states/state_workflows_methodology.md
+#   Methodology: analysis/methodology/cell_states/final_state_marker_discovery_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
-####################
-
-####################
-# Auto_five_state_markers.R
-#
-# Rebuild a five-state epithelial embedding from the finalized states,
-# then derive robust state markers using a sample-aware recurrent DGE workflow.
-#
-# Inputs:
-#   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_final_states.rds
-#
-# Outputs:
-#   ref_outs/Auto_five_state_markers/Auto_five_state_umap.pdf
-#   ref_outs/Auto_five_state_markers/Auto_five_state_umap_embeddings.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_cluster_state_table.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_global_marker_screen.csv.gz
-#   ref_outs/Auto_five_state_markers/Auto_five_state_sample_state_eligibility.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_per_sample_dge.csv.gz
-#   ref_outs/Auto_five_state_markers/Auto_five_state_marker_summary.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_ranked.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_final.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_top5_recurrence_summary.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_top5_sample_support.csv.gz
-#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_top5_study_support.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_markers_heatmap_top.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_marker_heatmap_matrix.csv
-#   ref_outs/Auto_five_state_markers/Auto_five_state_marker_heatmap.pdf
-#   analysis/methodology/cell_states/final_state_marker_discovery_methodology.md
+#   Description:
+#     Discovers sample-aware recurrent positive markers for the five canonical
+#     centred-refined noreg epithelial states using within-sample Wilcoxon DGE,
+#     cross-sample/study recurrence, and atlas-wide state specificity.
+#   Inputs:
+#     ref_outs/EAC_Ref_epi.rds
+#     ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   Outputs:
+#     ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_markers_ranked.csv
+#     ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_markers_all.xlsx
+#     ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_per_sample_dge.csv.gz
+#     ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_marker_summary.csv
+#     ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_marker_heatmap.pdf
+#     ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_umap.pdf
+#   Downstream:
+#     Current state-marker interpretation and cross-dataset signature analyses.
+#   Cache/replot behavior:
+#     Reuses embedded-object, pooled-screen, per-sample-DGE, and specificity
+#     caches unless SCREF_FORCE_REBUILD=TRUE. No dedicated replot-only mode.
+#   Run command: qsub analysis/cell_states/final_state_marker_discovery.sh
+#   Conda environment: dmtcp
 ####################
 
 ####################
@@ -60,7 +51,7 @@ suppressPackageStartupMessages({
 project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
-out_dir <- "Auto_five_state_markers"
+out_dir <- "Metaprogrammes_Results/centred/state_markers"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 cache_dir <- file.path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs", out_dir, "cache")
@@ -69,21 +60,28 @@ dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 set.seed(1234)
 
 ####################
+# Honour the force-rebuild contract used by the PBS wrapper.
+####################
+force_rebuild <- toupper(Sys.getenv("SCREF_FORCE_REBUILD", unset = "FALSE")) %in%
+  c("TRUE", "1", "YES", "Y")
+####################
+
+####################
 # constants
 ####################
 state_order <- c(
   "Classic proliferation",
-  "Basal to intestinal metaplasia",
-  "SMG to intestinal metaplasia",
-  "Stress adaptive",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
+  "Stress-adaptive",
   "Cancer-cell immune mimicry"
 )
 
 state_cols <- c(
   "Classic proliferation" = "#E41A1C",
-  "Basal to intestinal metaplasia" = "#4DAF4A",
-  "SMG to intestinal metaplasia" = "#FF7F00",
-  "Stress adaptive" = "#984EA3",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
+  "Stress-adaptive" = "#984EA3",
   "Cancer-cell immune mimicry" = "#377EB8"
 )
 
@@ -284,7 +282,7 @@ sample_counts <- tmdata_state6@meta.data %>%
 ####################
 tmdata_state6_cache <- file.path(cache_dir, "tmdata_state6_embedded.rds")
 
-if (file.exists(tmdata_state6_cache)) {
+if (!force_rebuild && file.exists(tmdata_state6_cache)) {
   message("Loading cached five-state embedded Seurat object.")
   tmdata_state6 <- readRDS(tmdata_state6_cache)
 } else {
@@ -409,7 +407,7 @@ ggsave(
 ####################
 global_markers_cache <- file.path(cache_dir, "global_marker_screen.rds")
 
-if (file.exists(global_markers_cache)) {
+if (!force_rebuild && file.exists(global_markers_cache)) {
   message("Loading cached global marker screen.")
   global_markers <- readRDS(global_markers_cache)
 } else {
@@ -468,7 +466,7 @@ invisible(gc())
 ####################
 sample_dge_cache <- file.path(cache_dir, "per_sample_dge_ranked_top5.rds")
 
-if (file.exists(sample_dge_cache)) {
+if (!force_rebuild && file.exists(sample_dge_cache)) {
   message("Loading cached per-sample DGE results.")
   cached_sample_res <- readRDS(sample_dge_cache)
   eligibility_df <- cached_sample_res$eligibility
@@ -570,7 +568,7 @@ marker_summary <- per_sample_dge %>%
 ####################
 specificity_cache <- file.path(cache_dir, "state_specificity.rds")
 
-if (file.exists(specificity_cache)) {
+if (!force_rebuild && file.exists(specificity_cache)) {
   message("Loading cached state specificity results.")
   specificity_long <- readRDS(specificity_cache)
 } else {
@@ -958,8 +956,8 @@ ht <- Heatmap(
 
 pdf(
   file.path(out_dir, "Auto_five_state_marker_heatmap.pdf"),
-  width = 11.5,
-  height = 12, 
+  width = 16,
+  height = 10,
   useDingbats = FALSE
 )
 
@@ -1034,7 +1032,7 @@ method_lines <- c(
   "",
   "**Core Inputs:**",
   "- `ref_outs/EAC_Ref_epi.rds`: The main epithelial Seurat object (75,348 cells).",
-  "- `ref_outs/Auto_final_states.rds`: Finalized five-state labels, with `Unresolved` and `Hybrid` excluded.",
+  "- `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds`: Canonical centred-refined noreg state labels; `Unresolved` and `Hybrid` are excluded from marker discovery.",
   "",
   "**Finalized States Retained:**",
   paste0("- `", state_order, "`"),
@@ -1081,12 +1079,12 @@ method_lines <- c(
   "### 4.1 Sample Eligibility",
   "A sample is considered \"eligible\" to test a specific state only if:",
   paste0("- The sample contains **at least ", params$min_cells_state, " cells** belonging to the target state."),
-  paste0("- The sample contains **at least ", params$min_cells_rest, " cells** belonging to the other five states combined (the \"Rest\")."),
+  paste0("- The sample contains **at least ", params$min_cells_rest, " cells** belonging to the other four states combined (the \"Rest\")."),
   "",
   "### 4.2 Differential Expression Testing",
   "For each eligible sample and each of its qualified states:",
   "- **Test:** Seurat `FindMarkers` (Wilcoxon rank-sum test).",
-  "- **Universe:** One state versus the other 5 states within that sample.",
+  "- **Universe:** One state versus the other four states within that sample.",
   paste0("- **Genes:** Only the ", params$candidate_pool_per_state, " candidate genes identified in the pooled screen for that state."),
   "- **Thresholds:** No hard expression or logFC gates are applied at the testing stage (`logfc.threshold = 0`, `min.pct = 0`) to capture all valid statistics.",
   "",
@@ -1104,7 +1102,7 @@ method_lines <- c(
   "1. For every gene in the marker summary, the mean expression is calculated within the target state for every sample eligible for that state.",
   "2. The **median of these sample-level means** is computed, representing the \"typical\" expression of that gene in that state.",
   "3. This is repeated for all five states.",
-  "4. **Specificity Gap:** The typical expression in the target state minus the maximum typical expression seen in any of the other five states.",
+  "4. **Specificity Gap:** The typical expression in the target state minus the maximum typical expression seen in any of the other four states.",
   "5. A gene is considered a \"best state match\" only if the target state has the highest median expression.",
   "",
   "---",
@@ -1183,7 +1181,7 @@ method_lines <- c(
 
 writeLines(
   method_lines, 
-  file.path("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/methodology/cell_states/final_state_marker_discovery_methodology.md")
+  file.path(project_dir, "analysis/methodology/cell_states/final_state_marker_discovery_methodology.md")
 )
 
 ####################
@@ -1193,7 +1191,7 @@ message("Building specificity dot plot for Basal and SMG markers...")
 
 library(ggtext)
 
-target_states <- c("Basal to intestinal metaplasia", "SMG to intestinal metaplasia")
+target_states <- c("Squamous-to-intestinal", "Glandular-to-intestinal")
 dotplot_markers <- final_markers %>% filter(state %in% target_states)
 
 all_marker_genes <- dotplot_markers$gene
@@ -1251,7 +1249,13 @@ plot_df <- plot_df %>%
   ) %>%
   ungroup()
 
-state_labels_wrap <- gsub(" ", "<br>", state_order)
+wrap_state_labels <- function(x) {
+  x <- gsub(" ", "<br>", x)
+  x <- gsub("-to-", "-to-<br>", x)
+  x
+}
+state_labels_wrap <- wrap_state_labels(state_order)
+target_states_wrap <- wrap_state_labels(target_states)
 
 det_plot <- ggplot(plot_df, aes(x = dummy_x, y = gene)) +
   geom_point(aes(size = pct_detected, fill = norm_expr), shape = 21, color = "grey35", stroke = 0.35) +
@@ -1262,7 +1266,7 @@ det_plot <- ggplot(plot_df, aes(x = dummy_x, y = gene)) +
     switch = "y",
     labeller = labeller(
       panel = setNames(
-        sprintf("<span style='color:%s'>%s</span>", state_cols[target_states], gsub(" ", "<br>", target_states)),
+        sprintf("<span style='color:%s'>%s</span>", state_cols[target_states], target_states_wrap),
         target_states
       ),
       state = setNames(
@@ -1765,4 +1769,3 @@ for (st in state_order) {
 out_xlsx_final <- file.path(out_dir, "Auto_five_state_markers_all.xlsx")
 saveWorkbook(wb, out_xlsx_final, overwrite = TRUE)
 message("Saved Excel to: ", out_xlsx_final)
-

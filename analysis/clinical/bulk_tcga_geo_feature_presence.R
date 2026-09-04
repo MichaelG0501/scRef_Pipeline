@@ -22,11 +22,10 @@
 #   ref_outs/cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt
 #   ref_outs/geo_survival/Auto_GSE19417_meta.rds
 #   ref_outs/geo_survival/Auto_GSE19417_expr_gene.rds
-#   ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
-#   ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
 #   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_topmp_v2_noreg_states_B.rds
-#   ref_outs/Auto_final_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
 #
 # Outputs:
 #   ref_outs/bulk_crossplatform/presence/Auto_bulk_crossplatform_feature_presence_eac_only.pdf
@@ -43,7 +42,7 @@ library(ggplot2)
 library(gridExtra)
 library(Seurat)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 out_dir <- file.path("bulk_crossplatform", "presence")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -191,7 +190,7 @@ make_dge_sets <- function(tmdata_all, state_noreg, state_rel, retained_mps, mp.g
   }
   state_list <- state_list[names(ref_state)[names(ref_state) %in% names(state_list)]]
 
-  ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
+  ucell_scores <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds")
   keep_ucell_cols <- retained_mps[retained_mps %in% colnames(ucell_scores)]
   ucell_scores <- ucell_scores[intersect(rownames(ucell_scores), Cells(tmp)), keep_ucell_cols, drop = FALSE]
   topmp <- colnames(ucell_scores)[max.col(ucell_scores, ties.method = "first")]
@@ -395,93 +394,44 @@ expr_eac <- cbind(
   row_zscore(geo_expr[shared_genes, geo_ids, drop = FALSE])
 )
 
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) {
-  mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
-}
+mp.genes <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds")
 
 ordered_mp_list <- c(
-  "MP2",
-  "MP17", "MP14", "MP5", "MP10", "MP8",
-  "MP13", "MP12",
-  "MP18", "MP16",
-  "MP15",
-  "MP1", "MP7", "MP9"
+  "MP1", "MP5", "MP13+", "MP2+", "MP14", "MP3+", "MP6+", "MP11+",
+  "MP9+", "MP10+", "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP12", "MP15"
 )
 extra_mps <- setdiff(names(mp.genes), ordered_mp_list)
 retained_mps <- c(ordered_mp_list, extra_mps)
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2", "X3CA_mp_30.Respiration.1"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive" = c("MP13", "MP12"),
-  "SMG-like Metaplasia" = c("MP18", "MP16"),
-  "Immune Infiltrating" = c("MP15")
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
 state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating"
+  "Classic proliferation", "Basal to intestinal metaplasia",
+  "SMG to intestinal metaplasia", "Stress adaptive", "Cancer-cell immune mimicry"
 )
 
-mp_desc <- c(
-  "MP1" = "G2M Cell Cycle",
-  "MP2" = "MYC-related Proliferation",
-  "MP5" = "Epithelial IFN Resp.",
-  "MP7" = "DNA Damage Repair",
-  "MP8" = "Intestinal Diff.",
-  "MP9" = "G1S Cell Cycle",
-  "MP10" = "Columnar Diff.",
-  "MP12" = "Neuro-responsive Epi",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP15" = "Immune Infiltration",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP17" = "Basal-like Transition",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "X3CA_mp_12.Protein.maturation" = "Protein maturation",
-  "X3CA_mp_17.EMT.III" = "EMT III",
-  "X3CA_mp_30.Respiration.1" = "Respiration 1"
-)
+####################
+# Current descriptions are authoritative in the centred grouping table.
+####################
+grouping_current <- read.csv("Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv", check.names = FALSE)
+mp_desc <- setNames(grouping_current$description, grouping_current$mp)
 
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
-state_noreg <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
-state_rel <- if (file.exists("Auto_final_states.rds")) readRDS("Auto_final_states.rds") else NULL
+state_noreg <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
+state_rel <- NULL
 
 pan_mp_sets <- list()
 new_state_gene_sets <- list()
 candidate_new_states <- character(0)
-nmf3ca_path <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
-if (file.exists(nmf3ca_path)) {
-  MP_df <- read.csv(nmf3ca_path, check.names = FALSE)
-  MP_list <- as.list(MP_df)
-  MP_list <- lapply(MP_list, function(x) x[x != "" & !is.na(x)])
-  names(MP_list) <- make.names(sub("^MP", "3CA_mp_", names(MP_list)))
-
-  target_3ca_mps <- c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1")
-  pan_mp_sets <- MP_list[intersect(target_3ca_mps, names(MP_list))]
-
-  if (!is.null(state_rel)) {
-    candidate_new_states <- setdiff(unique(as.character(state_rel)), c(names(state_groups), "Unresolved", "Hybrid", NA))
-    if (length(candidate_new_states) > 0) {
-      clean_map <- setNames(clean_3ca_name(names(MP_list)), names(MP_list))
-      for (st in candidate_new_states) {
-        if (st == "3CA_EMT_and_Protein_maturation") {
-          keep_mps <- intersect(c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III"), names(MP_list))
-          new_state_gene_sets[[st]] <- unique(unlist(MP_list[keep_mps], use.names = FALSE))
-        } else {
-          orig_name <- names(clean_map)[clean_map == st][1]
-          if (!is.na(orig_name)) new_state_gene_sets[[st]] <- MP_list[[orig_name]]
-        }
-      }
-    }
-  }
-}
+####################
+# Current workflow excludes historical 3CA relabel features.
+####################
 
 reference_state_sets <- make_reference_state_sets(
   mp.genes = mp.genes,
@@ -596,3 +546,9 @@ fwrite(
   summary_metrics,
   "../updates/new_updates/summaries/Auto_bulk_tcga_geo_feature_presence_summary.csv"
 )
+####################
+# Manuscript status override (31 Jul 2026): legacy nMP19/old-state workflow.
+# Do not redirect paths and treat this as current. The exact current-centred
+# replacement contract is recorded in
+# analysis/oac_scatlas_paper/figure04/figure04f_bulk_presence_PLACEHOLDER.md.
+####################

@@ -10,7 +10,7 @@
 ####################
 # Auto_cibersortx_reference.R
 # Generate CIBERSORTx single-cell reference file from the full scATLAS
-# (EAC_Ref_merged_strict.rds) using all cell types for unbiased deconvolution.
+# (EAC_Ref_merged.rds) using all cell types for unbiased deconvolution.
 #
 # Cell type labelling strategy:
 #   - Epithelial cells present in meta_full_epi.rds → "Malignant"
@@ -21,7 +21,7 @@
 # Downsampling: min(100, all) per type, proportional fill to 3000 total.
 #
 # Input:
-#   ref_outs/EAC_Ref_merged_strict.rds
+#   ref_outs/EAC_Ref_merged.rds
 #   ref_outs/meta_full_epi.rds
 #
 # Output:
@@ -38,7 +38,7 @@ library(dplyr)
 ####################
 library(org.Hs.eg.db)
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 ####################
 # Create output directory
@@ -48,8 +48,8 @@ dir.create("cibersortx/", recursive = TRUE, showWarnings = FALSE)
 ####################
 # Load data
 ####################
-message("Loading EAC_Ref_merged_strict.rds ...")
-merged <- readRDS("EAC_Ref_merged_strict.rds")
+message("Loading EAC_Ref_merged.rds ...")
+merged <- readRDS("EAC_Ref_merged.rds")
 
 message("Loading meta_full_epi.rds ...")
 meta_full_epi <- readRDS("meta_full_epi.rds")
@@ -285,7 +285,7 @@ message("  Mapping: ", paste(ref_type_order, "->", merged_classes, collapse = ",
 ####################
 # Summary CSV
 ####################
-summary_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/updates/new_updates/summaries/"
+summary_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/updates/new_updates/summaries/"
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
 summary_df <- data.frame(
@@ -313,44 +313,12 @@ message("  5. Use S-mode batch correction, disable QN (RNA-seq data)")
 
 ##################
 
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) {
-  mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
-}
-
-unresolved_relabeled_path <- "unresolved_states/Auto_unresolved_relabel_states.rds"
-new_state_gene_sets <- list()
-
-if (file.exists(unresolved_relabeled_path)) {
-  state_rel <- readRDS(unresolved_relabeled_path)
-  
-  candidate_new_states <- setdiff(
-    unique(as.character(state_rel)),
-    c(names(state_groups), "Unresolved", "Hybrid", NA)
-  )
-  
-  nmf3ca_path <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
-  
-  if (file.exists(nmf3ca_path) && length(candidate_new_states) > 0) {
-    MP_df <- read.csv(nmf3ca_path, check.names = FALSE)
-    MP_list <- as.list(MP_df)
-    MP_list <- lapply(MP_list, function(x) x[x != "" & !is.na(x)])
-    
-    names(MP_list) <- make.names(sub("^MP", "3CA_mp_", names(MP_list)))
-    clean_map <- setNames(clean_3ca_name(names(MP_list)), names(MP_list))
-    
-    keep_cols <- names(clean_map)[clean_map %in% candidate_new_states]
-    if (length(keep_cols) > 0) {
-      new_state_gene_sets <- MP_list[keep_cols]
-      names(new_state_gene_sets) <- clean_map[keep_cols]
-    }
-  }
-}
-
-genes <- unique(unlist(c(mp.genes, new_state_gene_sets), use.names = FALSE))
+####################
+# Use the current centred refined MP genes for the optional high-resolution
+# subset. Removed nMP=19 and 3CA-relabel signatures are not current references.
+####################
+mp.genes <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds")
+genes <- unique(unlist(mp.genes, use.names = FALSE))
 writeLines(genes, "cibersortx/CIBERSORTx_gene_subset.txt")
 
 # ####################

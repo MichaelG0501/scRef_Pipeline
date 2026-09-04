@@ -1,4 +1,12 @@
 ####################
+# Analysis registry:
+#   Status: legacy
+#   Script: analysis/cell_states/Auto_drug_reversal/legacy_Auto_drug_reversal_clue_fallback.R
+#   Methodology: not required (superseded exploratory drug-reversal branch)
+#   Map: analysis/ANALYSIS_MAP.md
+####################
+
+####################
 # Auto_drug_reversal_clue_fallback.R
 #
 # Direct CLUE/CMap L1000 query fallback for top 150 up/down scRef signatures.
@@ -16,7 +24,7 @@ suppressPackageStartupMessages({
 # setup
 ####################
 
-project_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
 base_dir <- "Auto_drug_reversal"

@@ -28,12 +28,12 @@
 #
 # Basal-to-intestinal-metaplasia MP scope:
 #   Rebuilds a basal-only per-sample UMAP and labels each basal cell by the
-#   top z-normalised noreg MP among MP17, MP14, MP5, MP10, and MP8.
+#   top adjusted current MP among MP14, MP3+, MP6+, MP11+, MP9+, and MP10+.
 #
 # Inputs:
 #   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_topmp_v2_noreg_states_B.rds
-#   ref_outs/Auto_topmp_v2_noreg_mp_adj.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds
 #   ref_outs/state_distance_pseudotime/sample_state_trajectories/*.rds
 #
 # Regeneration:
@@ -96,8 +96,8 @@ suppressPackageStartupMessages({
 
 set.seed(12345)
 
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_config.R")
-source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_helpers.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_helpers.R")
 
 setwd(SCREF_PROJECT_DIR)
 
@@ -125,21 +125,17 @@ FORCE_REBUILD <- env_true("SCREF_FORCE_REBUILD", FALSE)
 REPLOT_ONLY <- env_true("SCREF_REPLOT_ONLY", FALSE)
 
 primary_states <- SCREF_PRIMARY_STATE_ORDER
-basal_state <- "Basal to Intestinal Metaplasia"
+basal_state <- "Basal to intestinal metaplasia"
 basal_mps <- SCREF_STATE_GROUPS[[basal_state]]
 basal_mp_levels <- label_mps(basal_mps)
 
 state_colours <- state_colours_current(primary_states)
 state_colours <- state_colours[primary_states]
 
-basal_mp_colours <- c(
-  "MP17 - Basal-like Transition" = "#1B9E77",
-  "MP14 - Hypoxia Adapted Epi." = "#D95F02",
-  "MP5 - Epithelial IFN Resp." = "#7570B3",
-  "MP10 - Columnar Diff." = "#E7298A",
-  "MP8 - Intestinal Diff." = "#66A61E"
+basal_mp_colours <- setNames(
+  c("#D95F02", "#7570B3", "#E7298A", "#66A61E", "#1B9E77", "#6A3D9A"),
+  basal_mp_levels
 )
-basal_mp_colours <- basal_mp_colours[basal_mp_levels]
 
 trajectory_dir <- file.path(SCREF_REF_OUTS_DIR, "state_distance_pseudotime", "sample_state_trajectories")
 
@@ -172,7 +168,7 @@ run_summary <- start_run_summary(
     basal_min_cells = BASAL_MIN_CELLS,
     force_rebuild = FORCE_REBUILD,
     replot_only = REPLOT_ONLY,
-    state_source = "Auto_topmp_v2_noreg_states_B.rds"
+    state_source = "centred_refined_noreg_states.rds"
   )
 )
 

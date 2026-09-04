@@ -23,9 +23,9 @@ module load tools/dev
 
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 
-WD=/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 DATASET_ROOT=/rds/general/project/spatialtranscriptomics/ephemeral/Auto_Yates2025_EAC_spatial/Zenodo_upload
-OUTPUT_DIR=/rds/general/project/spatialtranscriptomics/ephemeral/Auto_Yates2025_EAC_spatial/Auto_scATLAS_xenium_states
+OUTPUT_DIR=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/xenium_scatlas_states
 
 cd $WD
 mkdir -p temp

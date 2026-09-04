@@ -26,14 +26,14 @@
 #
 # Input:
 #   ref_outs/meta_full_epi.rds
-#   ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
-#   ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv
 #   /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx (sheet 3)
 #
 # Output:
 #   ref_outs/Auto_clinical_assoc_mp_ucell_combined.pdf
 #   ref_outs/Auto_clinical_assoc_mp_ucell_per_study.pdf
-#   new_update/summaries/Auto_clinical_assoc_mp_ucell_summary.csv
+#   updates/new_updates/summaries/Auto_clinical_assoc_mp_ucell_summary.csv
 ####################
 
 library(dplyr)
@@ -51,7 +51,7 @@ setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 ####################
 meta_full_epi <- readRDS("meta_full_epi.rds")
 ucell_scores <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds")
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
+grouping <- read.csv("Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv", check.names = FALSE)
 
 clinical_sheet <- read_excel(
   "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx",
@@ -63,51 +63,20 @@ clinical_sheet <- read_excel(
 ####################
 # 2) MP order and annotations (matched to final updated state naming)
 ####################
-mp_descriptions <- c(
-  "MP1" = "G2M_cycle",
-  "MP2" = "MYC_prolif",
-  "MP5" = "IFN_response",
-  "MP7" = "S_cycle",
-  "MP8" = "Intestinal_diff",
-  "MP9" = "G1S_cycle",
-  "MP10" = "Columnar_diff",
-  "MP12" = "Neuro_epithelial",
-  "MP13" = "Partial_EMT",
-  "MP14" = "Hypoxia_epithelial",
-  "MP15" = "T_NK_infiltration",
-  "MP16" = "Secretory_diff",
-  "MP17" = "Squamous_transition",
-  "MP18" = "Adaptive_secretory"
-)
+mp_descriptions <- setNames(grouping$description, grouping$mp)
 
-# State groups aligned to Auto_final_states.rds naming
+# State groups aligned to the canonical centred refined grouping.
 state_groups <- list(
-  "Cell Cycle"              = c("MP1", "MP7", "MP9"),
-  "Classic Proliferative"   = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive"         = c("MP13", "MP12"),
-  "SMG-like Metaplasia"     = c("MP18", "MP16"),
-  "Immune Infiltrating"     = c("MP15")
+  "Cell cycle" = c("MP1", "MP5", "MP13+"),
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
-# Silhouette filtering
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) {
-  bad_mp_names <- paste0("MP", bad_mps)
-  mp.genes <- mp.genes[!names(mp.genes) %in% bad_mp_names]
-}
-retained_mps <- names(mp.genes)
-
-# Derive tree-order
-tree_order <- geneNMF.metaprograms$programs.tree$order
-ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
-valid_cluster_ids <- as.numeric(gsub("\\D", "", retained_mps))
-mp_tree_order <- unique(ordered_clusters)
-mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
-mp_tree_order_names <- paste0("MP", mp_tree_order)
-
-mp_cols <- intersect(mp_tree_order_names, colnames(ucell_scores))
+retained_mps <- grouping$mp
+mp_cols <- intersect(retained_mps, colnames(ucell_scores))
 mp_labels <- mp_descriptions
 mp_labels[setdiff(mp_cols, names(mp_labels))] <- setdiff(mp_cols, names(mp_labels))
 
@@ -137,12 +106,12 @@ mp_ordered <- c(mp_ordered, remaining)
 
 # Group colour palette (for strip/annotation)
 group_palette <- c(
-  "Cell Cycle"            = "#FFD700",
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive"       = "#984EA3",
-  "SMG-like Metaplasia"   = "#FF7F00",
-  "Immune Infiltrating"   = "#377EB8",
+  "Cell cycle"            = "#FFD700",
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "Stress adaptive"       = "#984EA3",
+  "SMG to intestinal metaplasia"   = "#FF7F00",
+  "Cancer-cell immune mimicry" = "#377EB8",
   "Other"                 = "grey60"
 )
 
@@ -522,8 +491,9 @@ dev.off()
 # 11) Summary CSV
 ####################
 summary_dir <- file.path(
-  "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
-  "new_update",
+  "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
+  "updates",
+  "new_updates",
   "summaries"
 )
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)

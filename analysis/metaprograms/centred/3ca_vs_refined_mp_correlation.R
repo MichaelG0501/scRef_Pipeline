@@ -2,7 +2,15 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/metaprograms/centred/3ca_vs_refined_mp_correlation.R
-#   Description: Correlation of 3CA MPs vs Centred Refined MPs for all cells and unresolved cells.
+#   Methodology: not required (cross-panel score correlations and exploratory plots)
+#   Description: Correlates current 17 centred refined MP UCell scores with the
+#     external 3CA MP panel across all aligned cells and current unresolved cells.
+#   Inputs: centred refined UCell, current centred state vector, and UCell_3CA_MPs.rds.
+#   Outputs: ref_outs/Metaprogrammes_Results/centred/correlation/{figures,tables}/
+#     and updates/new_updates/summaries/3ca_vs_refined_mp_correlation_summary.csv.
+#   Cache/replot: deterministic plot rebuild from persistent live score matrices.
+#   Run: qsub analysis/metaprograms/centred/3ca_vs_refined_mp_correlation.sh
+#   Environment: dmtcp
 #   Map: analysis/ANALYSIS_MAP.md
 ####################
 
@@ -15,10 +23,14 @@ suppressPackageStartupMessages({
   library(ggplot2)
 })
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
+setwd(file.path(project_dir, "ref_outs"))
 
 out_dir <- "Metaprogrammes_Results/centred/correlation"
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+fig_dir <- file.path(out_dir, "figures")
+table_dir <- file.path(out_dir, "tables")
+summary_dir <- file.path(project_dir, "updates", "new_updates", "summaries")
+for (path in c(fig_dir, table_dir, summary_dir)) dir.create(path, recursive = TRUE, showWarnings = FALSE)
 
 # Inputs
 ucell_refined_file <- "Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds"
@@ -42,12 +54,12 @@ unresolved_cells <- names(states)[states == "Unresolved"]
 cc_mps <- c("MP1", "MP5", "MP13+")
 state_groups <- list(
   "Classic proliferation" = c("MP2+"),
-  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x"),
-  "Stress adaptive" = c("MP12"),
+  "Squamous-to-intestinal" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "Glandular-to-intestinal" = c("MP18b", "MP16", "MP17", "MP8b", "MP8+"),
+  "Stress-adaptive" = c("MP12"),
   "Cancer-cell immune mimicry" = c("MP15")
 )
-excluded_mps <- c("MP11c", "MP18a")
+excluded_mps <- character(0)
 
 plot_mp_order <- c(cc_mps, unlist(state_groups, use.names = FALSE), excluded_mps)
 plot_mp_order <- intersect(plot_mp_order, colnames(ucell_refined))
@@ -77,9 +89,9 @@ cor_unres <- cor(ucell_refined[unresolved_cells, plot_mp_order], ucell_3ca[unres
 # Row annotation (State)
 state_cols <- c(
   "Classic proliferation" = "#E41A1C",
-  "Basal to intestinal metaplasia" = "#4DAF4A",
-  "SMG to intestinal metaplasia" = "#FF7F00",
-  "Stress adaptive" = "#984EA3",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
+  "Stress-adaptive" = "#984EA3",
   "Cancer-cell immune mimicry" = "#377EB8"
 )
 mp_group_cols <- c(
@@ -119,11 +131,8 @@ mp_desc_map <- c(
   "MP16" = "Mucous-secretory glandular epithelium",
   "MP18b" = "Mucous-secretory differentiation",
   "MP17" = "Immune-interactive glandular progenitor",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
   "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry",
-  "MP11c" = "Excluded",
-  "MP18a" = "Excluded"
+  "MP15" = "T/NK-like cancer-cell immune mimicry"
 )
 
 get_full_name <- function(mp_names) {
@@ -183,7 +192,7 @@ ht_unres <- Heatmap(
   column_gap = unit(4, "mm")
 )
 
-pdf(file.path(out_dir, "3ca_vs_refined_mp_correlation.pdf"), width = 16, height = 12)
+pdf(file.path(fig_dir, "3ca_vs_refined_mp_correlation.pdf"), width = 16, height = 12)
 draw(ht_all, column_title = "Correlation of Centred Refined MPs vs 3CA MPs (All Cells)", column_title_gp = gpar(fontsize = 16, fontface = "bold"))
 draw(ht_unres, column_title = "Correlation of Centred Refined MPs vs 3CA MPs (Unresolved Cells)", column_title_gp = gpar(fontsize = 16, fontface = "bold"))
 dev.off()
@@ -224,7 +233,7 @@ z_normalise <- function(mat, sample_var, study_var) {
 }
 
 top_10_least_3ca <- tail(colnames(cor_all)[col_group_sorted == "Other 3CA"], 10)
-selected_refined <- c("MP13+", "MP11c", "MP18a")
+selected_refined <- c("MP13+", "MP17", "MP15")
 
 # For heatmap 1 (All non-CC 3CA MPs)
 all_non_cc_3ca <- setdiff(colnames(ucell_3ca), CC_FIXED)
@@ -327,7 +336,7 @@ ht_cells_page2 <- Heatmap(
   border = FALSE
 )
 
-pdf(file.path(out_dir, "unresolved_cells_heatmap.pdf"), width = 20, height = 12, onefile = TRUE)
+pdf(file.path(fig_dir, "unresolved_cells_heatmap.pdf"), width = 20, height = 12, onefile = TRUE)
 draw(ht_cells)
 draw(ht_cells_page2)
 dev.off()
@@ -368,9 +377,25 @@ p_bar_nohybrid <- ggplot(bar_df_nohybrid, aes(x = Assignment, y = pct, fill = As
   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position = "none") +
   labs(title = "TopMP Assignment (No Hybrid)", y = "Proportion (%)", x = NULL)
 
-pdf(file.path(out_dir, "unresolved_cells_barplot.pdf"), width = 12, height = 8, onefile = TRUE)
+pdf(file.path(fig_dir, "unresolved_cells_barplot.pdf"), width = 12, height = 8, onefile = TRUE)
 print(p_bar_hybrid)
 print(p_bar_nohybrid)
 dev.off()
 
-cat("Saved per-cell heatmap and barplot to", out_dir, "\n")
+####################
+# Persistent numerical source tables and compact audit summary.
+####################
+write.csv(cor_all, file.path(table_dir, "3ca_vs_refined_correlation_all_cells.csv"))
+write.csv(cor_unres, file.path(table_dir, "3ca_vs_refined_correlation_unresolved_cells.csv"))
+write.csv(bar_df_hybrid, file.path(table_dir, "unresolved_3ca_assignment_with_hybrid.csv"), row.names = FALSE)
+write.csv(bar_df_nohybrid, file.path(table_dir, "unresolved_3ca_assignment_no_hybrid.csv"), row.names = FALSE)
+summary_df <- data.frame(
+  n_aligned_cells = length(common_cells),
+  n_unresolved_cells = length(unresolved_cells),
+  n_refined_mps = length(plot_mp_order),
+  n_3ca_mps = ncol(ucell_3ca),
+  max_abs_correlation_all = max(abs(cor_all), na.rm = TRUE),
+  max_abs_correlation_unresolved = max(abs(cor_unres), na.rm = TRUE)
+)
+write.csv(summary_df, file.path(summary_dir, "3ca_vs_refined_mp_correlation_summary.csv"), row.names = FALSE)
+cat("Saved correlation outputs to", out_dir, "\n")

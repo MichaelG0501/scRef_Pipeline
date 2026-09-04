@@ -1,4 +1,12 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cell_states/Auto_drug_reversal/Auto_drug_reversal_overlap_final.R
+#   Methodology: not required (superseded exploratory drug-reversal branch)
+#   Map: analysis/ANALYSIS_MAP.md
+####################
+
+####################
 # Auto_drug_reversal_overlap_final.R
 # Find and visualize overlapping chemical inhibitors between scRef and PDOs
 # Using final ASGARD+CMap candidates
@@ -13,20 +21,27 @@ suppressPackageStartupMessages({
   library(ggrepel)
 })
 
-project_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live"
 scref_dir <- file.path(project_dir, "scRef_Pipeline", "ref_outs", "Auto_drug_reversal")
 pdo_dir <- file.path(project_dir, "PDOs_Pipeline", "PDOs_outs", "Auto_drug_reversal")
 
 out_dir <- file.path(scref_dir, "overlap_visuals")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-state_order <- c("Classic Proliferative", "Stress-adaptive")
+state_order <- c(
+  "Classic proliferation",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
+  "Stress-adaptive",
+  "Cancer-cell immune mimicry"
+)
 state_colors <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "SMG-like Metaplasia" = "#FF7F00",
+  "Classic proliferation" = "#E41A1C",
+  "Columnar-to-intestinal" = "#4DAF4A",
+  "Glandular differentiation" = "#FF7F00",
   "Stress-adaptive" = "#984EA3",
-  "3CA_EMT_and_Protein_maturation" = "#377EB8"
+  "ECM-remodelling" = "#A65628",
+  "Motile-cilia differentiation" = "#F781BF"
 )
 
 shorten_drug <- function(x, n = 32) {
@@ -247,9 +262,42 @@ if (nrow(profile_all) > 0) {
 
   ggsave(file.path(out_dir, "overlap_final_l1000_signature_reversal_profiles.pdf"), p_profile, width = 12, height = 7, useDingbats = FALSE)
   ggsave(file.path(out_dir, "overlap_final_l1000_signature_reversal_profiles.png"), p_profile, width = 12, height = 7, dpi = 300)
+
+  # LINCS Scatter
+  scatter_df <- profile_all %>%
+    group_by(state, drug_key) %>%
+    mutate(highlight_gene = abs_logfc_rank <= 15) %>%
+    ungroup() %>%
+    mutate(
+      state = factor(state, levels = state_order)
+    )
+
+  p_scatter <- ggplot(scatter_df, aes(x = avg_logFC, y = -l1000_centered)) +
+    geom_hline(yintercept = 0, linewidth = 0.2, color = "grey65") +
+    geom_vline(xintercept = 0, linewidth = 0.2, color = "grey65") +
+    geom_point(aes(color = direction), alpha = 0.5, size = 1.0) +
+    geom_point(data = scatter_df %>% filter(highlight_gene), color = "black", fill = "#FFD92F", shape = 21, size = 1.6, stroke = 0.2) +
+    geom_smooth(method = "lm", se = FALSE, linewidth = 0.4, color = "grey20") +
+    scale_color_manual(values = c("State-up genes" = "#CB181D", "State-down genes" = "#2171B5")) +
+    facet_grid(state ~ drug, scales = "free") +
+    labs(
+      x = "scRef state logFC",
+      y = "Predicted treatment effect (inverted L1000)",
+      color = NULL,
+      title = "Overlapped Drugs: Predicted transcriptomic reversal (LINCS/L1000)"
+    ) +
+    theme_classic(base_size = 11) +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0),
+      strip.text.x = element_text(face = "bold", size = 8),
+      strip.text.y = element_text(face = "bold", angle = 0),
+      legend.position = "top"
+    )
+
+  ggsave(file.path(out_dir, "overlap_reversion_scatter.pdf"), p_scatter, width = 12, height = 8, useDingbats = FALSE)
+  ggsave(file.path(out_dir, "overlap_reversion_scatter.png"), p_scatter, width = 12, height = 8, dpi = 300)
 } else {
   print("Failed to map drugs to L1000 instance_map.")
 }
 
 print("Success! Outputs generated in overlap_visuals")
-

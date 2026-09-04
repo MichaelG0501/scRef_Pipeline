@@ -4,7 +4,7 @@ This document covers CNV and malignant subclone scripts under `analysis/cnv/`.
 
 ## Core CNV Scripts
 
-`cnv_profiling.R`, `cnv_subsetting.R`, and `cnv_plotting.R` form the older core CNV workflow:
+`cnv_profiling.R`, `legacy_cnv_subsetting.R`, and `cnv_plotting.R` form the older core CNV workflow; the reference-spiking subsetting script is legacy and is not an active dependency:
 
 1. infer CNA profiles for epithelial cells by sample
 2. subset cells by CNA signal

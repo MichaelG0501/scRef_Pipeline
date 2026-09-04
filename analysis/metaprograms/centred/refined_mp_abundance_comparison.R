@@ -1,21 +1,33 @@
 ####################
-# delete_refined_mp_abundance.R
+# Analysis registry:
+#   Status: legacy
+#   Script: analysis/metaprograms/centred/refined_mp_abundance_comparison.R
+#   Methodology: not required (descriptive abundance comparison of existing current objects)
+#   Map: analysis/ANALYSIS_MAP.md
 #
-# Temporary script: compare per-sample refined MP abundance between
-# centred and uncentred GeneNMF workflows.
+# Description:
+#   Historical comparison of per-sample refined MP abundance between centred
+#   and uncentred GeneNMF workflows. The uncentred input has been retired, so
+#   this script is retained for provenance and must not be used for current
+#   final-17 MP analyses.
 #
-# Input:
-#   ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_ucell_scores.rds
-#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
-#   ref_outs/by_samples/
+# Inputs:
+#   - ref_outs/Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   - ref_outs/EAC_Ref_epi.rds (authoritative orig.ident/study metadata)
 #
-# Output:
-#   ref_outs/Metaprogrammes_Results/centred_comparison/figures/Auto_refined_mp_sample_abundance.pdf
+# Outputs:
+#   - ref_outs/Metaprogrammes_Results/centred_comparison/figures/Auto_refined_mp_sample_abundance.pdf
 #
-# Run:
+# Cache/replot behavior:
+#   Always rebuilds from intermediate UCell score matrices on each run.
+#
+# Run command:
 #   eval "$(~/miniforge3/bin/conda shell.bash hook)"
 #   source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
-#   Rscript /rds/general/project/tumourheterogeneity1/ephemeral/Auto_AG/delete_refined_mp_abundance.R
+#   Rscript analysis/metaprograms/centred/refined_mp_abundance_comparison.R
+#
+# Conda env: dmtcp
 ####################
 
 library(dplyr)
@@ -29,7 +41,7 @@ library(ComplexHeatmap)
 library(circlize)
 library(grid)
 
-project_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 ref_dir <- file.path(project_dir, "ref_outs")
 setwd(ref_dir)
 
@@ -45,26 +57,18 @@ unc_ucell <- unc_ucell[common_cells, , drop = FALSE]
 cent_ucell <- cent_ucell[common_cells, , drop = FALSE]
 cat("Common cells:", length(common_cells), "\n")
 
-# ── Infer sample identity ────────────────────────────────────────────────────
-infer_samples <- function(cells) {
-  sample_dirs <- list.dirs("by_samples", full.names = FALSE, recursive = FALSE)
-  sample_dirs <- sample_dirs[grepl("^[^/]+_[^/]+_[^/]+$", sample_dirs)]
-  sample_dirs <- sample_dirs[order(nchar(sample_dirs), decreasing = TRUE)]
-  out <- rep(NA_character_, length(cells))
-  for (sample in sample_dirs) {
-    idx <- is.na(out) & startsWith(cells, paste0(sample, "_"))
-    out[idx] <- sample
-  }
-  if (anyNA(out)) {
-    warning("Could not infer sample for ", sum(is.na(out)), " cells")
-    out[is.na(out)] <- cells[is.na(out)]
-  }
-  out
-}
-
-sample_vec <- infer_samples(common_cells)
+# ── Authoritative sample identity ────────────────────────────────────────────
+epi_obj <- readRDS("EAC_Ref_epi.rds")
+epi_meta <- epi_obj@meta.data
+if (!"orig.ident" %in% colnames(epi_meta)) stop("EAC_Ref_epi.rds lacks orig.ident")
+sample_vec <- setNames(as.character(epi_meta$orig.ident), rownames(epi_meta))[common_cells]
+if (anyNA(sample_vec)) stop("Missing orig.ident for ", sum(is.na(sample_vec)), " common cells")
 names(sample_vec) <- common_cells
-study_vec <- sub("^([A-Za-z]+_[0-9]{4}).*", "\\1", sample_vec)
+study_vec <- if ("study" %in% colnames(epi_meta)) {
+  setNames(as.character(epi_meta$study), rownames(epi_meta))[common_cells]
+} else {
+  sub("^([A-Za-z]+_[0-9]{4}).*", "\\1", sample_vec)
+}
 cat("Unique samples:", length(unique(sample_vec)), "\n")
 
 # ── Description labels ───────────────────────────────────────────────────────
@@ -112,11 +116,8 @@ cent_desc_map <- c(
   "MP18b" = "Mucous-secretory differentiation",
   "MP8+" = "Glandular intestinal metaplasia",
   "MP16" = "Mucous-secretory glandular epithelium",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
-  "MP18a" = "MP18a",
   "MP12" = "Hypoxic inflammatory adaptive plasticity",
   "MP13+" = "replication-stress-associated cell cycling",
-  "MP11c" = "MP11c",
   "MP15" = "T/NK-like cancer-cell immune mimicry",
   "MP8b" = "Metabolic intestinal metaplasia",
   "MP1" = "G2/M cell cycle",
@@ -757,4 +758,22 @@ draw(
 
 dev.off()
 cat("Saved:", pdf_file, "\n")
+
+####################
+# Compact result summary
+####################
+summary_dir <- file.path(project_dir, "updates", "new_updates", "summaries")
+dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
+write.csv(
+  data.frame(
+    n_common_cells = length(common_cells),
+    n_samples = length(unique(sample_vec)),
+    n_uncentred_mps = ncol(unc_ucell),
+    n_centred_mps = ncol(cent_ucell),
+    median_uncentred_shannon = median(unc_shannon$shannon, na.rm = TRUE),
+    median_centred_shannon = median(cent_shannon$shannon, na.rm = TRUE)
+  ),
+  file.path(summary_dir, "refined_mp_abundance_comparison_summary.csv"),
+  row.names = FALSE
+)
 cat("Done.\n")

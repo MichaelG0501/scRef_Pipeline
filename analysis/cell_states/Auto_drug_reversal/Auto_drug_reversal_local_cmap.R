@@ -1,4 +1,12 @@
 ####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/cell_states/Auto_drug_reversal/Auto_drug_reversal_local_cmap.R
+#   Methodology: not required (superseded exploratory drug-reversal branch)
+#   Map: analysis/ANALYSIS_MAP.md
+####################
+
+####################
 # Auto_drug_reversal_local_cmap.R
 #
 # Local CMap-style transcriptomic reversal ranking from ASGARD tissue-specific
@@ -13,7 +21,7 @@ suppressPackageStartupMessages({
   library(jsonlite)
 })
 
-project_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
 base_dir <- "Auto_drug_reversal"
@@ -152,12 +160,11 @@ annotate_targets <- function(drugs) {
 }
 
 state_order <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "SMG-like Metaplasia",
+  "Classic proliferation",
+  "Squamous-to-intestinal",
+  "Glandular-to-intestinal",
   "Stress-adaptive",
-  "Immune Infiltrating",
-  "3CA_EMT_and_Protein_maturation"
+  "Cancer-cell immune mimicry"
 )
 state_order <- intersect(state_order, unique(signature_dt$state))
 ranked_all <- rbindlist(lapply(state_order, function(state_name) {

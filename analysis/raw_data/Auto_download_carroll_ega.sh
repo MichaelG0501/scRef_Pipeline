@@ -1,4 +1,12 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/raw_data/Auto_download_carroll_ega.sh
+#   Methodology: not required (PBS/submit wrapper; method is documented by the invoked analysis script)
+#   Map: analysis/ANALYSIS_MAP.md
+#   Description: Execution wrapper; resources, dependencies, and arguments are defined below.
+####################
 #PBS -l select=1:ncpus=2:mem=16gb
 #PBS -l walltime=72:00:00
 #PBS -N Auto_Car_EGA

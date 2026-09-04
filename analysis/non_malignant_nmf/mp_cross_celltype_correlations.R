@@ -2,22 +2,25 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/non_malignant_nmf/mp_cross_celltype_correlations.R
-#   Methodology: analysis/methodology/non_malignant_nmf/non_malignant_nmf_methodology.md
+#   Methodology: analysis/methodology/non_malignant_nmf/mp_cross_celltype_correlations_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Sample-blocked co-occurrence networks linking the final centred
+#     malignant MPs/states to non-malignant GeneNMF MPs, with LR support audits.
 ####################
 
 ####################
 # Auto_mp_cross_celltype_correlations.R
 # Build a cross-celltype MP co-occurrence network from the full
-# EAC_Ref_merged_strict.rds atlas, annotate positive edges with
+# EAC_Ref_merged.rds atlas, annotate positive edges with
 # ligand-receptor support, and export reproducible summary tables.
 #
 # Inputs:
 #   ref_outs/EAC_Ref_merged.rds
 #   ref_outs/meta_full_epi.rds
-#   ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
-#   ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_markers/tables/centred_refined_state_markers_all.csv
 #   ref_outs/nmf_*/MP_outs_default.rds
 #   ref_outs/nmf_*/UCell_default.rds
 #   /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx
@@ -52,11 +55,7 @@ library(openxlsx)
 ####################
 
 resolve_project_dir <- function() {
-  candidate_dirs <- c(
-    "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
-    "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
-    "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
-  )
+  candidate_dirs <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
   keep_dirs <- candidate_dirs[file.exists(candidate_dirs)]
   if (length(keep_dirs) == 0) {
     stop("Could not resolve project directory")
@@ -86,6 +85,13 @@ if (!is.finite(z_score_multiplier) || z_score_multiplier < 0) {
 
 cache_version <- "2026-07-14_v13"
 force_rebuild <- toupper(Sys.getenv("AUTO_MPXCELL_FORCE_REBUILD", "FALSE")) %in% c("TRUE", "1", "YES")
+####################
+# Current-centred marker dependency update (31 July 2026).
+# Incrementing the cache version prevents the state/LR branch from silently
+# reusing a cache constructed with the legacy Auto_five_state_markers table.
+####################
+cache_version <- "2026-07-31_v14_centred_state_markers"
+####################
 pair_evidence_allowed <- c("literature supported", "putative")
 min_positive_samples <- 5
 min_shared_samples_per_study <- 10
@@ -129,12 +135,12 @@ publication_colour_lookup <- c(
 cancer_state_groups <- list(
   "Classic proliferation" = c("MP2+"),
   "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
   "Stress adaptive" = c("MP12"),
   "Cancer-cell immune mimicry" = c("MP15")
 )
 cancer_cc_mps <- c("MP1", "MP5", "MP13+")
-cancer_excluded_mps <- c("MP11c", "MP18a")
+cancer_excluded_mps <- character(0)
 cancer_refined_gene_set_path <- file.path(
   "Metaprogrammes_Results", "centred", "mp_refinement",
   "intermediate", "merged_refined_mp_genes.rds"
@@ -146,7 +152,7 @@ celltype_cfg <- tibble(
   atlas_celltype = c("epithelial", "fibroblast", "endothelial", "t.cell", "t.cell", "macrophage", "nk.cell", "plasma"),
   subtype = c(NA, NA, NA, "cd8", "cd4", NA, NA, NA),
   mp_path = c(
-    file.path("Metaprogrammes_Results", "centred", "geneNMF_metaprograms_nMP_19.rds"),
+    cancer_refined_gene_set_path,
     file.path("nmf_fibroblast", "MP_outs_default.rds"),
     file.path("nmf_endothelial", "MP_outs_default.rds"),
     file.path("nmf_cd8", "MP_outs_default.rds"),
@@ -184,11 +190,8 @@ cancer_mp_descriptions <- c(
   "MP16" = "Mucous-secretory glandular epithelium",
   "MP18b" = "Mucous-secretory differentiation",
   "MP17" = "Immune-interactive glandular progenitor",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
   "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry",
-  "MP11c" = "Excluded",
-  "MP18a" = "Excluded"
+  "MP15" = "T/NK-like cancer-cell immune mimicry"
 )
 
 pair_order_lookup <- setNames(seq_along(celltype_display_order), celltype_display_order)
@@ -656,7 +659,7 @@ load_ramilowski_reference <- function(project_dir) {
 
 ####################
 # State-based cancer definition support. The finalized cancer-state
-# labels come from Auto_final_states.rds, while LR target gene sets are
+# labels come from the centred refined noreg state vector, while LR target gene sets are
 # derived from the ranked recurrent state-marker table.
 ####################
 load_cancer_state_reference <- function() {
@@ -666,6 +669,18 @@ load_cancer_state_reference <- function() {
     file.path("Auto_five_state_markers", "Auto_five_state_markers_final.csv")
   )
   marker_path <- marker_candidates[file.exists(marker_candidates)][1]
+
+  ####################
+  # Prefer the current sample-blocked centred-refined marker result. The two
+  # historical candidates remain explicit fallbacks for legacy reproduction,
+  # but an active manuscript run must use this current live table when present.
+  ####################
+  current_marker_path <- file.path(
+    "Metaprogrammes_Results", "centred", "state_markers", "tables",
+    "centred_refined_state_markers_all.csv"
+  )
+  if (file.exists(current_marker_path)) marker_path <- current_marker_path
+  ####################
 
   if (!file.exists(state_path)) {
     stop("Missing finalized cancer states: ", state_path)
@@ -688,6 +703,39 @@ load_cancer_state_reference <- function() {
   state_keep <- final_cancer_state_order[final_cancer_state_order %in% unique(state_labels)]
   marker_df <- marker_df %>%
     filter(state %in% state_keep)
+
+  ####################
+  # Translate current edgeR columns into the pre-existing deterministic rank
+  # interface. Only positive, FDR-supported markers with recurrent target-state
+  # expression are eligible for LR target sets.
+  ####################
+  if (identical(marker_path, current_marker_path)) {
+    required_current_marker_cols <- c(
+      "logFC", "FDR", "target_sample_cpm1_fraction", "paired_sample_n"
+    )
+    if (!all(required_current_marker_cols %in% colnames(marker_df))) {
+      stop(
+        "Current centred marker table lacks required columns: ",
+        paste(setdiff(required_current_marker_cols, colnames(marker_df)), collapse = ", ")
+      )
+    }
+    marker_df <- marker_df %>%
+      filter(
+        is.finite(logFC), logFC > 0,
+        is.finite(FDR), FDR < 0.05,
+        is.finite(target_sample_cpm1_fraction), target_sample_cpm1_fraction >= 0.5
+      ) %>%
+      mutate(
+        ranking_score = -log10(pmax(FDR, .Machine$double.xmin)) + pmax(logFC, 0),
+        reproducibility_score = target_sample_cpm1_fraction,
+        specificity_gap = logFC,
+        median_log2FC_hit = logFC
+      )
+    if (nrow(marker_df) == 0) {
+      stop("No positive FDR-supported current centred state markers passed LR ranking filters")
+    }
+  }
+  ####################
 
   if ("best_state_match" %in% colnames(marker_df)) {
     marker_df <- marker_df %>%
@@ -722,6 +770,7 @@ load_cancer_state_reference <- function() {
     state_labels = state_labels,
     state_order = state_keep,
     state_cols = final_cancer_state_cols[state_keep],
+    state_path = state_path,
     marker_path = marker_path,
     gene_sets = gene_sets
   )
@@ -1888,8 +1937,19 @@ run_analysis_mode <- function(mode_cfg) {
       cells_use <- intersect(cells_use, malignant_cells_mode)
       state_labels <- state_labels[cells_use]
       state_keep <- cancer_state_ref_mode$state_order[cancer_state_ref_mode$state_order %in% unique(state_labels)]
+      ####################
+      # Preserve every malignant cell with a current state assignment as the
+      # state-fraction denominator. Hybrid and Unresolved are represented by
+      # zeroes across the five archetype columns rather than being discarded.
+      ####################
+      denominator_state_labels <- state_labels
+      ####################
       cells_use <- names(state_labels)[state_labels %in% state_keep]
       state_labels <- state_labels[cells_use]
+      ####################
+      state_labels <- denominator_state_labels
+      cells_use <- names(state_labels)
+      ####################
       if (length(state_keep) == 0 || length(cells_use) == 0) {
         stop("No finalized cancer-state cells available for state-based mode")
       }
@@ -1934,7 +1994,7 @@ run_analysis_mode <- function(mode_cfg) {
         atlas_celltype = cfg_row$atlas_celltype,
         subtype = cfg_row$subtype,
         score_path = NA_character_,
-        mp_path = "Auto_final_states.rds",
+        mp_path = cancer_state_ref_mode$state_path,
         score_matrix = score_df,
         mp_names = state_keep,
         mp_display = setNames(state_keep, state_keep),

@@ -4,7 +4,17 @@
 #   Script: analysis/developmental/developmental.R
 #   Methodology: analysis/methodology/developmental/developmental_reference_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Build ordered TERM2GENE/TERM2NAME developmental references for
+#     embryogenesis, organogenesis, normal development, adult epithelium, and Barrett's oesophagus.
+#   Inputs:
+#     - /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/{Early embryogenesis.xls,Organogenesis.xlsx,Normal development.xlsx,Oesophagus.xlsx,Stomach.rds}
+#     - /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/Barretts/science.abd1449_Table_S{2,4,5,7}.xlsx
+#   Outputs:
+#     - ref_outs/developmental_reference/enrich_dev.rds
+#     - ref_outs/developmental_reference/per_stage/enrich_dev_<reference>.rds
+#   Cache/replot: deterministic reference rebuild; outputs are persistent inputs to centred step 04.
+#   Run: qsub analysis/developmental/developmental.sh
+#   Conda env: dmtcp
 ####################
 
 ####################
@@ -17,6 +27,13 @@
 
 ALL_TERM2GENE <- list()
 ALL_TERM2NAME <- list()
+
+####################
+# Persistent current output paths
+####################
+developmental_out_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/developmental_reference"
+individual_dir <- file.path(developmental_out_dir, "per_stage")
+dir.create(individual_dir, recursive = TRUE, showWarnings = FALSE)
 
 ################################################################
 ################## Early embryogenesis #########################
@@ -527,10 +544,9 @@ marker_ref_all <- list(
 )
 
 # Save the master file
-saveRDS(marker_ref_all, file = "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/enrich_dev.rds")
+saveRDS(marker_ref_all, file = file.path(developmental_out_dir, "enrich_dev.rds"))
 
 # Define the output directory
-individual_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/per_stage/"
 if(!dir.exists(individual_dir)) dir.create(individual_dir, recursive = TRUE)
 
 # Loop through and save each index
@@ -552,7 +568,7 @@ for (i in seq_along(ALL_TERM2GENE)) {
   # 4. Save with the requested naming format: enrich_dev_Suffix.rds
   # Using the index 'i' is still recommended to prevent overwriting if 
   # two list elements share the same suffix (like multiple 'Normal_Development' parts)
-  file_name <- paste0(individual_dir, "enrich_dev_", suffix, ".rds")
+  file_name <- file.path(individual_dir, paste0("enrich_dev_", suffix, ".rds"))
   
   saveRDS(current_ref, file = file_name)
 }

@@ -23,8 +23,8 @@
 #   - outward label placement to avoid overlap with nodes
 #
 # Input:
-#   ref_outs/Auto_topmp_v2_noreg_states_B.rds
-#   ref_outs/Auto_topmp_v2_noreg_group_max.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_group_max.rds
 #   ref_outs/state_distance_pseudotime/Auto_state_distance_matrices.rds
 #
 # Output:
@@ -43,7 +43,7 @@ library(readr)
 library(patchwork)
 library(MASS)
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 ####################
 # Output directories and constants
@@ -52,25 +52,25 @@ task_prefix <- "task6"
 out_dir <- paste0(task_prefix, "_hybrid_pairwise_distance")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-summary_dir <- "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/updates/new_updates/summaries"
+summary_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/updates/new_updates/summaries"
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
 args <- commandArgs(trailingOnly = TRUE)
 
 real_states <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating"
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "Stress adaptive",
+  "SMG to intestinal metaplasia",
+  "Cancer-cell immune mimicry"
 )
 
 group_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive" = "#984EA3",
-  "SMG-like Metaplasia" = "#FF7F00",
-  "Immune Infiltrating" = "#377EB8",
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "Stress adaptive" = "#984EA3",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Cancer-cell immune mimicry" = "#377EB8",
   Unresolved = "grey80",
   Hybrid = "black"
 )
@@ -304,11 +304,11 @@ add_label_positions <- function(layout_df) {
 
 wrap_state_label <- function(state_name, width = 18) {
   label_map <- c(
-    "Classic Proliferative" = "Classic\nProliferative",
-    "Basal to Intestinal Metaplasia" = "Basal to\nIntestinal\nMetaplasia",
-    "Stress-adaptive" = "Stress-adaptive",
-    "SMG-like Metaplasia" = "SMG-like\nMetaplasia",
-    "Immune Infiltrating" = "Immune\nInfiltrating"
+    "Classic proliferation" = "Classic\nProliferation",
+    "Basal to intestinal metaplasia" = "Basal to\nIntestinal\nMetaplasia",
+    "Stress adaptive" = "Stress\nAdaptive",
+    "SMG to intestinal metaplasia" = "SMG to\nIntestinal\nMetaplasia",
+    "Cancer-cell immune mimicry" = "Cancer-cell\nImmune Mimicry"
   )
 
   vapply(state_name, function(x) {
@@ -455,8 +455,8 @@ make_heatmap <- function(distance_mat, method_name, state_order) {
 ####################
 # Load inputs
 ####################
-state_B <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
-group_max <- readRDS("Auto_topmp_v2_noreg_group_max.rds")
+state_B <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
+group_max <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_group_max.rds")
 distance_list <- readRDS(file.path("state_distance_pseudotime", "Auto_state_distance_matrices.rds"))
 
 requested_methods <- if (length(args) >= 1 && nzchar(args[1])) {
@@ -488,7 +488,7 @@ group_max_df <- as.data.frame(group_max, stringsAsFactors = FALSE) %>%
   tibble::rownames_to_column("cell")
 
 if (!all(real_states %in% colnames(group_max_df))) {
-  stop("Expected real-state columns were not found in Auto_topmp_v2_noreg_group_max.rds")
+  stop("Expected current centred-state columns were not found in centred_refined_noreg_group_max.rds")
 }
 
 hybrid_cells <- names(state_B)[state_B == "Hybrid"]

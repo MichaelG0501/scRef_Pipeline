@@ -4,7 +4,13 @@
 #   Script: analysis/non_malignant_nmf/nmf_celltype_geneNMF.R
 #   Methodology: analysis/methodology/non_malignant_nmf/non_malignant_nmf_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Per-cell-type GeneNMF, consensus MP construction, enrichment,
+#     and UCell scoring for macrophage/fibroblast/endothelial/plasma/NK/CD4/CD8 cells.
+#   Inputs: ref_outs/by_samples/<sample>/<sample>_anno.rds; cell type is the required CLI argument.
+#   Outputs: ref_outs/nmf_<celltype>/{geneNMF_outs.rds,MP_outs_default.rds,tmdata_all.rds,GO_outs.rds,UCell_default.rds}.
+#   Cache/replot: full rebuild; outputs are persistent inputs to cross-cell-type analysis.
+#   Run: qsub analysis/non_malignant_nmf/submit_geneNMF_all.sh
+#   Conda env: gnmf
 ####################
 
 library(GeneNMF)

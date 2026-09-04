@@ -2,6 +2,16 @@
 
 Generated: 2026-04-17 BST
 
+## Current-centred provenance correction (31 July 2026)
+
+The historical input descriptions below are retained to document the workflow's development, but they are superseded for all active runs as follows:
+
+- Cancer MP scores and gene sets are the live centred-refined objects under `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/`; the historical nMP19 paths are not active cancer inputs.
+- Cancer state assignments are `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds`, restricted to the five current archetypal states. Hybrid and Unresolved cells remain in the malignant denominator but are not treated as archetype nodes.
+- State LR target sets are ranked from the sample-blocked edgeR table `ref_outs/Metaprogrammes_Results/centred/state_markers/tables/centred_refined_state_markers_all.csv`. Eligible genes have positive log fold-change, BH FDR below 0.05 and expression at CPM >=1 in at least half of paired target-state samples; up to 100 are retained per state.
+- Cache version `2026-07-31_v14_centred_state_markers` invalidates state/LR caches built from `Auto_five_state_markers`. The legacy tables remain fallback inputs only for historical reproduction and must not be used for a manuscript run.
+- The canonical PBS wrapper is `analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh`; analytical outputs, caches, source tables and summaries remain in live storage.
+
 ## 1. Goal and Scope
 
 This workflow quantifies sample-level co-occurrence between cancer programs or finalized cancer states and non-malignant metaprograms (MPs), then annotates significant positive associations with curated ligand-receptor (LR) support.
@@ -33,10 +43,10 @@ Each mode writes to its own subfolder under `ref_outs/non_malignant_mp_correlati
   - Full scRNA-seq atlas containing all cell types and `celltype_update`.
 - `ref_outs/meta_full_epi.rds`
   - Epithelial metadata used to define malignant epithelial cells.
-- `ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds`
-  - Cancer MP definitions.
-- `ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds`
-  - Cancer MP UCell scores.
+- `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds`
+  - Final 17 centred-refined cancer MP gene sets; excluded candidates are absent.
+- `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds`
+  - Per-cell UCell scores for the final centred-refined MP panel.
 - `ref_outs/nmf_macrophage/MP_outs_default.rds`
 - `ref_outs/nmf_macrophage/UCell_default.rds`
 - `ref_outs/nmf_fibroblast/MP_outs_default.rds`
@@ -51,10 +61,10 @@ Each mode writes to its own subfolder under `ref_outs/non_malignant_mp_correlati
 - `ref_outs/nmf_cd4/UCell_default.rds`
 - `ref_outs/nmf_cd8/MP_outs_default.rds`
 - `ref_outs/nmf_cd8/UCell_default.rds`
-- `ref_outs/Auto_final_states.rds`
-  - Finalized per-cell cancer-state labels.
-- `ref_outs/Auto_six_state_markers/Auto_six_state_markers_ranked.csv`
-  - Ranked recurrent state-marker table used to define cancer-state gene sets for LR matching.
+- `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds`
+  - Current five-state centred-refined noreg assignments, with Hybrid and Unresolved retained as technical labels.
+- `ref_outs/Metaprogrammes_Results/centred/state_markers/tables/centred_refined_state_markers_all.csv`
+  - Sample-blocked edgeR state-marker table used to define cancer-state gene sets for LR matching.
 - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx`
   - Ligand-receptor reference catalog, using sheet `All.Pairs`.
 
@@ -124,7 +134,7 @@ For the cancer MP modes, cancer cells are scored using the silhouette-filtered e
 
 ### 5.2 Cancer state modes
 
-For the cancer state modes, cancer cells are represented by finalized labels from `Auto_final_states.rds`.
+For the cancer state modes, cancer cells are represented by the current centred-refined noreg state vector.
 
 The retained final states are:
 
@@ -183,7 +193,7 @@ The script loads the full merged atlas once and extracts:
 For state modes it also loads:
 
 - finalized per-cell state labels
-- the ranked six-state marker table
+- the ranked five-state centred marker table
 - a state-specific gene set per finalized state, taking the top ranked recurrent markers after state-aware filtering
 
 ### 7.3 Load MP definitions and apply the silhouette filter

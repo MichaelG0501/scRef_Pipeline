@@ -26,7 +26,7 @@ suppressPackageStartupMessages({
   library(UCell)
 })
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 args <- commandArgs(trailingOnly = TRUE)
 ncores <- if (length(args) >= 1 && nzchar(args[1])) as.integer(args[1]) else 8L

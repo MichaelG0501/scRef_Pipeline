@@ -2,22 +2,25 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/cell_states/top_diverse_sample_state_umap.R
-#   Methodology: analysis/methodology/cell_states/state_workflows_methodology.md
+#   Methodology: not required (sample ranking and per-sample UMAP plotting)
 #   Map: analysis/ANALYSIS_MAP.md
 #   Inputs/outputs: documented in this header below and in the analysis map.
 ####################
 
 ####################
 # Auto_top_sample_umap_all_states.R
-# Plot UMAP for the top-1 most diverse sample, including Unresolved and Hybrid states.
-# Based on diversity metric from Auto_pseudotime_states.R.
+# Plot a freshly fitted UMAP for the most state-diverse sample, including
+# Unresolved and Hybrid cells. Diversity is the geometric mean of the five
+# current centred-state counts plus one.
 #
 # Input:
 #   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_topmp_v2_noreg_states_B.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
 #
 # Output:
-#   ref_outs/Auto_top1_sample_umap_all_states.pdf
+#   ref_outs/top_diverse_sample_state_umap/figures/Auto_top1_sample_umap_all_states.pdf
+#   ref_outs/top_diverse_sample_state_umap/tables/Auto_top1_sample_summary.csv
+#   updates/new_updates/summaries/top_diverse_sample_state_umap_summary.csv
 ####################
 
 library(Seurat)
@@ -26,12 +29,18 @@ library(dplyr)
 library(tidyr)
 library(patchwork)
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
+
+out_dir <- "top_diverse_sample_state_umap"
+dir.create(file.path(out_dir, "figures"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(out_dir, "tables"), recursive = TRUE, showWarnings = FALSE)
+summary_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/updates/new_updates/summaries"
+dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Load data
 message("Loading data ...")
 tmdata_all <- readRDS("EAC_Ref_epi.rds")
-state_B <- readRDS("Auto_topmp_v2_noreg_states_B.rds")
+state_B <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
 
 # Align cells
 common_cells <- intersect(names(state_B), Cells(tmdata_all))
@@ -41,20 +50,20 @@ tmdata_all$state_B <- state_B[common_cells]
 
 # Diversity metric constants
 target_states <- c(
-  "Classic Proliferative",
-  "Basal to Intestinal Metaplasia",
-  "Stress-adaptive",
-  "SMG-like Metaplasia",
-  "Immune Infiltrating"
+  "Classic proliferation",
+  "Basal to intestinal metaplasia",
+  "Stress adaptive",
+  "SMG to intestinal metaplasia",
+  "Cancer-cell immune mimicry"
 )
 
 # Colors provided by USER
 group_cols <- c(
-  "Classic Proliferative" = "#E41A1C",
-  "Basal to Intestinal Metaplasia" = "#4DAF4A",
-  "Stress-adaptive"       = "#984EA3",
-  "SMG-like Metaplasia"   = "#FF7F00",
-  "Immune Infiltrating"   = "#377EB8",
+  "Classic proliferation" = "#E41A1C",
+  "Basal to intestinal metaplasia" = "#4DAF4A",
+  "Stress adaptive" = "#984EA3",
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Cancer-cell immune mimicry" = "#377EB8",
   "Unresolved"            = "grey80",
   "Hybrid"                = "black"
 )
@@ -87,9 +96,10 @@ rank_df <- counts_long %>%
   arrange(desc(geo_mean_score)) %>%
   mutate(rank = row_number())
 
-top1_sample <- rank_df$orig.ident[3]
+if (nrow(rank_df) == 0) stop("No sample has more than 20 current primary-state cells.")
+top1_sample <- rank_df$orig.ident[1]
 message(sprintf("Top 1 sample identified: %s (Diversity Rank 1, n_defined = %d, total_n = %d)", 
-                top1_sample, rank_df$target_n[3], rank_df$total_n[3]))
+                top1_sample, rank_df$target_n[1], rank_df$total_n[1]))
 
 # Subset to top 1 sample
 sub_obj <- tmdata_all[, tmdata_all$orig.ident == top1_sample]
@@ -139,8 +149,15 @@ p <- ggplot(plot_data, aes(x = UMAP_1, y = UMAP_2, fill = state_label)) +
   )
 
 # Save output
-pdf("Auto_top1_sample_umap_all_states.pdf", width = 8, height = 6)
+pdf(file.path(out_dir, "figures", "Auto_top1_sample_umap_all_states.pdf"), width = 10, height = 8)
 print(p)
 dev.off()
 
-message(sprintf("Finished. Plot saved to ref_outs/Auto_top1_sample_umap_all_states.pdf"))
+####################
+# Persist the ranking and a compact login-node-readable result summary.
+####################
+write.csv(rank_df, file.path(out_dir, "tables", "Auto_top1_sample_summary.csv"), row.names = FALSE)
+summary_row <- rank_df[1, c("orig.ident", "target_n", "geo_mean_score", "total_n", "rank"), drop = FALSE]
+summary_row$output_pdf <- file.path(out_dir, "figures", "Auto_top1_sample_umap_all_states.pdf")
+write.csv(summary_row, file.path(summary_dir, "top_diverse_sample_state_umap_summary.csv"), row.names = FALSE)
+message("Finished. Outputs saved under ref_outs/", out_dir)

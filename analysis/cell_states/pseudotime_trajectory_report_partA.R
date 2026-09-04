@@ -4,7 +4,19 @@
 #   Script: analysis/cell_states/pseudotime_trajectory_report_partA.R
 #   Methodology: analysis/methodology/cell_states/state_workflows_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Rebuild per-sample Monocle3 principal graphs from current Part A
+#     pseudotime cells and create a four-panel trajectory report plus replot assets.
+#   Inputs:
+#     - ref_outs/EAC_Ref_epi.rds
+#     - ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#     - ref_outs/task1_pseudotime_updated_naming/partA/*_pseudotime*.rds
+#   Outputs:
+#     - ref_outs/Auto_pseudotime_trajectory_summary_reports_partA.pdf
+#     - ref_outs/pseudotime_trajectory_assets/<sample>_{cds.rds,projections.csv}
+#   Cache/replot: Part A vectors define included cells; persistent CDS/projection
+#     assets allow later inspection without rebuilding the producing workflow.
+#   Run: qsub analysis/cell_states/Auto_submit_pseudotime_trajectory_report_partA.sh
+#   Conda env: dmtcp
 ####################
 
 ####################
@@ -31,6 +43,8 @@
 #   ref_outs/Auto_pseudotime_trajectory_summary_reports_partA.pdf
 #   ref_outs/pseudotime_trajectory_assets/<sample>_cds.rds
 #   ref_outs/pseudotime_trajectory_assets/<sample>_projections.csv
+# Run: qsub analysis/cell_states/Auto_submit_pseudotime_trajectory_report_partA.sh
+# Conda env: dmtcp
 ####################
 
 suppressPackageStartupMessages({
@@ -77,7 +91,7 @@ target_states <- names(group_cols)
 root_state <- "Basal to intestinal metaplasia"
 
 partA_dir <- file.path(live_dir, "task1_pseudotime_updated_naming/partA")
-asset_dir <- file.path(ephemeral_dir, "pseudotime_trajectory_assets")
+asset_dir <- file.path(live_dir, "pseudotime_trajectory_assets")
 dir.create(asset_dir, recursive = TRUE, showWarnings = FALSE)
 
 pdf_path <- file.path(live_dir, "Auto_pseudotime_trajectory_summary_reports_partA.pdf")

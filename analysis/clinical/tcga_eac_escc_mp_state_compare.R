@@ -4,7 +4,10 @@
 #   Script: analysis/clinical/tcga_eac_escc_mp_state_compare.R
 #   Methodology: analysis/methodology/clinical/clinical_bulk_and_association_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: Scores the final 17 centred refined MPs and five state gene
+#     sets in reconstructed TCGA-ESCA bulk expression and compares EAC vs ESCC.
+#   Inputs: centred merged refined MP genes and reconstructed TCGA ESCA TPM/metadata.
+#   Outputs: ref_outs/task8_tcga_eac_escc_compare/ figures/tables and compact summary.
 ####################
 
 library(data.table)
@@ -15,7 +18,7 @@ library(ggrepel)
 library(GSVA)
 library(patchwork)
 
-setwd("/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 task_prefix <- "task8"
 out_dir <- paste0(task_prefix, "_tcga_eac_escc_compare")
@@ -48,64 +51,21 @@ run_gsva <- function(expr_mat, gene_sets) {
   gsva(expr_mat, gs, method = "gsva", kcdf = "Gaussian")
 }
 
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
+mp.genes <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds")
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress-adaptive"       = c("MP13", "MP12"),
-  "SMG-like Metaplasia"   = c("MP18", "MP16"),
-  "Immune Infiltrating"   = c("MP15")
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
-mp_descriptions <- c(
-  "MP1"  = "G2M Cell Cycle",
-  "MP9"  = "G1S Cell Cycle",
-  "MP2"  = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5"  = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8"  = "Intestinal Diff.",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP7"  = "DNA Damage Repair",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi"
-)
+grouping_current <- read.csv("Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv", check.names = FALSE)
+mp_descriptions <- setNames(grouping_current$description, grouping_current$mp)
 
-clean_3ca_name <- function(x) {
-  x <- gsub("^X3CA_", "3CA_", x)
-  x <- gsub("\\.", " ", x)
-  x
-}
-
-# Load retained 3CA MPs
-coverage_path <- "task4_unresolved_states/Auto_task4_unresolved_relabel_mp_coverage.csv"
-if (!file.exists(coverage_path)) coverage_path <- "unresolved_states/Auto_unresolved_relabel_mp_coverage.csv"
-
-retained_3ca <- character(0)
-if (file.exists(coverage_path)) {
-  cov_df <- read.csv(coverage_path)
-  retained_3ca <- cov_df %>%
-    filter(n_samples >= 50, n_studies >= 6, pct_cells >= 1) %>%
-    pull(mp_label)
-}
-
-# 3CA Gene sets
-nmf3ca_path <- "/rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/New_NMFs.csv"
-MP_df <- read.csv(nmf3ca_path, check.names = FALSE)
-MP_list <- as.list(MP_df)
-MP_list <- lapply(MP_list, function(x) x[x != "" & !is.na(x)])
-names(MP_list) <- make.names(sub("^MP", "3CA_mp_", names(MP_list)))
-pan_sets <- MP_list[retained_3ca]
-
-# Combine all sets for GSVA
-all_gsva_sets <- c(mp.genes, pan_sets)
+# Final centred panel only; historical 3CA relabel features are excluded.
+all_gsva_sets <- mp.genes
 
 ####################
 # Load updated TCGA reconstruction and prepare GSVA matrix
@@ -180,9 +140,8 @@ if (nrow(plot_df) == 0) {
 }
 ####################
 
-# State scores as max MP-in-group expression (with finalized 3CA-merge: Respiration -> Classic Prolif)
+# State scores are the maximum GSVA score among each current state's MPs.
 local_state_groups <- state_groups
-local_state_groups[["Classic Proliferative"]] <- c(local_state_groups[["Classic Proliferative"]], "3CA_mp_30 Respiration 1")
 
 for (nm in names(local_state_groups)) {
   mps <- intersect(local_state_groups[[nm]], colnames(plot_df))
@@ -190,48 +149,21 @@ for (nm in names(local_state_groups)) {
   plot_df[[nm]] <- apply(as.matrix(plot_df[, mps, drop = FALSE]), 1, max)
 }
 
-# New states: just the 3CA scores (with finalized 3CA-merge: Protein Maturation + EMT)
-retained_3ca_clean <- clean_3ca_name(retained_3ca)
-kept_3ca_names <- setdiff(retained_3ca_clean, c("3CA_mp_30 Respiration 1", "3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III"))
-
-# 1. As-is states
-for (orig in retained_3ca) {
-  cln <- clean_3ca_name(orig)
-  if (cln %in% kept_3ca_names && orig %in% colnames(plot_df)) {
-    plot_df[[cln]] <- plot_df[[orig]]
-  }
-}
-
-# 2. Merged 3CA: EMT + Protein Maturation
-emt_prot_sources <- intersect(c("3CA_mp_12 Protein maturation", "3CA_mp_17 EMT III"), retained_3ca_clean)
-if (length(emt_prot_sources) > 0) {
-  orig_map <- setNames(retained_3ca_clean, retained_3ca)
-  orig_sources <- names(orig_map)[orig_map %in% emt_prot_sources]
-  mps_sources <- intersect(orig_sources, colnames(plot_df))
-  if (length(mps_sources) > 0) {
-    plot_df[["3CA_EMT_and_Protein_maturation"]] <- apply(as.matrix(plot_df[, mps_sources, drop = FALSE]), 1, max)
-  }
-}
-
-final_new_state_names <- unique(c(kept_3ca_names, intersect("3CA_EMT_and_Protein_maturation", colnames(plot_df))))
-
 mp_features <- intersect(names(all_gsva_sets), colnames(plot_df))
-state_features <- intersect(c(names(local_state_groups), final_new_state_names), colnames(plot_df))
+state_features <- intersect(names(local_state_groups), colnames(plot_df))
 all_features <- c(mp_features, state_features)
 
 # Define proper ordering
-state_level_order <- c(names(local_state_groups), final_new_state_names)
+state_level_order <- names(local_state_groups)
 state_levels <- intersect(state_level_order, colnames(plot_df))
 
-mp_ideal_order <- c(unlist(state_groups), setdiff(names(mp.genes), unlist(state_groups)), retained_3ca)
+mp_ideal_order <- c(unlist(state_groups), setdiff(names(mp.genes), unlist(state_groups)))
 mp_levels_raw <- intersect(mp_ideal_order, colnames(plot_df))
 
 # Map labels for MPs: Description
 label_mp <- function(id) {
   if (id %in% names(mp_descriptions)) {
     paste0(id, ": ", mp_descriptions[id])
-  } else if (grepl("3CA_mp", id)) {
-    clean_3ca_name(id)
   } else {
     id
   }
@@ -498,7 +430,7 @@ write.csv(region_summary, file.path(out_dir, paste0("Auto_", task_prefix, "_feat
 # presence_summary removed
 
 summary_dir <- file.path(
-  "/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
+  "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
   "updates", "new_updates", "summaries"
 )
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)

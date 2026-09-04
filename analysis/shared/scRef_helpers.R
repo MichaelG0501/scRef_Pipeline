@@ -2,7 +2,7 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/shared/scRef_helpers.R
-#   Methodology: analysis/methodology/README.md
+#   Methodology: not required (utility functions only)
 #   Map: analysis/ANALYSIS_MAP.md
 #   Inputs/outputs: documented in this header below and in the analysis map.
 ####################
@@ -17,9 +17,6 @@
 #   rebuilds, run summaries, MP filtering, state ordering, and PPT-readable
 #   plotting defaults.
 #
-# Methodology:
-#   analysis/methodology/README.md
-#
 # Input:
 #   Optional source: analysis/shared/scRef_config.R
 #
@@ -28,7 +25,7 @@
 ####################
 
 if (!exists("SCREF_PROJECT_DIR")) {
-  source("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/analysis/shared/scRef_config.R")
+  source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
 }
 
 `%||%` <- function(x, y) {

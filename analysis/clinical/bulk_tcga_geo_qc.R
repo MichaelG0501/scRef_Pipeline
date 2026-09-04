@@ -38,7 +38,7 @@ library(dplyr)
 library(ggplot2)
 library(gridExtra)
 
-setwd("/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs")
+setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 
 out_dir <- "bulk_crossplatform"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)

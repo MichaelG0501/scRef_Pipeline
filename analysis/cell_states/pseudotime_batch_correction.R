@@ -9,23 +9,27 @@
 
 ####################
 # Auto_pseudotime_batch_correction.R
-# Monocle3 pseudotime analysis for the noreg Approach B cell states,
+# Monocle3 pseudotime analysis for the current centred refined noreg states,
 # incorporating scVI and Harmony batch correction across ALL cells.
 # Highly optimized for strict correct integration embedding carryover.
 #
 # Part A: Pseudotime using the 5 defined states (all cells)
-#   - Root = Basal to Intestinal Metaplasia state cells
+#   - Root = Basal to intestinal metaplasia state cells
 #
-# Part B: Pseudotime within 3 state subsets (all cells in subset)
-#   - Basal to Intestinal Metaplasia
-#   - SMG-like Metaplasia
-#   - Stress-adaptive
+# Part B: Pseudotime within centred Basal, SMG, and combined Basal/SMG subsets
+#   - Basal to intestinal metaplasia
+#   - SMG to intestinal metaplasia
 #   - Basal and SMG Metaplasia
 #
 # Input:
 #   ref_outs/EAC_Ref_epi.rds
-#   ref_outs/Auto_topmp_v2_noreg_states_B.rds
-#   ref_outs/Auto_topmp_v2_noreg_mp_adj.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_mp_adj.rds
+# Output:
+#   ref_outs/pseudotime_batch_correction_states/<method>/{partA,partB}/
+#   including live integrated Seurat/CDS intermediates and terminal PDFs
+# Run: qsub analysis/cell_states/Auto_submit_pseudotime_batch_correction.sh
+# Conda env: dmtcp
 ####################
 
 library(Seurat)
@@ -52,62 +56,62 @@ out_root_live <- file.path(live_dir, "pseudotime_batch_correction_states")
 out_root_ephemeral <- file.path(ephemeral_dir, "pseudotime_batch_correction_states")
 
 state_groups <- list(
-  "Classic proliferation" = c("MP2"),
-  "Basal to intestinal metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "Stress adaptive"       = c("MP13", "MP12"),
-  "SMG to intestinal metaplasia"   = c("MP18", "MP16"),
-  "Cancer-cell immune mimicry"   = c("MP15")
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
 group_cols <- c(
   "Classic proliferation" = "#E41A1C",
   "Basal to intestinal metaplasia" = "#4DAF4A",
-  "Stress adaptive"       = "#984EA3",
-  "SMG to intestinal metaplasia"   = "#FF7F00",
-  "Cancer-cell immune mimicry"   = "#377EB8"
+  "SMG to intestinal metaplasia" = "#FF7F00",
+  "Stress adaptive" = "#984EA3",
+  "Cancer-cell immune mimicry" = "#377EB8"
 )
 
 mp_descriptions <- c(
-  "MP1"  = "G2M Cell Cycle",
-  "MP9"  = "G1S Cell Cycle",
-  "MP2"  = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition",
-  "MP14" = "Hypoxia Adapted Epi.",
-  "MP5"  = "Epithelial IFN Resp.",
-  "MP10" = "Columnar Diff.",
-  "MP8"  = "Intestinal Diff.",
-  "MP13" = "Hypoxic Inflam. Epi.",
-  "MP7"  = "DNA Damage Repair",
-  "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)",
-  "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi"
+  "MP1"    = "G2/M cell cycle",
+  "MP5"    = "G1/S cell cycle",
+  "MP13+"  = "replication-stress-associated cell cycling",
+  "MP2+"   = "MYC driven biosynthesis",
+  "MP14"   = "Squamoid/basal transition",
+  "MP3+"   = "Basal-columnar invasive epithelium",
+  "MP6+"   = "Stress-reactive columnar epithelium",
+  "MP11+"  = "Epithelial antiviral interferon response",
+  "MP9+"   = "Metabolic columnar epithelium",
+  "MP10+"  = "Intestinal metaplasia",
+  "MP8+"   = "Glandular intestinal metaplasia",
+  "MP8b"   = "Metabolic intestinal metaplasia",
+  "MP16"   = "Mucous-secretory glandular epithelium",
+  "MP18b"  = "Mucous-secretory differentiation",
+  "MP17"   = "Immune-interactive glandular progenitor",
+  "MP12"   = "Hypoxic inflammatory adaptive plasticity",
+  "MP15"   = "T/NK-like cancer-cell immune mimicry"
 )
 
+# Part B: per-MP pseudotime within state subsets.
+# Stress adaptive has only 1 MP (MP12), so per-MP pseudotime is not meaningful.
 state_subsets <- list(
   "Basal to intestinal metaplasia" = list(
-    mps = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-    root_mp = "MP17"
+    mps = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+    root_mp = "MP14"
   ),
   "SMG to intestinal metaplasia" = list(
-    mps = c("MP18", "MP16"),
-    root_mp = "MP18"
-  ),
-  "Stress adaptive" = list(
-    mps = c("MP13", "MP12"),
-    root_mp = "MP13"
+    mps = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+    root_mp = "MP8+"
   ),
   "Basal and SMG Metaplasia" = list(
-    mps = c("MP17", "MP14", "MP5", "MP10", "MP8", "MP18", "MP16"),
-    root_mp = "MP17",
+    mps = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+", "MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+    root_mp = "MP14",
     source_states = c("Basal to intestinal metaplasia", "SMG to intestinal metaplasia")
   )
 )
 
 state_dir_map <- c(
   "Basal to intestinal metaplasia" = "Basal_to_Intestinal_Metaplasia",
-  "SMG to intestinal metaplasia" = "SMG_like_Metaplasia",
-  "Stress adaptive" = "Stress_adaptive",
+  "SMG to intestinal metaplasia" = "SMG_to_Intestinal_Metaplasia",
   "Basal and SMG Metaplasia" = "Basal_and_SMG_Metaplasia"
 )
 
@@ -316,7 +320,7 @@ for (batch_method in batch_methods) {
       legend_labels = state_legend_labels,
       legend_title = "State",
       n_cells = length(partA_cells),
-      out_dir_cds = file.path(out_root_method_ephemeral, "partA"),
+      out_dir_cds = file.path(out_root_method_live, "partA"),
       out_dir_diag = file.path(out_root_method_live, "diagnostics"),
       save_prefix = paste0("partA_", batch_method)
     )
@@ -331,7 +335,7 @@ for (batch_method in batch_methods) {
     dev.off()
     
     # Save RDS output
-    saveRDS(result_A$cds, file.path(out_root_method_ephemeral, "partA", sprintf("Auto_partA_%s_cds.rds", batch_method)))
+    saveRDS(result_A$cds, file.path(out_root_method_live, "partA", sprintf("Auto_partA_%s_cds.rds", batch_method)))
   }
   
   # --- PART B ---
@@ -392,7 +396,7 @@ for (batch_method in batch_methods) {
         legend_labels = mp_legend_labels,
         legend_title = "MP",
         n_cells = length(state_cells),
-        out_dir_cds = out_dir_B_ephemeral,
+        out_dir_cds = out_dir_B_live,
         out_dir_diag = file.path(out_root_method_live, "diagnostics"),
         save_prefix = paste0("partB_", state_dir_map[[state_name]], "_", batch_method)
       )
@@ -406,7 +410,7 @@ for (batch_method in batch_methods) {
       print(result_B$plots$group + result_B$plots$pseudotime)
       dev.off()
       
-      saveRDS(result_B$cds, file.path(out_dir_B_ephemeral, sprintf("Auto_partB_%s_%s_cds.rds", state_dir_map[[state_name]], batch_method)))
+      saveRDS(result_B$cds, file.path(out_dir_B_live, sprintf("Auto_partB_%s_%s_cds.rds", state_dir_map[[state_name]], batch_method)))
     }
   }
 }

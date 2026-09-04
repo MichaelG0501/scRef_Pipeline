@@ -4,7 +4,16 @@
 #   Script: analysis/non_malignant_nmf/nmf_celltype_annotation.R
 #   Methodology: analysis/methodology/non_malignant_nmf/non_malignant_nmf_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below and in the analysis map.
+#   Description: GO/Hallmark/3CA annotation and terminal enrichment plots for a
+#     selected non-malignant cell-type GeneNMF result.
+#   Inputs:
+#     - ref_outs/nmf_<celltype>/MP_outs_default.rds
+#     - /rds/general/project/tumourheterogeneity1/live/ITH_sc/PDOs/Count_Matrix/Immune_NMFs.xlsx (not used for NK)
+#     - MSigDB Hallmark and org.Hs.eg.db package resources
+#   Outputs: ref_outs/nmf_<celltype>/cluster_enrich_<celltype>.rds and enrich_combined_<celltype>.pdf.
+#   Cache/replot: deterministic enrichment rebuild from the persistent MP object.
+#   Run: qsub analysis/non_malignant_nmf/submit_annotation_all.sh
+#   Conda env: dmtcp
 ####################
 
 library(clusterProfiler)

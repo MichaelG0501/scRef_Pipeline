@@ -10,7 +10,9 @@
 #   requested non-cell-cycle centred refined MP groups. This is a noreg-only
 #   Approach B analogue: MP scores are sample-centred and study-scaled directly,
 #   with no cell-cycle regression branch and no cell-cycle MPs in the state
-#   definition. Cell-cycle MPs are kept only as plotted heatmap rows.
+#   definition. The final input panel has 17 MPs: three cell-cycle rows and 14
+#   state-defining rows. MP2x and MP11c fail the >=3-sample coverage threshold,
+#   and MP18a is an explicit documented exclusion upstream in step 04.
 #
 # Inputs:
 #   - ref_outs/EAC_Ref_epi.rds
@@ -54,13 +56,16 @@ suppressPackageStartupMessages({
   library(grid)
 })
 
-project_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
+project_dir_ephemeral <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
 ref_dir <- file.path(project_dir, "ref_outs")
 setwd(ref_dir)
 
 outdir <- file.path("Metaprogrammes_Results", "centred", "state_definition")
+outdir_ephemeral <- file.path(project_dir_ephemeral, "ref_outs", outdir)
 for (subdir in c("intermediate", "tables", "figures", "logs")) {
   dir.create(file.path(outdir, subdir), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(outdir_ephemeral, subdir), recursive = TRUE, showWarnings = FALSE)
 }
 summary_dir <- file.path(project_dir, "updates", "new_updates", "summaries")
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
@@ -84,6 +89,8 @@ tmdata_all <- readRDS(epi_file)
 ucell_scores <- readRDS(ucell_file)
 meta_full_epi <- if (file.exists(meta_file)) readRDS(meta_file) else NULL
 
+
+
 ####################
 # Requested centred refined MP grouping. Cell-cycle and excluded MPs remain
 # visible in heatmap rows, but only non-CC state_groups define state labels.
@@ -91,41 +98,37 @@ meta_full_epi <- if (file.exists(meta_file)) readRDS(meta_file) else NULL
 cc_mps <- c("MP1", "MP5", "MP13+")
 state_groups <- list(
   "Classic proliferation" = c("MP2+"),
-  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP2x"),
-  "Stress adaptive" = c("MP12"),
+  "Squamous-to-intestinal" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "Glandular-to-intestinal" = c("MP18b", "MP16", "MP17", "MP8b", "MP8+"),
+  "Stress-adaptive" = c("MP12"),
   "Cancer-cell immune mimicry" = c("MP15")
 )
-excluded_mps <- c("MP11c", "MP18a")
 
 mp_desc_map <- c(
   "MP1" = "G2/M cell cycle",
   "MP5" = "G1/S cell cycle",
-  "MP13+" = "replication-stress-associated cell cycling",
+  "MP13+" = "Single-nucleus cell cycle",
   "MP2+" = "MYC driven biosynthesis",
   "MP14" = "Squamoid/basal transition",
   "MP3+" = "Basal-columnar invasive epithelium",
-  "MP6+" = "Stress-reactive columnar epithelium",
-  "MP11+" = "Epithelial antiviral interferon response",
+  "MP6+" = "Inflammatory-reactive columnar epithelium",
+  "MP11+" = "Epithelial type I interferon response",
   "MP9+" = "Metabolic columnar epithelium",
   "MP10+" = "Intestinal metaplasia",
-  "MP8+" = "Glandular intestinal metaplasia",
-  "MP8b" = "Metabolic intestinal metaplasia",
-  "MP16" = "Mucous-secretory glandular epithelium",
   "MP18b" = "Mucous-secretory differentiation",
-  "MP17" = "Immune-interactive glandular progenitor",
-  "MP2x" = "Wnt-active glandular stem/progenitor",
-  "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry",
-  "MP11c" = "Excluded",
-  "MP18a" = "Excluded"
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP17" = "MHC-II glandular progenitor",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP12" = "Hypoxic-inflammatory adaptive plasticity",
+  "MP15" = "Cancer-cell immune mimicry"
 )
 
 state_cols <- c(
   "Classic proliferation" = "#E41A1C",
-  "Basal to intestinal metaplasia" = "#4DAF4A",
-  "SMG to intestinal metaplasia" = "#FF7F00",
-  "Stress adaptive" = "#984EA3",
+  "Squamous-to-intestinal" = "#4DAF4A",
+  "Glandular-to-intestinal" = "#FF7F00",
+  "Stress-adaptive" = "#984EA3",
   "Cancer-cell immune mimicry" = "#377EB8",
   "Unresolved" = "grey80",
   "Hybrid" = "black"
@@ -134,12 +137,11 @@ state_cols <- c(
 mp_group_cols <- c(
   "Cell cycle" = "#6B7280",
   state_cols[names(state_groups)],
-  "Excluded" = "grey80",
   "Other" = "grey70"
 )
 
 state_level_order <- c(names(state_groups), "Unresolved", "Hybrid")
-plot_mp_order <- c(cc_mps, unlist(state_groups, use.names = FALSE), excluded_mps)
+plot_mp_order <- c(cc_mps, unlist(state_groups, use.names = FALSE))
 ####################
 
 missing_mps <- setdiff(plot_mp_order, colnames(ucell_scores))
@@ -425,12 +427,11 @@ make_state_heatmap <- function(state_vec, mp_adj_all) {
   for (grp in names(state_groups)) {
     mp_to_group[intersect(state_groups[[grp]], names(mp_to_group))] <- grp
   }
-  mp_to_group[intersect(excluded_mps, names(mp_to_group))] <- "Excluded"
   mp_group_label <- mp_to_group
   names(mp_group_label) <- rownames(sub_scores)
 
   row_ann <- rowAnnotation(
-    MP_group = factor(mp_group_label, levels = c("Cell cycle", names(state_groups), "Excluded", "Other")),
+    MP_group = factor(mp_group_label, levels = c("Cell cycle", names(state_groups), "Other")),
     col = list(MP_group = mp_group_cols),
     show_annotation_name = FALSE,
     annotation_legend_param = list(
@@ -466,7 +467,8 @@ make_state_heatmap <- function(state_vec, mp_adj_all) {
       full_ord
     })(),
     column_gap = unit(1.5, "mm"),
-    row_split = factor(mp_group_label, levels = c("Cell cycle", names(state_groups), "Excluded", "Other")),
+    cluster_row_slices = FALSE,
+    row_split = factor(mp_group_label, levels = c("Cell cycle", names(state_groups), "Other")),
     row_title = NULL,
     row_gap = unit(1.8, "mm"),
     cluster_rows = FALSE,

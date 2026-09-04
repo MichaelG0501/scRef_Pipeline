@@ -1,4 +1,12 @@
 #!/bin/bash
+####################
+# Analysis registry:
+#   Status: active
+#   Script: analysis/trajectory/scatlas_velocity_filter_sort.sh
+#   Methodology: not required (PBS/submit wrapper; method is documented by the invoked analysis script)
+#   Map: analysis/ANALYSIS_MAP.md
+#   Description: Execution wrapper; resources, dependencies, and arguments are defined below.
+####################
 #PBS -l select=1:ncpus=8:mem=96gb
 #PBS -l walltime=24:00:00
 #PBS -N scAtlas_VelSort
@@ -22,9 +30,10 @@ if [[ -z "$sample" ]]; then
   exit 1
 fi
 
-WD="/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
-OUT="${WD}/ref_outs/Auto_velocity_scATLAS"
-manifest="${OUT}/tables/Auto_scatlas_velocity_sample_manifest.csv"
+WD="/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
+OUT="/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_velocity_scATLAS"
+OUT_LIVE="/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/Auto_velocity_scATLAS"
+manifest="${OUT_LIVE}/tables/Auto_scatlas_velocity_sample_manifest.csv"
 line=$(awk -F, -v s="$sample" 'NR > 1 && $1 == s {print; exit}' "$manifest")
 if [[ -z "$line" ]]; then
   echo "ERROR: sample not found in manifest: $sample"

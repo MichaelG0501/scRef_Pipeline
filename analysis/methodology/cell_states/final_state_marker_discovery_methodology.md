@@ -1,6 +1,6 @@
-# Auto Six-State Marker Methodology
+# Auto Five-State Marker Methodology
 
-Generated: 2026-05-26 15:42:41 BST
+Generated: 2026-08-20 21:22:56 BST
 
 ## 1. Goal and Scope
 
@@ -8,26 +8,25 @@ The workflow aims to identify the top 5 most robust and specific markers for eac
 
 **Core Inputs:**
 - `ref_outs/EAC_Ref_epi.rds`: The main epithelial Seurat object (75,348 cells).
-- `ref_outs/Auto_final_states.rds`: Finalized six-state labels, with `Unresolved` and `Hybrid` excluded.
+- `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds`: Canonical centred-refined noreg state labels; `Unresolved` and `Hybrid` are excluded from marker discovery.
 
 **Finalized States Retained:**
-- `Classic Proliferative`
-- `Basal to Intestinal Metaplasia`
+- `Classic proliferation`
+- `Squamous-to-intestinal`
+- `Glandular-to-intestinal`
 - `Stress-adaptive`
-- `SMG-like Metaplasia`
-- `Immune Infiltrating`
-- `3CA_EMT_and_Protein_maturation`
+- `Cancer-cell immune mimicry`
 
 ---
 
-## 2. Six-State Subset and Re-embedding
+## 2. Five-State Subset and Re-embedding
 
 To ensure marker analysis is focused on the finalized transcriptional landscape, a clean subset and re-embedding are performed.
 
 ### 2.1 Cell and Feature Selection
 1. The global epithelial count matrix is subset to cells present in both inputs.
 2. Cells with `Unresolved` or `Hybrid` labels are removed.
-3. Genes detected in fewer than **20 cells** within this six-state subset are discarded.
+3. Genes detected in fewer than **20 cells** within this five-state subset are discarded.
 
 ### 2.2 Re-embedding Pipeline
 The subsetted object is processed through a standard Seurat pipeline:
@@ -60,12 +59,12 @@ The core of the reproducibility analysis is running DGE within individual sample
 ### 4.1 Sample Eligibility
 A sample is considered "eligible" to test a specific state only if:
 - The sample contains **at least 20 cells** belonging to the target state.
-- The sample contains **at least 20 cells** belonging to the other five states combined (the "Rest").
+- The sample contains **at least 20 cells** belonging to the other four states combined (the "Rest").
 
 ### 4.2 Differential Expression Testing
 For each eligible sample and each of its qualified states:
 - **Test:** Seurat `FindMarkers` (Wilcoxon rank-sum test).
-- **Universe:** One state versus the other 5 states within that sample.
+- **Universe:** One state versus the other four states within that sample.
 - **Genes:** Only the 1500 candidate genes identified in the pooled screen for that state.
 - **Thresholds:** No hard expression or logFC gates are applied at the testing stage (`logfc.threshold = 0`, `min.pct = 0`) to capture all valid statistics.
 
@@ -82,8 +81,8 @@ To ensure markers are globally specific across the atlas, a "specificity gap" is
 
 1. For every gene in the marker summary, the mean expression is calculated within the target state for every sample eligible for that state.
 2. The **median of these sample-level means** is computed, representing the "typical" expression of that gene in that state.
-3. This is repeated for all six states.
-4. **Specificity Gap:** The typical expression in the target state minus the maximum typical expression seen in any of the other five states.
+3. This is repeated for all five states.
+4. **Specificity Gap:** The typical expression in the target state minus the maximum typical expression seen in any of the other four states.
 5. A gene is considered a "best state match" only if the target state has the highest median expression.
 
 ---
@@ -127,35 +126,27 @@ The top 5 markers by **Ranking Score** per state are selected for the final pane
 ## 8. Heatmap Construction
 
 - **Data:** Median of sample-level means per state (as computed in Section 5).
-- **Z-scoring:** Values are Z-scored per row across the six states to highlight state-specific enrichment.
+- **Z-scoring:** Values are Z-scored per row across the five states to highlight state-specific enrichment.
 
 ## 9. Current 3CA recurrence profile
 
 ```text
-# A tibble: 5 × 7
-  gene      hit_sample_n hit_study_n sample_recurrence study_recurrence
-  <chr>            <int>       <int>             <dbl>            <dbl>
-1 CD44                 2           1            0.0833            0.143
-2 EXT1                 3           1            0.125             0.143
-3 MYOF                 2           1            0.0833            0.143
-4 MBNL2                2           1            0.0833            0.143
-5 LINC03009            3           1            0.125             0.143
-# ℹ 2 more variables: support_class <chr>,
+# A tibble: 0 × 7
+# ℹ 7 variables: gene <chr>, hit_sample_n <int>, hit_study_n <int>,
+#   sample_recurrence <dbl>, study_recurrence <dbl>, support_class <chr>,
 #   passes_legacy_strict_recurrence <lgl>
 ```
 
 ## 10. State-level summary
 
 ```text
-                          state cell_n eligible_sample_n eligible_study_n
-          Classic Proliferative  12573                68                8
- Basal to Intestinal Metaplasia  16642                78                7
-                Stress-adaptive  10169                59                7
-            SMG-like Metaplasia   8173                53                7
-            Immune Infiltrating   6056                51                7
- 3CA_EMT_and_Protein_maturation   2903                24                7
+                      state cell_n eligible_sample_n eligible_study_n
+      Classic proliferation   6752                59                7
+     Squamous-to-intestinal  15390                76                7
+    Glandular-to-intestinal  17159                70                8
+            Stress-adaptive   5005                45                6
+ Cancer-cell immune mimicry   4862                45                7
  top_marker_n
-            5
             5
             5
             5
@@ -166,27 +157,25 @@ The top 5 markers by **Ranking Score** per state are selected for the final pane
 ## 11. Recurrence summary by state
 
 ```text
-# A tibble: 6 × 7
+# A tibble: 5 × 7
   state                  top_marker_n multi_sample_marker_n multi_study_marker_n
   <chr>                         <int>                 <int>                <int>
-1 3CA_EMT_and_Protein_m…            5                     5                    0
-2 Basal to Intestinal M…            5                     5                    5
-3 Classic Proliferative             5                     5                    5
-4 Immune Infiltrating               5                     5                    5
-5 SMG-like Metaplasia               5                     5                    5
-6 Stress-adaptive                   5                     5                    5
+1 Cancer-cell immune mi…            5                     5                    5
+2 Classic proliferation             5                     5                    5
+3 Glandular-to-intestin…            5                     5                    5
+4 Squamous-to-intestinal            5                     5                    5
+5 Stress-adaptive                   5                     5                    5
 # ℹ 3 more variables: median_sample_recurrence <dbl>,
 #   median_study_recurrence <dbl>, n_passing_legacy_strict_recurrence <int>
 ```
 
 ## 12. Output Files
 
-- `Auto_six_state_markers_final.csv`: The final top 5 markers per state with their ranking and recurrence stats.
-- `Auto_six_state_markers_ranked.csv`: The full table of candidate genes ranked by the workflow.
-- `Auto_six_state_markers_top5_recurrence_summary.csv`: Summary of hit counts and support classes.
-- `Auto_six_state_markers_top5_sample_support.csv.gz`: per-sample support table for the final top-5 markers.
-- `Auto_six_state_markers_top5_study_support.csv`: per-study support table for the final top-5 markers.
-- `Auto_six_state_markers_top5_state_recurrence_summary.csv`: state-level sensitivity summary for the final top-5 markers.
-- `Auto_six_state_marker_heatmap.pdf`: final publication-facing heatmap.
-- `Auto_six_state_umap.pdf`: UMAP visualizations of the six-state subset.
-
+- `Auto_five_state_markers_final.csv`: The final top 5 markers per state with their ranking and recurrence stats.
+- `Auto_five_state_markers_ranked.csv`: The full table of candidate genes ranked by the workflow.
+- `Auto_five_state_markers_top5_recurrence_summary.csv`: Summary of hit counts and support classes.
+- `Auto_five_state_markers_top5_sample_support.csv.gz`: per-sample support table for the final top-5 markers.
+- `Auto_five_state_markers_top5_study_support.csv`: per-study support table for the final top-5 markers.
+- `Auto_five_state_markers_top5_state_recurrence_summary.csv`: state-level sensitivity summary for the final top-5 markers.
+- `Auto_five_state_marker_heatmap.pdf`: final publication-facing heatmap.
+- `Auto_five_state_umap.pdf`: UMAP visualizations of the five-state subset.

@@ -42,7 +42,7 @@ Primary outputs are written under `ref_outs/TCGA/esca_gdc_reconstruction/`. Comp
 
 For scRef:
 
-1. Load `meta_full_epi.rds`, `Auto_final_states.rds`, filtered nMP19 UCell scores, optional retained 3CA UCell scores, and clinical metadata from `Concise_Summary_EAC_Ref.xlsx`.
+1. Load `meta_full_epi.rds`, the centred-refined noreg state vector, final-17 centred UCell scores, final-17 MP genes, and clinical metadata from `Concise_Summary_EAC_Ref.xlsx`.
 2. Recode clinical `Gender` to `Female`/`Male`.
 3. Compute sample-level MP activity as the mean UCell score per `orig.ident`.
 4. Compute sample-level state abundance as the percentage of epithelial cells in each final state, excluding `Unresolved` and `Hybrid`.
@@ -53,9 +53,9 @@ For TCGA:
 2. Restrict the main validation cohort to primary-tumour EAC samples (`sample_type_code == "01"`, `HistologyGroup == "EAC"`).
 3. Transform expression as `log2(TPM + 1)`.
 4. Score scRef MPs and final-state gene sets using GSVA with Gaussian kernel.
-5. Cache GSVA scores in `ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores.rds`.
+5. Cache GSVA scores in `ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores_centred17.rds`.
 
-MP gene sets use the silhouette-filtered nMP19 metaprogram genes. State gene sets use the current noreg Approach B groupings from `analysis/shared/scRef_config.R`, with the finalized relabeling convention that 3CA respiration contributes to `Classic Proliferative` and 3CA EMT plus protein maturation form `3CA_EMT_and_Protein_maturation` when 3CA gene sets are available.
+MP gene sets are read directly from the final centred-refined 17-MP object. State gene sets are unions of the five current noreg Approach B groups in `analysis/shared/scRef_config.R`. No legacy nMP19 or appended 3CA gene sets enter the active validation.
 
 ## Statistics and concordance
 

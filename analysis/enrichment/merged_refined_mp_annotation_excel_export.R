@@ -2,60 +2,54 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/enrichment/merged_refined_mp_annotation_excel_export.R
+#   Methodology: not required (direct table export of existing final MP objects)
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs/outputs: documented in this header below.
+#   Description: Export final centred refined MP genes, parent memberships, and
+#     current full MP descriptions to a two-sheet workbook.
+#   Inputs:
+#     - ref_outs/Metaprogrammes_Results/centred/optimal_nMP.rds
+#     - ref_outs/Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_<optimal>.rds
+#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
+#   Outputs: ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/merged_refined_MP_genes_summary.xlsx.
+#   Cache/replot: deterministic workbook export; no hidden cache.
+#   Run: qsub analysis/enrichment/merged_refined_mp_annotation_excel_export.sh
+#   Conda env: dmtcp
 ####################
 
 ####################
 # Extract merged refined MP genes and create Excel summary with 2 pages
-# Output: Metaprogrammes_Results/mp_refinement/tables/merged_refined_MP_genes_summary.xlsx
+# Output: Metaprogrammes_Results/centred/mp_refinement/tables/merged_refined_MP_genes_summary.xlsx
 ####################
 library(openxlsx)
 library(dplyr)
 
-project_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline"
+project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
 setwd(file.path(project_dir, "ref_outs"))
 
 # Load inputs
-merged_mp_genes <- readRDS("Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_mp_genes.rds")
-cor_matrices <- readRDS("Metaprogrammes_Results/mp_refinement/intermediate/merged_refined_mp_correlation_matrices.rds")
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
-mean_rho <- cor_matrices$mean_rho
+optimal_nMP <- readRDS("Metaprogrammes_Results/centred/optimal_nMP.rds")
+merged_mp_genes <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds")
+geneNMF.metaprograms <- readRDS(paste0("Metaprogrammes_Results/centred/geneNMF_metaprograms_nMP_", optimal_nMP, ".rds"))
 
 # MP description mapping
 mp_desc_map <- c(
-  "MP1"  = "G2M Cell Cycle", "MP9" = "G1S Cell Cycle",
-  "MP2"  = "MYC-related Proliferation",
-  "MP17" = "Basal-like Transition", "MP14" = "Hypoxia Adapted Epi.",
-  "MP5"  = "Epithelial IFN Resp.", "MP10" = "Columnar Diff.",
-  "MP8"  = "Intestinal Diff.", "MP13" = "Hypoxic Inflam. Epi.",
-  "MP7"  = "DNA Damage Repair", "MP18" = "Secretory Diff. (Intest.)",
-  "MP16" = "Secretory Diff. (Gastric)", "MP15" = "Immune Infiltration",
-  "MP12" = "Neuro-responsive Epi."
-)
-
-submp_desc_map <- c(
-  "MP7+"  = "Fanconi/HR repair progenitor",
-  "MP7h"  = "Replication-stress dormant epithelial",
-  "MP7j"  = "DNA damage response",
-  "MP7r"  = "Stem-like glandular duct progenitor",
-  "MP7v"  = "Mucous secretory progenitor",
-  "MP10+" = "Metabolic columnar epithelium",
-  "MP10e" = "Inflammatory mucous-secretory columnar epithelium",
-  "MP8+"  = "Intestinal metaplasia",
-  "MP8b"  = "Quiescent glandular-metabolic progenitor",
-  "MP8c"  = "NF-κB inflammatory cycling glandular progenitor",
-  "MP8e"  = "Cycling intestinal–columnar progenitor",
-  "MP12a" = "Enteroendocrine-primed progenitor",
-  "MP12b" = "Enteroendocrine differentiation",
-  "MP12c" = "Cycling glandular–intestinal progenitor",
-  "MP2+"  = "MYC proliferation",
-  "MP2v"  = "EMT-V cycling invasive progenitor",
-  "MP15a" = "T/NK-like epithelial immune mimicry",
-  "MP15b" = "Type I IFN–activated EMT-primed epithelial",
-  "MP15c" = "Type II IFN / NF-κB peak inflammatory epithelial",
-  "MP5+"  = "Epithelial IFN Resp.",
-  "MP16+" = "Secretory Diff. (Gastric)"
+  "MP1" = "G2/M cell cycle",
+  "MP5" = "G1/S cell cycle",
+  "MP13+" = "replication-stress-associated cell cycling",
+  "MP2+" = "MYC driven biosynthesis",
+  "MP14" = "Squamoid/basal transition",
+  "MP3+" = "Basal-columnar invasive epithelium",
+  "MP6+" = "Stress-reactive columnar epithelium",
+  "MP11+" = "Epithelial antiviral interferon response",
+  "MP9+" = "Metabolic columnar epithelium",
+  "MP10+" = "Intestinal metaplasia",
+  "MP8+" = "Glandular intestinal metaplasia",
+  "MP8b" = "Metabolic intestinal metaplasia",
+  "MP16" = "Mucous-secretory glandular epithelium",
+  "MP18b" = "Mucous-secretory differentiation",
+  "MP17" = "Immune-interactive glandular progenitor",
+  "MP12" = "Hypoxic inflammatory adaptive plasticity",
+  "MP15" = "T/NK-like cancer-cell immune mimicry"
 )
 
 parent_id <- function(x) {
@@ -63,8 +57,8 @@ parent_id <- function(x) {
 }
 
 get_desc <- function(mp_name) {
-  if (mp_name %in% names(submp_desc_map)) {
-    return(submp_desc_map[[mp_name]])
+  if (mp_name %in% names(mp_desc_map)) {
+    return(mp_desc_map[[mp_name]])
   }
   parent <- parent_id(mp_name)
   if (parent %in% names(mp_desc_map)) {
@@ -84,10 +78,12 @@ mp_tree_order <- mp_tree_order[!is.na(mp_tree_order)]
 
 # Hard-coded user-specified ordering for exact MP order
 user_mp_order <- c(
-  "MP7j", "MP9", "MP1", "MP2+", "MP17", "MP8+", "MP10+", "MP14", "MP5+",
-  "MP7r", "MP7v", "MP10e", "MP16+", "MP18",
-  "MP8c", "MP15c", "MP12c", "MP2v", "MP8e", "MP12a", "MP13", 
-  "MP7+", "MP7h", "MP8b", "MP12b", "MP15a", "MP15b"
+  "MP1", "MP5", "MP13+",
+  "MP2+",
+  "MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+",
+  "MP8+", "MP8b", "MP16", "MP18b", "MP17",
+  "MP12",
+  "MP15"
 )
 page1_order <- user_mp_order[user_mp_order %in% merged_mps_ordered]
 
@@ -186,7 +182,9 @@ add_sheet <- function(wb, sheet_name, df, order_vec) {
 add_sheet(wb, "Split_Separated", df_p1, page1_order)
 add_sheet(wb, "Grouped_By_Parent", df_p2, page2_order)
 
-output_path <- "Metaprogrammes_Results/mp_refinement/tables/merged_refined_MP_genes_summary.xlsx"
+outdir <- "Metaprogrammes_Results/centred/mp_refinement/tables"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+output_path <- file.path(outdir, "merged_refined_MP_genes_summary.xlsx")
 saveWorkbook(wb, output_path, overwrite = TRUE)
 
 message("Saved: ", output_path)

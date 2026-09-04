@@ -24,9 +24,9 @@
 #
 # Input:
 #   ref_outs/meta_full_epi.rds
-#   ref_outs/Auto_final_states.rds
-#   ref_outs/Metaprogrammes_Results/UCell_nMP19_filtered.rds
-#   ref_outs/Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds
+#   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#   ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv
 #   /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx (sheet 3)
 #
 # Output:
@@ -52,16 +52,9 @@ setwd("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs")
 # 1) Load data
 ####################
 meta_full_epi <- readRDS("meta_full_epi.rds")
-final_states <- readRDS("intermediate/centred_refined_noreg_states.rds")
-ucell_scores <- readRDS("Metaprogrammes_Results/UCell_nMP19_filtered.rds")
-geneNMF.metaprograms <- readRDS("Metaprogrammes_Results/geneNMF_metaprograms_nMP_19.rds")
-ucell_3ca <- readRDS("UCell_3CA_MPs.rds")
-
-common_cells <- intersect(rownames(ucell_scores), rownames(ucell_3ca))
-ucell_scores <- cbind(
-  ucell_scores[common_cells, , drop = FALSE], 
-  ucell_3ca[common_cells, c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1"), drop = FALSE]
-)
+final_states <- readRDS("Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds")
+ucell_scores <- readRDS("Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds")
+grouping <- read.csv("Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv", check.names = FALSE)
 
 clinical_sheet <- read_excel(
   "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx",
@@ -99,39 +92,23 @@ clinical_level_orders <- list(
   `Clinical response` = c("Responder", "Nonresponder")
 )
 
-mp_descriptions <- c(
-  "MP1" = "G2M cycle",
-  "MP2" = "MYC prolif",
-  "MP5" = "IFN response",
-  "MP7" = "S cycle",
-  "MP8" = "Intestinal diff",
-  "MP9" = "G1S cycle",
-  "MP10" = "Columnar diff",
-  "MP12" = "Neuro-epithelial",
-  "MP13" = "Partial EMT",
-  "MP14" = "Hypoxia epithelial",
-  "MP15" = "Immune infiltration",
-  "MP16" = "Secretory diff",
-  "MP17" = "Squamous transition",
-  "MP18" = "Adaptive secretory"
-)
+mp_descriptions <- setNames(grouping$description, grouping$mp)
 
 state_groups <- list(
-  "Classic Proliferative" = c("MP2"),
-  "Basal to Intestinal Metaplasia" = c("MP17", "MP14", "MP5", "MP10", "MP8"),
-  "SMG-like Metaplasia" = c("MP18", "MP16"),
-  "Stress-adaptive" = c("MP13", "MP12"),
-  "Immune Infiltrating" = c("MP15"),
-  "Cell Cycle" = c("MP1", "MP7", "MP9")
+  "Cell cycle" = c("MP1", "MP5", "MP13+"),
+  "Classic proliferation" = c("MP2+"),
+  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+  "Stress adaptive" = c("MP12"),
+  "Cancer-cell immune mimicry" = c("MP15")
 )
 
 state_axis_labels <- c(
-  "Classic Proliferative" = "Classic\nProlif",
-  "Basal to Intestinal Metaplasia" = "Basal to\nIntestinal\nMetaplasia",
-  "SMG-like Metaplasia" = "SMG-like\nMetaplasia",
-  "Stress-adaptive" = "Stress\nadaptive",
-  "Immune Infiltrating" = "Immune\nInfiltrating",
-  "3CA_EMT_and_Protein_maturation" = "3CA EMT +\nProtein\nmaturation",
+  "Classic proliferation" = "Classic\nproliferation",
+  "Basal to intestinal metaplasia" = "Basal to\nintestinal\nmetaplasia",
+  "SMG to intestinal metaplasia" = "SMG to\nintestinal\nmetaplasia",
+  "Stress adaptive" = "Stress\nadaptive",
+  "Cancer-cell immune mimicry" = "Cancer-cell\nimmune mimicry",
   "Unresolved" = "Unresolved",
   "Hybrid" = "Hybrid"
 )
@@ -181,13 +158,13 @@ significance_label <- function(p_val) {
 
 make_state_levels <- function(state_vec) {
   core_states <- c(
-    "Classic Proliferative",
-    "Basal to Intestinal Metaplasia",
-    "SMG-like Metaplasia",
-    "Stress-adaptive",
-    "Immune Infiltrating"
+    "Classic proliferation",
+    "Basal to intestinal metaplasia",
+    "SMG to intestinal metaplasia",
+    "Stress adaptive",
+    "Cancer-cell immune mimicry"
   )
-  preferred_extra_states <- c("3CA_EMT_and_Protein_maturation")
+  preferred_extra_states <- character(0)
   present_states <- unique(as.character(state_vec))
   other_extra_states <- setdiff(
     present_states,
@@ -424,23 +401,10 @@ cell_meta <- data.frame(
 ####################
 # 5) MP order and labels
 ####################
-mp.genes <- geneNMF.metaprograms$metaprograms.genes
-bad_mps <- which(geneNMF.metaprograms$metaprograms.metrics$silhouette < 0)
-if (length(bad_mps) > 0) {
-  mp.genes <- mp.genes[!names(mp.genes) %in% paste0("MP", bad_mps)]
-}
-
-retained_mps <- names(mp.genes)
-tree_order <- geneNMF.metaprograms$programs.tree$order
-ordered_clusters <- geneNMF.metaprograms$programs.clusters[tree_order]
-valid_cluster_ids <- as.numeric(gsub("\\D", "", retained_mps))
-mp_tree_order <- unique(ordered_clusters)
-mp_tree_order <- mp_tree_order[!is.na(mp_tree_order) & mp_tree_order %in% valid_cluster_ids]
-mp_tree_order_names <- paste0("MP", mp_tree_order)
-
-mp_cols <- intersect(mp_tree_order_names, colnames(ucell_scores))
-missing_mps <- setdiff(mp_tree_order_names, colnames(ucell_scores))
-extra_mps <- intersect(c("X3CA_mp_12.Protein.maturation", "X3CA_mp_17.EMT.III", "X3CA_mp_30.Respiration.1"), colnames(ucell_scores))
+retained_mps <- grouping$mp
+mp_cols <- intersect(retained_mps, colnames(ucell_scores))
+missing_mps <- setdiff(retained_mps, colnames(ucell_scores))
+extra_mps <- character(0)
 mp_cols <- c(mp_cols, extra_mps)
 
 mp_ordered <- c()
@@ -450,12 +414,7 @@ for (grp in names(state_groups)) {
 }
 mp_ordered <- unique(c(mp_ordered, setdiff(mp_cols, mp_ordered)))
 
-extended_mp_descriptions <- c(
-  mp_descriptions, 
-  "X3CA_mp_12.Protein.maturation" = "Protein maturation", 
-  "X3CA_mp_17.EMT.III" = "EMT III", 
-  "X3CA_mp_30.Respiration.1" = "Respiration 1"
-)
+extended_mp_descriptions <- mp_descriptions
 
 mp_feature_labels <- setNames(
   ifelse(!is.na(extended_mp_descriptions[mp_ordered]), paste0(mp_ordered, " ", extended_mp_descriptions[mp_ordered]), mp_ordered),
@@ -564,7 +523,7 @@ build_state_sample_df <- function(data, group_var, filter_expr = NULL) {
 # 7) Output paths
 ####################
 summary_dir <- file.path(
-  "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
+  "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
   "updates",
   "new_updates",
   "summaries"
@@ -796,7 +755,7 @@ message("All outputs complete.")
 # 12) Optional stacked clinical association companion
 ####################
 stacked_script <- file.path(
-  "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline",
+  "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline",
   "analysis",
   "clinical",
   "clinical_association_final_stacked.R"
