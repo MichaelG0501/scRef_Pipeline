@@ -1,0 +1,34 @@
+name: Auto_drug_reversal
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - r-base=4.3
+  - r-seurat
+  - r-data.table
+  - r-dplyr
+  - r-tidyr
+  - r-tibble
+  - r-ggplot2
+  - r-ggrepel
+  - r-patchwork
+  - r-venndiagram
+  - r-remotes
+  - r-devtools
+  - r-httr
+  - r-jsonlite
+  - r-openxlsx
+  - r-igraph
+  - r-doparallel
+  - bioconductor-limma
+  - bioconductor-cmapr
+  - bioconductor-org.hs.eg.db
+  - bioconductor-annotationdbi
+  - python=3.10
+  - pandas
+  - requests
+  - gseapy
+  - pip
+  - pip:
+      - cmapPy
