@@ -1,0 +1,11 @@
+# Basal and SMG Within-State MP Distance Methodology
+
+`analysis/cell_states/basal_mp_distance_matrix.R` compares the geometry of the six basal-to-intestinal MPs and five SMG-to-intestinal MPs within their respective current centred refined states. It reads `EAC_Ref_epi.rds`, `centred_refined_noreg_states.rds`, and `centred_refined_noreg_mp_adj.rds` from live storage.
+
+Within each state, a cell is assigned to its maximum adjusted MP. A cell is labelled MP-level `Hybrid` when its top-minus-second MP gap is below 0.1. This 0.1 cutoff is intentionally stricter than the 0.3 state-level hybrid cutoff: the analysis asks whether a cell has a clearly dominant program inside an already assigned state, rather than whether two biological states compete. MP-level hybrids are shown in proportions but excluded from distance estimation.
+
+A sample is valid when it contains at least 50 non-hybrid cells in the state, represents at least two MPs with at least 15 cells each, and supplies at least 15 cells for a candidate root MP. These thresholds limit distances driven by very small groups while retaining sample-specific trajectories. They are fixed constants in the script (`TOTAL_MIN=50`, `MIN_GROUPS=2`, `OTHER_MIN=15`, `ROOT_MIN=15`).
+
+Each valid sample is normalized, receives 2,000 variable features, is scaled, reduced with up to 30 PCs, embedded with up to 15 PCs in UMAP, converted to Monocle3, clustered, and fitted with a principal graph. Each sufficiently represented MP is iterated as a root. The workflow calculates directed median and mean pseudotime gaps; principal-graph geodesic distance after projecting the state medoid cell; geodesic distance after projecting the state UMAP centroid; and UMAP-centroid Euclidean distance as a graph-free baseline. Sample matrices are aggregated by pair and method. Directed results are symmetrized only for the comparison heatmap, while direction-specific rows remain in the tables.
+
+Per-sample pseudotime vectors and the aggregate matrices are persistent live intermediates so figures can be regenerated without refitting Monocle. MP descriptions and membership must match the current 17-MP grouping; removed MP2x/MP11c/MP18a features are not permitted.
