@@ -24,13 +24,15 @@ Clinical variables are normalized before plotting:
 
 ## TCGA Survival
 
-`analysis/metaprograms/centred/tcga_mp_survival_volcano_centred.R` is the current TCGA-ESCA MP survival workflow. Historical reg/noreg and QC-filtered nMP=19 scripts carry `legacy_` filenames. Current survival workflows use the final 17 merged refined gene lists and five centred state groups. Models may compare:
+`analysis/metaprograms/centred/tcga_mp_survival_volcano_centred.R` is the current TCGA-ESCA survival workflow. It consumes the reconstructed gene-symbol TPM matrix and reconstructed clinical metadata, requires exact sample-barcode agreement, and restricts analysis to unique primary-tumour (`sample_type_code == 01`) EAC samples. Overall-survival time is the reconstructed cBioPortal OS time in days and the event is death. Rows require positive time and an event code of 0 or 1. The September 2026 audit identified 88 unique evaluable cases and 45 deaths, with no duplicate cases or samples and no discordance between vital status and OS event.
 
-- continuous score
-- median split
-- q1 versus q4
+Expression is transformed as `log2(TPM + 1)` before Gaussian-kernel GSVA. The MP input must be the exact current 17 centred refined MPs. State-union gene sets come from `SCREF_STATE_GROUPS`; state-marker sets use the first 20 genes per state from the current ranked marker table. Every requested gene set must retain at least five genes or the workflow stops. No alternate input, histology inference, or legacy MP fallback is permitted.
 
-All model tables must record cohort definition, event/time fields, score scaling, covariates, split rule, hazard ratio, confidence interval, raw p-value, and multiplicity adjustment. State gene sets are unions of the current refined MP genes in each state; cell-cycle MPs do not define states.
+The prespecified survival models are all univariable Cox proportional-hazards models with no clinical, purity, node, stage, age, or treatment covariates. Continuous scores are standardized within the EAC cohort and reported per one-SD increase. Categorical models use a cohort median split or compare the upper and lower quartiles while excluding the middle half. Results record the model formula, `covariates = none`, scaling, hazard ratio, 95% confidence interval, raw p-value, sample count, event count, and BH adjustment within feature type and split method.
+
+The exploratory optimal-cut analysis tests score quantiles from 20% to 80% in 5% increments and selects the smallest Cox Wald p-value for each feature. Its displayed and saved p-values are unadjusted minima across searched cuts and are not confirmatory p-values. The KM pages display that exact selected Cox Wald p-value rather than recomputing a differently labelled test. KM features are the five lowest-p protective and five lowest-p adverse associations. The optimal-cut volcano is 18 by 8 inches with base font 12, label size 2.8, and title size 14; the separate KM file is 10 by 8 inches.
+
+Persistent outputs include the model-ready data, standard Cox table, optimal-cut table, volcanoes, KM curves, compact summary, and run report. Bulk GSVA can reflect both tumour and non-tumour expression and must not be interpreted as tumour-cell-specific activity. Optimal-cut findings require validation in an independent cohort.
 
 ## GEO And Cross-Platform Survival
 

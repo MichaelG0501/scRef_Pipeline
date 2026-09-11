@@ -39,7 +39,7 @@ Audit coverage: 170 R scripts, 28 Python scripts, and 101 shell/PBS scripts. Eve
 - Current chain: `centred/01_centred_geneNMF.R` through `centred/06_centred_refined_state_definition_noreg.R`.
 - `centred/3ca_vs_refined_mp_correlation.R`: exploratory current-panel vs external 3CA score correlation.
 - `centred/legacy_refined_mp_abundance_comparison.R`: historical centred-versus-uncentred abundance comparison; legacy because its retired uncentred UCell input is absent. The old unprefixed path is retained as a legacy compatibility copy because files must not be deleted.
-- `centred/tcga_mp_survival_volcano_centred.R`: current centred TCGA-ESCA MP survival analysis.
+- `centred/tcga_mp_survival_volcano_centred.R` (PBS: `centred/tcga_mp_survival_volcano_centred.sh`): current primary-tumour TCGA-ESCA EAC survival analysis using log2(TPM+1), exact final-17 MPs, current state unions and ranked state markers. Standard and exploratory optimal-cut Cox models are univariable with no purity or clinical covariates; persistent model tables and 18x8-inch volcano/10x8-inch KM outputs are under `ref_outs/Metaprogrammes_Results/centred/survival/`.
 - `centred_method_comparison_figures.R`: terminal centred-versus-historical comparison; historical inputs are comparison-only.
 - `mp_3ca_ucell_scoring.R`: supporting scorer for the external 3CA panel, not a state-definition step.
 - `mp_cancer_type_coverage.R`: external 3CA cancer-type coverage audit.
@@ -60,6 +60,7 @@ Audit coverage: 170 R scripts, 28 Python scripts, and 101 shell/PBS scripts. Eve
 - `final_mp_scenic.R`: current final-17-MP SCENIC; large restart caches may be ephemeral, all selected cells/results/plots are live.
 - `final_mp_scenic_parse_overlap.R`: terminal overlap parsing for completed SCENIC outputs.
 - PBS wrappers and `Auto_submit_*` files in this folder submit the corresponding R scripts; they do not define alternative methods.
+- `Auto_opnme_prioritisation.R`: in-silico prioritisation of 99 opnMe small molecules against five malignant cell states. Three-layer approach: (1) mechanism-based priors from the supervisor annotation workbook `opnMe_99_drug_OAC_state_predictions.xlsx`, (2) per-state target gene expression validation from `EAC_Ref_epi.rds` + centred states, (3) PROGENy pathway activity scoring per state, with optional MOA-class reversal evidence from the existing drug-reversal pipeline. Outputs ranked compound tables and publication figures to `ref_outs/opnMe_prioritisation/`. PBS wrapper: `Auto_opnme_prioritisation.sh`.
 
 ### Clinical, bulk, and TCGA
 
@@ -79,8 +80,8 @@ Audit coverage: 170 R scripts, 28 Python scripts, and 101 shell/PBS scripts. Eve
 - `clinical/tcga_stad_bulk_download_and_gsva.R`: current centred TCGA-STAD location analysis.
 - `clinical/cibersortx_sc_reference_export.R`: all-cell CIBERSORTx reference plus current centred gene subset.
 <!-- #################### -->
-- `clinical/Auto_occams_bulk_mp_survival.R` (PBS: `clinical/Auto_occams_bulk_mp_survival.sh`): current 281-subject QC-pass OCCAMS GRCh37 bulk normalization, 17 centred refined MP/five state-union GSVA scoring, subject-level metadata resolution, and OS Cox/volcano/KM analysis. Persistent normalized expression, scores, model tables, figures, and audit outputs are under `ref_outs/OCCAMS/clinical/`.
-- `clinical/Auto_occams_bulk_clinical_associations.R` (PBS: `clinical/Auto_occams_bulk_clinical_associations.sh`): current subject-level OCCAMS MP/state boxplots and dominant-bulk-state stacked plots across core and OAC-specific clinical variables. It consumes the survival workflow's QC-pass scores and harmonized metadata and writes persistent statistics, variable inventory, plot data, and figures under `ref_outs/OCCAMS/clinical/`.
+- `clinical/Auto_occams_bulk_mp_survival.R` (PBS: `clinical/Auto_occams_bulk_mp_survival.sh`): current 281-subject QC-pass OCCAMS GRCh37 bulk normalization, 17 centred refined MP/five state-union GSVA scoring, source-column-specific subject metadata, and OS Cox/volcano/KM analysis. Diagnostic, pretreatment, and resection-pathology fields and TNM editions are never coalesced; optimal-cut models are univariable. Persistent normalized expression, scores, model tables, figures, and audit outputs are under `ref_outs/OCCAMS/clinical/`.
+- `clinical/Auto_occams_bulk_clinical_associations.R` (PBS: `clinical/Auto_occams_bulk_clinical_associations.sh`): current subject-level OCCAMS MP/state boxplots across source-column-specific RD/PS/TP/ST/TR/RP clinical variables. It never coalesces clinical columns across timepoints or TNM editions; its persistent inventory records exact source columns. Outputs are under `ref_outs/OCCAMS/clinical/`.
 <!-- #################### -->
 
 ### CNV and subclones
