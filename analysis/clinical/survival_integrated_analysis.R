@@ -397,24 +397,23 @@ process_dataset("TCGA", tpm_tcga, meta_tcga, "+ factor(Stage_Simple)")
 
 # OCCAMS
 message("Processing OCCAMS...")
-occams_meta_path <- "OCCAMS/clinical/tables/Auto_OCCAMS_qc_pass_subject_metadata.csv"
+occams_meta_path <- "OCCAMS/source_data/OCCAMS_clinical_updated.csv"
 meta_occams <- read.csv(occams_meta_path, stringsAsFactors = FALSE)
 meta_occams <- meta_occams %>% 
-  mutate(OS_time = os_days, OS_event = os_event, sample_id = subject_id) %>%
+  filter(!Organ_Final %in% c("Stomach", "Unknown", ""),
+         Curative_Treatment_Modality_Final == "neoadjuvant (chemo + CRT)") %>%
   mutate(
-    T_Group = ifelse(pretreatment_t_stage %in% c("T0", "T1", "T2"), "Early",
-              ifelse(pretreatment_t_stage %in% c("T3", "T4"), "Advanced", "Unknown")),
-    N_Group = ifelse(pretreatment_n_stage_tnm7 == "N0", "N0",
-              ifelse(grepl("^N", pretreatment_n_stage_tnm7), "N+", "Unknown")),
-    M_Group = ifelse(pretreatment_m_stage == "M0", "M0",
-              ifelse(grepl("^M", pretreatment_m_stage), "M1", "Unknown"))
+    OS_time = Survival_Days, 
+    OS_event = ifelse(Vital_Status == "Dead", 1, 0), 
+    sample_id = SHA_ID,
+    Pathological_Stage_AJCC = ifelse(is.na(Pathological_Stage_AJCC) | Pathological_Stage_AJCC == "" | tolower(Pathological_Stage_AJCC) == "unknown", "Unknown", paste0("Stage ", Pathological_Stage_AJCC))
   )
 
 occams_expr_path <- "OCCAMS/clinical/intermediate/Auto_OCCAMS_qc_pass_logcpm_gene_symbols.rds"
 expr_occams <- readRDS(occams_expr_path)
 expr_occams <- expr_occams[, colnames(expr_occams) %in% meta_occams$sample_id, drop = FALSE]
 
-process_dataset("OCCAMS", expr_occams, meta_occams, "+ factor(T_Group) + factor(N_Group) + factor(M_Group)")
+process_dataset("OCCAMS", expr_occams, meta_occams, "+ factor(Pathological_Stage_AJCC)")
 
 # GEO
 message("Processing GEO...")
@@ -576,5 +575,30 @@ if (nrow(tcga_opt_all) > 0) {
   
   dev.off()
 }
+
+message("Generating Stage KM plots...")
+open_pdf_device(file.path(out_dir, "survival_stage_km.pdf"), width = 10, height = 8)
+
+# TCGA Stage KM
+d_tcga_stage <- all_meta_dfs[["TCGA"]] %>% filter(!is.na(OS_time), OS_time > 0, !is.na(OS_event), !is.na(Stage_Simple), Stage_Simple != "Unknown", Stage_Simple != "")
+if (nrow(d_tcga_stage) > 0) {
+  d_tcga_stage$Stage_Simple <- factor(d_tcga_stage$Stage_Simple)
+  fit_tcga_stage <- survival::survfit(survival::Surv(OS_time, OS_event) ~ Stage_Simple, data = d_tcga_stage)
+  km_tcga_stage <- survminer::ggsurvplot(fit_tcga_stage, data = d_tcga_stage, risk.table = TRUE, pval = TRUE, conf.int = FALSE,
+    xlab = "Time (Days)", ylab = "Survival Probability", title = "TCGA - Stage vs Survival", ggtheme = theme_minimal())
+  print(km_tcga_stage)
+}
+
+# OCCAMS Pathological Stage KM
+d_occams_stage <- all_meta_dfs[["OCCAMS"]] %>% filter(!is.na(OS_time), OS_time > 0, !is.na(OS_event), !is.na(Pathological_Stage_AJCC), Pathological_Stage_AJCC != "Unknown", Pathological_Stage_AJCC != "")
+if (nrow(d_occams_stage) > 0) {
+  d_occams_stage$Pathological_Stage_AJCC <- factor(d_occams_stage$Pathological_Stage_AJCC)
+  fit_occams_stage <- survival::survfit(survival::Surv(OS_time, OS_event) ~ Pathological_Stage_AJCC, data = d_occams_stage)
+  km_occams_stage <- survminer::ggsurvplot(fit_occams_stage, data = d_occams_stage, risk.table = TRUE, pval = TRUE, conf.int = FALSE,
+    xlab = "Time (Days)", ylab = "Survival Probability", title = "OCCAMS - Pathological Stage vs Survival", ggtheme = theme_minimal())
+  print(km_occams_stage)
+}
+
+dev.off()
 
 message("Done.")
