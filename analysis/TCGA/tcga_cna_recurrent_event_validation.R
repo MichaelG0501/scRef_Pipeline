@@ -1,45 +1,104 @@
 ####################
 # Analysis registry:
-#   Status: active, terminal
+#   Status: terminal
 #   Script: analysis/TCGA/tcga_cna_recurrent_event_validation.R
+#   Description: Validate recurrent arm CNA associations and continuous MP effects in TCGA EAC.
 #   Methodology: analysis/methodology/TCGA/tcga_cna_recurrent_event_validation_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs:
-#     - /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg
+#   Inputs (paths relative to the live project unless absolute):
+#     - ref_outs/TCGA/cna_recurrent_event_validation/intermediate/source_data/esca_tcga_gdc_segments.seg
+#     - Initial segment import only: /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg
 #     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds
 #     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_tpm_matrix.rds
-#     - ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores_centred17.rds, if present
+#     - ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores_centred17.rds
+#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv
+#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
 #     - ref_outs/Auto_cna_subclone_expression/threshold_1/tables/Auto_v2_recomputed_recurrent_cna_event_summary.csv
-#     - ref_outs/OAC_CNV.xlsx
-#     - ref_outs/41588_2018_331_MOESM3_ESM.xlsx
-#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds, if GSVA cache absent
+#     - ref_outs/Auto_cna_subclone_expression/threshold_1/tables/Auto_v2_recurrent_cna_event_feature_tests.csv
+#     - ref_outs/Auto_cna_subclone_expression/threshold_1/rds/Auto_cna_subclone_expression_results.rds
+#     - analysis/TCGA/OAC_CNV.xlsx; analysis/TCGA/41588_2018_331_MOESM3_ESM.xlsx
+#     - analysis/shared/scRef_config.R; analysis/shared/scRef_helpers.R; analysis/TCGA/Auto_tcga_workflow_helpers.R
 #   Outputs:
-#     - ref_outs/TCGA/cna_recurrent_event_validation/intermediate/
-#     - ref_outs/TCGA/cna_recurrent_event_validation/tables/
-#     - ref_outs/TCGA/cna_recurrent_event_validation/figures/
-#     - ref_outs/TCGA/cna_recurrent_event_validation/logs/
-#     - updates/new_updates/summaries/Auto_tcga_cna_recurrent_event_validation_summary.csv
+#     ref_outs/TCGA/cna_recurrent_event_validation/intermediate/
+#       Auto_tcga_cna_figure_bundle.rds
+#       Auto_tcga_cna_plot_source_data.rds
+#       source_data/esca_tcga_gdc_segments.seg
+#       Auto_tcga_weighted_arm_cna_calls.rds
+#     ref_outs/TCGA/cna_recurrent_event_validation/tables/
+#       Auto_cnv_annotation_long_reparsed.csv
+#       Auto_cnv_event_annotation_summary_reparsed.csv
+#       Auto_oac_cnv_curated_reparsed.csv
+#       Auto_occams_cna_driver_genes_reparsed.csv
+#       Auto_occams_gistic_peaks_reparsed.csv
+#       Auto_scRef_all_arm_mp_spearman_tests.csv
+#       Auto_scRef_recurrent_events_tcga_feature_tests.csv
+#       Auto_scRef_recurrent_events_tcga_feature_values.csv
+#       Auto_scRef_tcga_all_arm_mp_spearman_concordance.csv
+#       Auto_scRef_tcga_event_feature_concordance.csv
+#       Auto_scRef_tcga_recurrent_event_mp_concordance_rectangles.csv
+#       Auto_tcga_all_arm_mp_spearman_tests.csv
+#       Auto_tcga_arm_cna_calls_selected_threshold.csv
+#       Auto_tcga_arm_cna_long.csv
+#       Auto_tcga_cna_cluster_assignments.csv
+#       Auto_tcga_cna_event_threshold_sensitivity.csv
+#       Auto_tcga_cna_rectangle_heatmap_summary.csv
+#       Auto_tcga_cna_recurrent_event_validation_summary.csv
+#       Auto_tcga_cna_threshold_optimization.csv
+#       Auto_tcga_cna_validation_conclusion.csv
+#       Auto_tcga_discovered_recurrent_event_feature_tests.csv
+#       Auto_tcga_discovered_recurrent_event_feature_values.csv
+#       Auto_tcga_discovered_significant_event_overlap_scRef.csv
+#       Auto_tcga_mp_state_features_tested.csv
+#       Auto_tcga_recurrent_cna_events.csv
+#     ref_outs/TCGA/cna_recurrent_event_validation/figures/
+#       Auto_scRef_tcga_all_arm_mp_spearman_rectangles.pdf
+#       Auto_scRef_tcga_all_arm_mp_spearman_rectangles_all_trends.pdf
+#       Auto_scRef_tcga_recurrent_event_mp_rectangles.pdf
+#       Auto_tcga_and_scRef_consensus_cna_heatmap.pdf
+#       Auto_tcga_and_scRef_gain_chr8q_myc_mp.pdf
+#       Auto_tcga_cna_event_association_dotplots.pdf
+#       Auto_tcga_cna_event_boxplots.pdf
+#       Auto_tcga_cna_threshold_optimization.pdf
+#     ref_outs/TCGA/cna_recurrent_event_validation/logs/
+#       Auto_tcga_cna_recurrent_event_validation_run_summary.rds
+#       Auto_tcga_cna_recurrent_event_validation_run_summary.txt
+#       Auto_tcga_cna_replot_run_summary.rds
+#       Auto_tcga_cna_replot_run_summary.txt
+#     updates/new_updates/summaries/Auto_tcga_cna_recurrent_event_validation_summary.csv
 #   Cache/replot behavior:
-#     - TCGA arm calls and TCGA feature scores are cached and reused unless SCREF_FORCE_REBUILD=TRUE.
-#     - SCREF_REPLOT_ONLY=TRUE reuses caches and regenerates tables/figures.
-#   Run:
-#     Rscript analysis/TCGA/tcga_cna_recurrent_event_validation.R
-#   Conda env: dmtcp
+#     SCREF_FORCE_REBUILD=TRUE rebuilds this script's computational caches.
+#     SCREF_REPLOT_ONLY=TRUE renders saved figure grobs without GSVA, tests or clustering.
+#     Replot requires a successful full run; missing or stale computational caches stop.
+#     All source data, caches, figure grobs and summaries remain inside the live project.
+#     Gender validation is the sole GSVA producer; rebuild it first when its inputs change.
+#   Run: /opt/pbs/bin/qsub analysis/TCGA/Auto_tcga_cna_recurrent_event_validation.sh
+#   Conda env: dmtcp. Execution requires a PBS allocation.
 ####################
 
 suppressPackageStartupMessages({
   library(data.table)
   library(dplyr)
   library(ggplot2)
-  library(GSVA)
   library(readxl)
   library(scales)
   library(stringr)
   library(tidyr)
+  library(ComplexHeatmap)
+  library(circlize)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(cluster)
+  library(grid)
+  library(ggpubr)
 })
 
 source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
 source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_helpers.R")
+
+####################
+source(file.path(SCREF_ANALYSIS_DIR, "TCGA", "Auto_tcga_workflow_helpers.R"))
+tcga_execution_guard()
+####################
 
 setwd(SCREF_PROJECT_DIR)
 set.seed(42)
@@ -50,22 +109,35 @@ set.seed(42)
 script_path <- file.path(SCREF_ANALYSIS_DIR, "TCGA", "tcga_cna_recurrent_event_validation.R")
 out_dir <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "cna_recurrent_event_validation")
 tiers <- ensure_output_tiers(out_dir)
-summary_dir <- SCREF_SUMMARY_DIR
+####################
+invisible(lapply(file.path(tiers, ".storage_guard"), tcga_live_path))
+####################
+summary_dir <- dirname(tcga_live_path(file.path(SCREF_SUMMARY_DIR, ".storage_guard")))
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
-segment_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg"
+####################
+figure_bundle_path <- file.path(tiers[["intermediate"]], "Auto_tcga_cna_figure_bundle.rds")
+if (tcga_flag("SCREF_REPLOT_ONLY")) {
+  tcga_replot(figure_bundle_path,
+             file.path(tiers[["tables"]], "Auto_tcga_cna_recurrent_event_validation_summary.csv"),
+             file.path(tiers[["logs"]], "Auto_tcga_cna_replot_run_summary.rds"))
+  quit(save = "no")
+}
+segment_path <- tcga_stage_input(
+  "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/esca_tcga_gdc_segments.seg",
+  file.path(tiers[["intermediate"]], "source_data", "esca_tcga_gdc_segments.seg")
+)
+####################
 tcga_recon_dir <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "esca_gdc_reconstruction")
 tcga_meta_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_meta.rds")
 tcga_matrix_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_tpm_matrix.rds")
-tcga_mixture_path <- file.path(tcga_recon_dir, "tables", "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 gender_gsva_cache_path <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "gender_validation", "intermediate", "Auto_tcga_gender_gsva_scores_centred17.rds")
-local_gsva_cache_path <- file.path(tiers[["intermediate"]], "Auto_tcga_cna_validation_gsva_scores_centred17.rds")
 arm_cache_path <- file.path(tiers[["intermediate"]], "Auto_tcga_weighted_arm_cna_calls.rds")
 sc_cna_dir <- file.path(SCREF_REF_OUTS_DIR, "Auto_cna_subclone_expression", "threshold_1")
 sc_recurrent_path <- file.path(sc_cna_dir, "tables", "Auto_v2_recomputed_recurrent_cna_event_summary.csv")
 sc_event_tests_path <- file.path(sc_cna_dir, "tables", "Auto_v2_recurrent_cna_event_feature_tests.csv")
-oac_cnv_path <- file.path(SCREF_REF_OUTS_DIR, "OAC_CNV.xlsx")
-occams_path <- file.path(SCREF_REF_OUTS_DIR, "41588_2018_331_MOESM3_ESM.xlsx")
+oac_cnv_path <- file.path(SCREF_ANALYSIS_DIR, "TCGA", "OAC_CNV.xlsx")
+occams_path <- file.path(SCREF_ANALYSIS_DIR, "TCGA", "41588_2018_331_MOESM3_ESM.xlsx")
 
 candidate_thresholds <- seq(0.05, 0.30, by = 0.01)
 recurrent_min_sample_fraction <- 0.15
@@ -93,7 +165,12 @@ chrom_sizes <- c(
   chr21 = 46709983, chr22 = 50818468, chrX = 156040895
 )
 
-required_paths <- c(segment_path, tcga_meta_path, sc_recurrent_path, oac_cnv_path, occams_path)
+####################
+sc_results_path <- file.path(sc_cna_dir, "rds", "Auto_cna_subclone_expression_results.rds")
+####################
+required_paths <- c(segment_path, tcga_meta_path, tcga_matrix_path, gender_gsva_cache_path, SCREF_MP_GROUPING_CSV,
+                    SCREF_MP_GENES_RDS, sc_recurrent_path, sc_event_tests_path,
+                    sc_results_path, oac_cnv_path, occams_path)
 missing_paths <- required_paths[!file.exists(required_paths)]
 if (length(missing_paths) > 0) {
   stop("Missing required input(s): ", paste(missing_paths, collapse = ", "))
@@ -120,7 +197,7 @@ run_summary <- start_run_summary(
 )
 
 mp_descriptions <- SCREF_MP_DESCRIPTIONS
-mp_order <- SCREF_MP_ORDER
+mp_order <- names(SCREF_MP_DESCRIPTIONS)
 state_order <- SCREF_PRIMARY_STATE_ORDER
 
 p_to_stars <- function(p) {
@@ -264,7 +341,7 @@ parse_occams_gistic_peaks <- function(path, sheet, direction) {
   residual_q_row <- which(tolower(first_col) == "residual q value")[1]
   boundary_row <- which(tolower(first_col) == "wide peak boundaries")[1]
   gene_row <- which(tolower(first_col) == "genes in wide peak")[1]
-  if (is.na(cytoband_row) || is.na(boundary_row) || is.na(gene_row)) return(data.frame())
+  if (anyNA(c(cytoband_row, q_row, residual_q_row, boundary_row, gene_row))) stop("Missing required GISTIC rows in sheet: ", sheet)
   rows <- list()
   row_i <- 1L
   for (j in 2:ncol(raw)) {
@@ -301,12 +378,12 @@ parse_occams_gistic_peaks <- function(path, sheet, direction) {
 parse_occams_driver_sheet <- function(path, sheet, direction, confidence) {
   raw <- readxl::read_excel(path, sheet = sheet, col_names = FALSE)
   header_row <- which(as.character(raw[[1]]) == "Gene" & as.character(raw[[2]]) == "hgnc_symbol")[1]
-  if (is.na(header_row)) return(data.frame())
+  if (is.na(header_row)) stop("Missing Gene/hgnc_symbol header in sheet: ", sheet)
   x <- raw[(header_row + 1):nrow(raw), , drop = FALSE]
   names(x) <- as.character(unlist(raw[header_row, ]))
   x <- as.data.frame(x, stringsAsFactors = FALSE)
   peak_col <- grep("GISTIC Peak", colnames(x), value = TRUE)[1]
-  if (is.na(peak_col)) return(data.frame())
+  if (is.na(peak_col)) stop("Missing GISTIC Peak column in sheet: ", sheet)
   x$excel_row <- seq(header_row + 1, nrow(raw))
   out <- x |>
     filter(!is.na(.data$hgnc_symbol), nzchar(as.character(.data$hgnc_symbol))) |>
@@ -463,8 +540,9 @@ build_arm_calls <- function() {
     )
 }
 
-arm_cache <- load_or_build_cache(
+arm_cache <- tcga_cache(
   arm_cache_path,
+  inputs = c(segment_path, script_path),
   build_fun = build_arm_calls,
   label = "tcga_weighted_arm_cna_calls"
 )
@@ -592,7 +670,7 @@ write.csv(tcga_discovered_events, file.path(tiers[["tables"]], "Auto_tcga_recurr
 ####################
 # 5) TCGA MP/state scores
 ####################
-message("Loading or computing TCGA MP/state feature scores")
+message("Loading validated TCGA MP/state feature scores")
 make_feature_labels <- function(mp_features, state_features) {
   mp_labels <- paste0(mp_features, " ", mp_descriptions[mp_features])
   mp_labels[is.na(mp_labels)] <- label_mps(mp_features[is.na(mp_labels)])
@@ -601,64 +679,36 @@ make_feature_labels <- function(mp_features, state_features) {
   c(mp_labels, state_labels)
 }
 
-run_gsva_scores <- function(expr_mat, gene_sets) {
-  gene_sets <- lapply(gene_sets, function(genes) intersect(unique(genes), rownames(expr_mat)))
-  gene_sets <- gene_sets[sapply(gene_sets, length) >= 5]
-  if (length(gene_sets) == 0) stop("No gene sets retained at >=5 genes for GSVA.")
-  suppressMessages(gsva(expr_mat, gene_sets, method = "gsva", kcdf = "Gaussian"))
-}
-
 build_gene_sets <- function() {
-  mp_genes <- readRDS(SCREF_MP_GENES_RDS)
+  mp_genes <- tcga_validate_gene_sets(readRDS(SCREF_MP_GENES_RDS))
   mp_genes <- mp_genes[intersect(mp_order, names(mp_genes))]
   mp_sets <- mp_genes
   state_groups <- SCREF_STATE_GROUPS
   state_sets <- lapply(state_groups, function(mps) {
     unique(unlist(mp_genes[intersect(mps, names(mp_genes))], use.names = FALSE))
   })
-  state_sets <- state_sets[sapply(state_sets, length) >= 5]
+  if (any(lengths(state_sets) < 5)) stop("Every current state requires >=5 genes.")
   state_sets <- state_sets[intersect(state_order, names(state_sets))]
   list(mp_sets = mp_sets, state_sets = state_sets)
 }
 
-load_or_build_tcga_scores <- function() {
-  if (file.exists(gender_gsva_cache_path) && reuse_cache_enabled()) {
-    obj <- readRDS(gender_gsva_cache_path)
-    if (all(c("mp_scores", "state_scores", "mp_sets", "state_sets") %in% names(obj))) {
-      message("Reusing gender validation GSVA cache: ", gender_gsva_cache_path)
-      return(list(value = obj, reused = TRUE, label = "tcga_gender_gsva_scores", path = gender_gsva_cache_path))
-    }
-  }
-  load_or_build_cache(
-    local_gsva_cache_path,
-    build_fun = function() {
-      sets <- build_gene_sets()
-      if (file.exists(tcga_matrix_path)) {
-        tpm_mat <- readRDS(tcga_matrix_path)
-      } else if (file.exists(tcga_mixture_path)) {
-        tpm_df <- fread(tcga_mixture_path)
-        tpm_mat <- as.matrix(tpm_df[, -1, with = FALSE])
-        rownames(tpm_mat) <- tpm_df[[1]]
-      } else {
-        stop("Missing TCGA TPM matrix. Run analysis/TCGA/tcga_esca_reconstruct_data.R first.")
-      }
-      common_samples <- intersect(colnames(tpm_mat), meta_tcga$sample_barcode)
-      tpm_mat <- tpm_mat[, common_samples, drop = FALSE]
-      expr_log <- log2(tpm_mat + 1)
-      expr_log[!is.finite(expr_log)] <- 0
-      list(
-        mp_scores = t(run_gsva_scores(expr_log, sets$mp_sets)),
-        state_scores = t(run_gsva_scores(expr_log, sets$state_sets)),
-        mp_sets = sets$mp_sets,
-        state_sets = sets$state_sets,
-        transform = "log2(TPM + 1)"
-      )
-    },
-    label = "tcga_cna_validation_gsva_scores"
-  )
+####################
+# The gender workflow is the single GSVA producer; never substitute another matrix/cache.
+gsva_obj <- readRDS(gender_gsva_cache_path)
+sets <- build_gene_sets()
+# Compare sets by canonical MP order; their scoring does not depend on list order.
+gsva_obj$mp_sets <- gsva_obj$mp_sets[names(sets$mp_sets)]
+gsva_obj$state_sets <- gsva_obj$state_sets[names(sets$state_sets)]
+tcga_validate_scores(gsva_obj, sets$mp_sets, sets$state_sets, meta_tcga$sample_barcode)
+expected_fingerprint <- tcga_fingerprint(c(tcga_matrix_path, SCREF_MP_GENES_RDS, SCREF_MP_GROUPING_CSV,
+                                         file.path(SCREF_ANALYSIS_DIR, "shared", "scRef_config.R")))
+if (!identical(attr(gsva_obj, "tcga_input_fingerprint"), expected_fingerprint)) {
+  stop("Stale gender GSVA cache. Run its producer with SCREF_FORCE_REBUILD=TRUE first.")
 }
+gsva_cache <- list(value = gsva_obj, reused = TRUE,
+                   label = "tcga_gender_gsva_scores", path = gender_gsva_cache_path)
+####################
 
-gsva_cache <- load_or_build_tcga_scores()
 run_summary <- add_cache_status(run_summary, gsva_cache$label, gsva_cache$path, gsva_cache$reused)
 gsva_obj <- gsva_cache$value
 
@@ -839,7 +889,7 @@ test_event_features <- function(events_df, analysis_label) {
       event_z <- .x$feature_z[.x$event_present]
       no_event_z <- .x$feature_z[!.x$event_present]
       p_value <- if (length(event_vals) >= 3 && length(no_event_vals) >= 3) {
-        suppressWarnings(tryCatch(wilcox.test(event_vals, no_event_vals, exact = FALSE)$p.value, error = function(e) NA_real_))
+        suppressWarnings(wilcox.test(event_vals, no_event_vals, exact = FALSE)$p.value)
       } else {
         NA_real_
       }
@@ -926,9 +976,11 @@ if (file.exists(sc_event_tests_path)) {
   sc_event_tests <- read.csv(sc_event_tests_path, check.names = FALSE)
   state_feature_lookup <- c(
     "state__Classic_proliferation" = "Classic proliferation",
-    "state__Basal_to_intestinal_metaplasia" = "Basal to intestinal metaplasia",
-    "state__SMG_to_intestinal_metaplasia" = "SMG to intestinal metaplasia",
-    "state__Stress_adaptive" = "Stress adaptive",
+    "state__Basal_to_intestinal_metaplasia" = "Squamous-to-intestinal",
+    "state__Squamous_to_intestinal" = "Squamous-to-intestinal",
+    "state__SMG_to_intestinal_metaplasia" = "Glandular-to-intestinal",
+    "state__Glandular_to_intestinal" = "Glandular-to-intestinal",
+    "state__Stress_adaptive" = "Stress-adaptive",
     "state__Cancer_cell_immune_mimicry" = "Cancer-cell immune mimicry"
   )
   sc_event_tests <- sc_event_tests |>
@@ -961,7 +1013,7 @@ if (file.exists(sc_event_tests_path)) {
     )
   write.csv(sc_tcga_concordance, file.path(tiers[["tables"]], "Auto_scRef_tcga_event_feature_concordance.csv"), row.names = FALSE)
 } else {
-  sc_tcga_concordance <- data.frame()
+  stop("Missing scRef recurrent event tests: ", sc_event_tests_path)
 }
 
 ####################
@@ -979,8 +1031,7 @@ safe_spearman <- function(x, y) {
   if (sum(ok) < 5 || length(unique(x[ok])) < 2 || length(unique(y[ok])) < 2) {
     return(list(rho = NA_real_, p_value = NA_real_, n = sum(ok)))
   }
-  cr <- suppressWarnings(tryCatch(cor.test(x[ok], y[ok], method = "spearman"), error = function(e) NULL))
-  if (is.null(cr)) return(list(rho = NA_real_, p_value = NA_real_, n = sum(ok)))
+  cr <- suppressWarnings(cor.test(x[ok], y[ok], method = "spearman"))
   list(rho = unname(cr$estimate), p_value = cr$p.value, n = sum(ok))
 }
 
@@ -1088,7 +1139,7 @@ build_all_arm_tile_plot <- function(plot_df, title_text, fill_title,
       limits = c(-0.25, 0.25), oob = scales::squish, na.value = "white", 
       name = fill_title
     ) +
-    labs(title = title_text, x = "Chromosome arm level CNA events", y = "MP expression") +
+    labs(title = title_text, x = "Chromosome arm level CNA events", y = NULL) +
     theme_classic(base_size = base_size) +
     theme(
       plot.title = element_text(face = "bold", size = base_size + 4),
@@ -1100,6 +1151,7 @@ build_all_arm_tile_plot <- function(plot_df, title_text, fill_title,
       legend.title = element_text(face = "bold", size = base_size - 1),
       legend.text = element_text(size = base_size - 2),
       panel.spacing.x = grid::unit(1.5, "lines"),
+      plot.margin = margin(16, 32, 16, 20),
       panel.border = element_rect(colour = "black", fill = NA, linewidth = 1.2),
       axis.line = element_blank()
     )
@@ -1161,15 +1213,12 @@ if (file.exists(sc_results_path_for_arm_mp)) {
   p_all_arm_rectangles <- build_all_arm_tile_plot(
     all_arm_plot_df,
     "Chromosome arm level CNA events vs MP expression",
-    "Spearman rho",
+    "Spearman\nrho",
     x_text_size = 15,
     y_text_size = 14,
     base_size = 20
   )
-  ggsave(
-    file.path(tiers[["figures"]], "Auto_scRef_tcga_all_arm_mp_spearman_rectangles.pdf"),
-    p_all_arm_rectangles, width = 25, height = 10, device = cairo_pdf
-  )
+  tcga_save_figure("Auto_scRef_tcga_all_arm_mp_spearman_rectangles.pdf", list(p_all_arm_rectangles), width = 25, height = 10)
 
   all_arm_all_trends_plot_df <- bind_rows(
     sc_all_arm_mp_tests |> transmute(dataset = "scATLAS subclones", arm, mp, effect = rho, p_adj, sig_fdr),
@@ -1193,15 +1242,12 @@ if (file.exists(sc_results_path_for_arm_mp)) {
   p_all_arm_all_trends <- build_all_arm_tile_plot(
     all_arm_all_trends_plot_df,
     "Chromosome arm level CNA events vs MP expression: all trends",
-    "Spearman rho",
+    "Spearman\nrho",
     x_text_size = 15,
     y_text_size = 14,
     base_size = 20
   )
-  ggsave(
-    file.path(tiers[["figures"]], "Auto_scRef_tcga_all_arm_mp_spearman_rectangles_all_trends.pdf"),
-    p_all_arm_all_trends, width = 25, height = 10, device = cairo_pdf
-  )
+  tcga_save_figure("Auto_scRef_tcga_all_arm_mp_spearman_rectangles_all_trends.pdf", list(p_all_arm_all_trends), width = 25, height = 10)
 
   if (file.exists(sc_event_tests_path)) {
     message("Creating rectangular recurrent-event MP validation heatmap")
@@ -1288,13 +1334,10 @@ if (file.exists(sc_results_path_for_arm_mp)) {
       base_size = 20
     ) + labs(x = "Recurrent chromosome-arm event")
 
-    ggsave(
-      file.path(tiers[["figures"]], "Auto_scRef_tcga_recurrent_event_mp_rectangles.pdf"),
-      p_recurrent_rectangles, width = 25, height = 10, device = cairo_pdf
-    )
+    tcga_save_figure("Auto_scRef_tcga_recurrent_event_mp_rectangles.pdf", list(p_recurrent_rectangles), width = 25, height = 10)
   } else {
     recurrent_mp_concordance <- data.frame()
-    message("Skipping recurrent rectangular heatmap because scRef recurrent event tests are missing: ", sc_event_tests_path)
+    stop("Missing scRef recurrent event tests: ", sc_event_tests_path)
   }
 
   rectangle_summary <- bind_rows(
@@ -1329,7 +1372,7 @@ if (file.exists(sc_results_path_for_arm_mp)) {
   )
   write.csv(rectangle_summary, file.path(tiers[["tables"]], "Auto_tcga_cna_rectangle_heatmap_summary.csv"), row.names = FALSE)
 } else {
-  message("Skipping all-arm MP association heatmap because scRef result cache is missing: ", sc_results_path_for_arm_mp)
+  stop("Missing scRef result cache: ", sc_results_path_for_arm_mp)
 }
 ####################
 
@@ -1347,7 +1390,7 @@ validation_conclusion <- data.frame(
     paste0("Selected threshold ", selected_threshold,
            " by maximizing F1 = 2*precision*recall/(precision+recall), where precision = curated OAC events recovered / TCGA recurrent events and recall = curated OAC events recovered / curated OAC events."),
     if (sum(sc_validation$tests$p_adj_by_feature_type < 0.10, na.rm = TRUE) == 0) {
-      "No TCGA MP/state association reached feature-group FDR < 0.10 for the top scRef recurrent CNA events; this validates the scRef conclusion that recurrent arm events are not robustly coupled to MP/state programmes."
+      "No TCGA MP/state association reached feature-group FDR < 0.10 for the top scRef recurrent CNA events; this does not establish biological independence or absence of an association."
     } else {
       "At least one top scRef recurrent CNA event showed a TCGA MP/state association at feature-group FDR < 0.10; inspect Auto_scRef_recurrent_events_tcga_feature_tests.csv for direction and effect size."
     },
@@ -1415,7 +1458,7 @@ plot_event_assoc <- function(group_name, title_suffix) {
                          na.value = "grey90") +
     scale_size_continuous(range = c(3.5, 11), limits = c(0, 12)) +
     labs(
-      title = paste0("TCGA validation of scRef recurrent CNA events: ", title_suffix),
+      title = str_wrap(paste0("TCGA validation of scRef recurrent CNA events: ", title_suffix), width = 70),
       x = NULL,
       y = NULL,
       fill = "Median standardized\nevent delta",
@@ -1470,7 +1513,7 @@ plot_event_boxplots <- function(group_name, title_suffix, event_ids) {
     scale_fill_manual(values = c("Event-negative" = "grey72", "Event-positive" = "#B2182B")) +
     scale_color_manual(values = c("Event-negative" = "grey45", "Event-positive" = "#B2182B")) +
     labs(
-      title = paste0("TCGA feature distributions by scRef recurrent CNA event: ", title_suffix),
+      title = str_wrap(paste0("TCGA feature distributions by scRef recurrent CNA event: ", title_suffix), width = 70),
       x = NULL,
       y = "Standardized TCGA GSVA score",
       fill = NULL
@@ -1486,22 +1529,17 @@ plot_event_boxplots <- function(group_name, title_suffix, event_ids) {
     )
 }
 
-pdf(file.path(tiers[["figures"]], "Auto_tcga_cna_event_association_dotplots.pdf"),
-    width = 22, height = 13, useDingbats = FALSE)
-print(event_bar)
-print(plot_event_assoc("Metaprogrammes", "all metaprogrammes"))
-print(plot_event_assoc("Centred states", "five centred states excluding Hybrid and Unresolved"))
-dev.off()
-
-pdf(file.path(tiers[["figures"]], "Auto_tcga_cna_event_boxplots.pdf"),
-    width = 22, height = 14, useDingbats = FALSE)
-for (event_page in event_page_chunks(sc_boxplot_events, page_size = 4L)) {
-  print(plot_event_boxplots("Metaprogrammes", "all metaprogrammes", event_page))
-}
-for (event_page in event_page_chunks(sc_boxplot_events, page_size = 4L)) {
-  print(plot_event_boxplots("Centred states", "five centred states excluding Hybrid and Unresolved", event_page))
-}
-dev.off()
+####################
+tcga_save_figure("Auto_tcga_cna_event_association_dotplots.pdf",
+                 list(event_bar, plot_event_assoc("Metaprogrammes", "all metaprogrammes"),
+                      plot_event_assoc("Centred states", "five centred states excluding Hybrid and Unresolved")),
+                 width = 22, height = 13)
+boxplot_pages <- c(
+  lapply(event_page_chunks(sc_boxplot_events), function(events) plot_event_boxplots("Metaprogrammes", "all metaprogrammes", events)),
+  lapply(event_page_chunks(sc_boxplot_events), function(events) plot_event_boxplots("Centred states", "five centred states excluding Hybrid and Unresolved", events))
+)
+tcga_save_figure("Auto_tcga_cna_event_boxplots.pdf", boxplot_pages, width = 22, height = 14)
+####################
 
 p_threshold <- threshold_optimization |>
   arrange(.data$threshold) |>
@@ -1513,8 +1551,7 @@ p_threshold <- threshold_optimization |>
   labs(title = "TCGA arm-call threshold selection", x = "Absolute arm mean threshold", y = "F1 vs curated OAC arm events") +
   theme_classic(base_size = 14) +
   theme(plot.title = element_text(face = "bold"), axis.text = element_text(colour = "black"))
-ggsave(file.path(tiers[["figures"]], "Auto_tcga_cna_threshold_optimization.pdf"),
-       p_threshold, width = 8, height = 5, device = cairo_pdf)
+tcga_save_figure("Auto_tcga_cna_threshold_optimization.pdf", list(p_threshold), width = 10, height = 7)
 
 summary_df <- bind_rows(
   data.frame(
@@ -1575,13 +1612,7 @@ write.csv(summary_df, file.path(summary_dir, "Auto_tcga_cna_recurrent_event_vali
 # 8) Consensus Heatmap Comparison & 8q/MYC Boxplots
 ####################
 message("Generating consensus heatmap comparison and 8q/MYC boxplots")
-suppressPackageStartupMessages({
-  library(ComplexHeatmap)
-  library(circlize)
-  library(RColorBrewer)
-  library(gridExtra)
-  library(cluster)
-})
+
 
 # Load SC data
 sc_results_path <- file.path(sc_cna_dir, "rds", "Auto_cna_subclone_expression_results.rds")
@@ -1624,14 +1655,14 @@ if (file.exists(sc_results_path)) {
     mat <- sc_arm_matrix_valid[sc_hc$order, arm_levels, drop = FALSE]
     
     row_ha <- rowAnnotation(
-      Cluster = row_meta$cna_cluster,
+      `scRef cluster` = row_meta$cna_cluster,
       col = list(
-        Cluster = sc_cluster_cols
+        `scRef cluster` = sc_cluster_cols
       ),
       annotation_name_gp = gpar(fontsize = 13, fontface = "bold"),
       show_annotation_name = FALSE,
       annotation_legend_param = list(
-        Cluster = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12))
+        `scRef cluster` = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12))
       ),
       simple_anno_size = unit(5, "mm")
     )
@@ -1673,17 +1704,17 @@ if (file.exists(sc_results_path)) {
   tcga_hc <- hclust(dist(tcga_arm_matrix), method = "ward.D2")
   
   choose_consensus_k <- function(mat, max_k = 6L) {
-    if (nrow(mat) < 4) return(1L)
+    if (nrow(mat) < 4) stop("At least four samples are required for TCGA clustering.")
     max_k <- min(max_k, nrow(mat) - 1L)
     d <- dist(mat)
     scores <- lapply(2:max_k, function(k) {
       cl <- cutree(hclust(d, method = "ward.D2"), k = k)
       if (any(table(cl) < 2)) return(data.frame(k = k, silhouette = NA_real_))
-      sil <- tryCatch(mean(cluster::silhouette(cl, d)[, "sil_width"]), error = function(e) NA_real_)
+      sil <- mean(cluster::silhouette(cl, d)[, "sil_width"])
       data.frame(k = k, silhouette = sil)
     }) |> bind_rows()
     scores <- scores |> filter(is.finite(.data$silhouette))
-    if (nrow(scores) == 0) return(min(3L, nrow(mat)))
+    if (nrow(scores) == 0) stop("No admissible TCGA cluster count has a finite silhouette.")
     scores$k[which.max(scores$silhouette)]
   }
   
@@ -1710,15 +1741,15 @@ if (file.exists(sc_results_path)) {
     mat <- tcga_arm_matrix[tcga_hc$order, arm_levels, drop = FALSE]
     
     row_ha <- rowAnnotation(
-      Cluster = row_meta$cna_cluster,
+      `TCGA cluster` = row_meta$cna_cluster,
       col = list(
-        Cluster = tcga_cluster_cols
+        `TCGA cluster` = tcga_cluster_cols
       ),
       annotation_name_gp = gpar(fontsize = 13, fontface = "bold"),
-      show_annotation_name = TRUE,
+      show_annotation_name = FALSE,
       annotation_name_side = "bottom",
       annotation_legend_param = list(
-        Cluster = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12))
+        `TCGA cluster` = list(title_gp = gpar(fontsize = 13, fontface = "bold"), labels_gp = gpar(fontsize = 12))
       ),
       simple_anno_size = unit(5, "mm")
     )
@@ -1748,11 +1779,11 @@ if (file.exists(sc_results_path)) {
     )
   }
   
-  pdf(file.path(tiers[["figures"]], "Auto_tcga_and_scRef_consensus_cna_heatmap.pdf"),
-      width = 16, height = 9, useDingbats = FALSE)
-  draw(plot_sc_consensus_heatmap() %v% plot_tcga_consensus_heatmap(), ht_gap = unit(0.8, "cm"), heatmap_legend_side = "right", annotation_legend_side = "right")
-  dev.off()
-  
+  ####################
+  consensus_heatmap <- plot_sc_consensus_heatmap() %v% plot_tcga_consensus_heatmap()
+  tcga_save_figure("Auto_tcga_and_scRef_consensus_cna_heatmap.pdf", list(consensus_heatmap), width = 20, height = 10)
+  ####################
+
   # 8q / MYC Boxplots
   sc_arm_long <- as.data.frame(sc_results$arm_long) |>
     filter(.data$subclone != "Unresolved") |>
@@ -1790,13 +1821,13 @@ if (file.exists(sc_results_path)) {
         levels = unique(sc_chr8q_myc$chr8q_group_label[order(sc_chr8q_myc$chr8q_group)]))
         
     levels_sc <- levels(sc_chr8q_myc$chr8q_group_label)
-    comps_sc <- list(c(levels_sc[1], levels_sc[2]), c(levels_sc[2], levels_sc[3]), c(levels_sc[1], levels_sc[3]))
+    comps_sc <- if (length(levels_sc) >= 2L) combn(levels_sc, 2, simplify = FALSE) else list()
     
     p_gain8q_myc_sc <- ggplot(sc_chr8q_myc, aes(x = .data$chr8q_group_label, y = .data[["mp__MP2+"]], fill = .data$chr8q_group)) +
       geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.8, width = 0.62) +
       geom_point(aes(size = .data$n_cells), position = position_jitter(width = 0.14, height = 0),
                  alpha = 0.42, color = "black") +
-      ggpubr::stat_compare_means(comparisons = comps_sc, label = "p.signif", 
+      ggpubr::stat_compare_means(comparisons = comps_sc, method = "wilcox.test", label = "p.signif",
                                  symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf), symbols = c("****", "***", "**", "*", "NS")),
                                  size = 7, vjust = -0.2, step.increase = 0.12, tip.length = 0.02) +
       scale_fill_manual(values = c("8q loss" = "#2166AC", "No 8q CNA" = "grey72", "8q gain" = "#B2182B")) +
@@ -1845,13 +1876,13 @@ if (file.exists(sc_results_path)) {
         levels = unique(tcga_chr8q_myc$chr8q_group_label[order(tcga_chr8q_myc$chr8q_group)]))
         
     levels_tcga <- levels(tcga_chr8q_myc$chr8q_group_label)
-    comps_tcga <- list(c(levels_tcga[1], levels_tcga[2]), c(levels_tcga[2], levels_tcga[3]), c(levels_tcga[1], levels_tcga[3]))
+    comps_tcga <- if (length(levels_tcga) >= 2L) combn(levels_tcga, 2, simplify = FALSE) else list()
     
     p_gain8q_myc_tcga <- ggplot(tcga_chr8q_myc, aes(x = .data$chr8q_group_label, y = .data[["MP2+"]], fill = .data$chr8q_group)) +
       geom_boxplot(outlier.shape = NA, alpha = 0.88, linewidth = 0.8, width = 0.62) +
       geom_point(position = position_jitter(width = 0.14, height = 0),
                  alpha = 0.42, color = "black", size = 3) +
-      ggpubr::stat_compare_means(comparisons = comps_tcga, label = "p.signif", 
+      ggpubr::stat_compare_means(comparisons = comps_tcga, method = "wilcox.test", label = "p.signif",
                                  symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, Inf), symbols = c("****", "***", "**", "*", "NS")),
                                  size = 7, vjust = -0.2, step.increase = 0.12, tip.length = 0.02) +
       scale_fill_manual(values = c("8q loss" = "#2166AC", "No 8q CNA" = "grey72", "8q gain" = "#B2182B")) +
@@ -1873,13 +1904,30 @@ if (file.exists(sc_results_path)) {
   }
   
   if (!is.null(p_gain8q_myc_sc) && !is.null(p_gain8q_myc_tcga)) {
-    pdf(file.path(tiers[["figures"]], "Auto_tcga_and_scRef_gain_chr8q_myc_mp.pdf"), width = 16, height = 9, useDingbats = FALSE)
-    grid.arrange(p_gain8q_myc_sc, p_gain8q_myc_tcga, ncol = 2)
-    dev.off()
+    ####################
+    myc_grob <- function() gridExtra::arrangeGrob(p_gain8q_myc_sc, p_gain8q_myc_tcga, ncol = 2)
+    tcga_save_figure("Auto_tcga_and_scRef_gain_chr8q_myc_mp.pdf", list(myc_grob), width = 16, height = 9)
+    ####################
   }
 } else {
-  message("Warning: Auto_cna_subclone_expression_results.rds not found. Skipping comparative plots.")
+  stop("Missing scRef CNA results: ", sc_results_path)
 }
+
+####################
+saveRDS(list(figures = tcga_figure_bundle), figure_bundle_path)
+saveRDS(list(tcga_scores = tcga_score_df, tcga_arm_matrix = tcga_arm_matrix,
+             tcga_clusters = tcga_cluster_df, sc_arm_matrix = sc_arm_matrix_valid,
+             sc_clusters = sc_cluster_df, sc_chr8q_myc = sc_chr8q_myc,
+             tcga_chr8q_myc = tcga_chr8q_myc, feature_info = feature_info,
+             sc_validation = sc_validation, tcga_discovery = tcga_discovery,
+             selected_threshold = selected_threshold),
+        file.path(tiers[["intermediate"]], "Auto_tcga_cna_plot_source_data.rds"))
+write.csv(tcga_cluster_df, file.path(tiers[["tables"]], "Auto_tcga_cna_cluster_assignments.csv"), row.names = FALSE)
+if (file.info(file.path(summary_dir, "Auto_tcga_cna_recurrent_event_validation_summary.csv"))$size >= 100000) {
+  stop("Compact TCGA summary must be <100 KB.")
+}
+run_summary$input_files <- unique(c(run_summary$input_files, sc_results_path, SCREF_MP_GENES_RDS))
+####################
 
 run_summary$parameters$selected_threshold <- selected_threshold
 write_run_summary(run_summary, file.path(tiers[["logs"]], "Auto_tcga_cna_recurrent_event_validation_run_summary.rds"))

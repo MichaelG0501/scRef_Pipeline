@@ -2,37 +2,49 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/TCGA/tcga_esca_reconstruct_data.R
+#   Description: Reconstruct pinned TCGA-ESCA TPM, GDC diagnoses and clinical metadata.
 #   Methodology: analysis/methodology/TCGA/tcga_reconstruction_and_gender_validation_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs:
-#     - GDC API: TCGA-ESCA open RNA-Seq STAR-count gene expression files
-#     - cBioPortal API: esca_tcga_gdc patient and sample clinical attributes
+#   Inputs (paths relative to the live project unless absolute):
+#     - https://api.gdc.cancer.gov/files (TCGA-ESCA STAR - Counts; manifest-pinned downloads)
+#     - https://api.gdc.cancer.gov/data/<file_id>; https://api.gdc.cancer.gov/cases
+#     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/source_data/clinical_cbioportal.tsv
+#     - Initial clinical import only: /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/clinical_cbioportal.tsv
+#     - analysis/shared/scRef_config.R; analysis/shared/scRef_helpers.R; analysis/TCGA/Auto_tcga_workflow_helpers.R
 #   Outputs:
-#     - ref_outs/TCGA/esca_gdc_reconstruction/raw/
-#         Auto_gdc_star_counts_file_metadata.csv
-#         Auto_gdc_manifest.txt
-#         Auto_cbioportal_*_clinical_long.csv
-#         Auto_cbioportal_*_clinical_wide.csv
-#         gdc_files/<file_id>/*.rna_seq.augmented_star_gene_counts.tsv
-#     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/
-#         Auto_tcga_esca_meta.rds/csv
-#         Auto_tcga_esca_tpm_matrix.rds
-#         Auto_tcga_esca_gene_key.csv
-#     - ref_outs/TCGA/esca_gdc_reconstruction/tables/
-#         TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt
-#         Auto_tcga_esca_reconstruction_sample_summary.csv
-#     - ref_outs/TCGA/esca_gdc_reconstruction/logs/
-#         Auto_tcga_esca_reconstruction_run_summary.rds/txt
-#     - compatibility copies:
-#         ref_outs/tcga_esca_meta.rds
-#         ref_outs/cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt
+#     ref_outs/TCGA/esca_gdc_reconstruction/intermediate/
+#       Auto_tcga_esca_expression_source.rds
+#       Auto_tcga_esca_meta.rds
+#       Auto_tcga_esca_tpm_matrix.rds
+#       source_data/Auto_gdc_diagnoses_query.rds
+#       source_data/Auto_gdc_download_status.csv
+#       source_data/Auto_gdc_manifest.txt
+#       source_data/Auto_gdc_star_counts_file_metadata.csv
+#       source_data/Auto_gdc_star_counts_query.rds
+#       source_data/clinical_cbioportal.tsv
+#       source_data/gdc_files/<file_id>/<file_name>
+#     ref_outs/TCGA/esca_gdc_reconstruction/tables/
+#       Auto_AJCC8_staging_annotation_template.xlsx
+#       Auto_gdc_diagnoses.csv
+#       Auto_tcga_esca_gene_key.csv
+#       Auto_tcga_esca_meta.csv
+#       Auto_tcga_esca_reconstruction_sample_summary.csv
+#       TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt
+#     ref_outs/TCGA/esca_gdc_reconstruction/figures/
+#     ref_outs/TCGA/esca_gdc_reconstruction/logs/
+#       Auto_tcga_esca_reconstruction_run_summary.rds
+#       Auto_tcga_esca_reconstruction_run_summary.txt
+#     Compatibility copies (live; existing consumers):
+#       ref_outs/tcga_esca_meta.rds
+#       ref_outs/cibersortx/TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt
 #   Cache/replot behavior:
-#     - Existing verified GDC files are reused.
-#     - Set SCREF_TCGA_SKIP_DOWNLOAD=TRUE to process already-downloaded files only.
-#     - Set SCREF_TCGA_OVERWRITE_BAD=TRUE only to replace a failed checksum file.
-#   Run:
-#     Rscript analysis/TCGA/tcga_esca_reconstruct_data.R
-#   Conda env: dmtcp
+#     SCREF_FORCE_REBUILD=TRUE rebuilds this script's computational caches.
+#     Verified downloads are retained; query and expression caches are reused by default.
+#     SCREF_TCGA_SKIP_DOWNLOAD=TRUE forbids downloads; SCREF_TCGA_OVERWRITE_BAD=TRUE permits checksum repair.
+#     SCREF_TCGA_DOWNLOAD_TIMEOUT (seconds; default 1800); SCREF_TCGA_MAX_FILES (positive debug limit).
+#     SCREF_REPLOT_ONLY is unsupported: this producer does not plot.
+#   Run: /opt/pbs/bin/qsub analysis/TCGA/Auto_tcga_esca_reconstruct_data.sh
+#   Conda env: dmtcp. Execution requires a PBS allocation.
 ####################
 
 library(data.table)
@@ -44,9 +56,15 @@ library(readr)
 library(stringr)
 library(tibble)
 library(tidyr)
+library(openxlsx)
 
 source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
 source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_helpers.R")
+
+####################
+source(file.path(SCREF_ANALYSIS_DIR, "TCGA", "Auto_tcga_workflow_helpers.R"))
+tcga_execution_guard()
+####################
 
 setwd(SCREF_PROJECT_DIR)
 
@@ -56,7 +74,10 @@ setwd(SCREF_PROJECT_DIR)
 script_path <- file.path(SCREF_ANALYSIS_DIR, "TCGA", "tcga_esca_reconstruct_data.R")
 out_dir <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "esca_gdc_reconstruction")
 tiers <- ensure_output_tiers(out_dir)
-raw_dir <- file.path(out_dir, "raw")
+####################
+invisible(lapply(file.path(tiers, ".storage_guard"), tcga_live_path))
+####################
+raw_dir <- file.path(tiers[["intermediate"]], "source_data")
 gdc_file_dir <- file.path(raw_dir, "gdc_files")
 dir.create(raw_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(gdc_file_dir, recursive = TRUE, showWarnings = FALSE)
@@ -64,7 +85,11 @@ dir.create(file.path(SCREF_REF_OUTS_DIR, "cibersortx"), recursive = TRUE, showWa
 
 gdc_files_endpoint <- "https://api.gdc.cancer.gov/files"
 gdc_data_endpoint <- "https://api.gdc.cancer.gov/data/"
-cbio_base <- "https://www.cbioportal.org/api"
+####################
+clinical_source <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/clinical_cbioportal.tsv"
+if (tcga_flag("SCREF_REPLOT_ONLY")) stop("Reconstruction has no figures; SCREF_REPLOT_ONLY is unsupported.")
+clinical_path <- tcga_stage_input(clinical_source, file.path(raw_dir, "clinical_cbioportal.tsv"))
+####################
 study_id <- "esca_tcga_gdc"
 
 options(timeout = as.numeric(Sys.getenv("SCREF_TCGA_DOWNLOAD_TIMEOUT", unset = "1800")))
@@ -75,10 +100,11 @@ max_files <- if (nzchar(max_files_env)) as.integer(max_files_env) else NA_intege
 
 run_summary <- start_run_summary(
   script = script_path,
-  input_files = c(gdc_files_endpoint, cbio_base),
+  input_files = c(gdc_files_endpoint, "https://api.gdc.cancer.gov/cases", clinical_path),
   output_files = c(
     file.path(tiers[["intermediate"]], "Auto_tcga_esca_meta.rds"),
     file.path(tiers[["tables"]], "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt"),
+    file.path(tiers[["tables"]], "Auto_AJCC8_staging_annotation_template.xlsx"),
     file.path(SCREF_REF_OUTS_DIR, "tcga_esca_meta.rds"),
     file.path(SCREF_REF_OUTS_DIR, "cibersortx", "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
   ),
@@ -127,6 +153,12 @@ coalesce_clean <- function(...) {
     out <- ifelse(is.na(out), val, out)
   }
   out
+}
+
+safe_get <- function(lst, key, default = NA_character_) {
+  val <- lst[[key]]
+  if (is.null(val) || length(val) == 0) return(default)
+  val
 }
 
 add_missing_cols <- function(df, cols) {
@@ -261,7 +293,12 @@ query_gdc_star_counts <- function() {
     arrange(case_barcode, sample_barcode, file_name)
 }
 
-gdc_meta <- query_gdc_star_counts()
+####################
+gdc_cache <- load_or_build_cache(file.path(raw_dir, "Auto_gdc_star_counts_query.rds"), query_gdc_star_counts)
+run_summary <- add_cache_status(run_summary, gdc_cache$label, gdc_cache$path, gdc_cache$reused)
+gdc_meta <- gdc_cache$value
+if (nzchar(max_files_env) && (is.na(max_files) || max_files < 1L)) stop("SCREF_TCGA_MAX_FILES must be a positive integer.")
+####################
 if (!is.na(max_files)) {
   gdc_meta <- head(gdc_meta, max_files)
 }
@@ -280,8 +317,68 @@ message("GDC metadata rows: ", nrow(gdc_meta))
 # 4) Pull cBioPortal patient and sample clinical attributes
 ####################
 # bypassing API due to 503 errors; using local TSV
-cbio_df <- fread("/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_scripts/TCGA/clinical_cbioportal.tsv", sep="\t", header=TRUE, data.table=FALSE)
+cbio_df <- fread(clinical_path, sep = "\t", header = TRUE, data.table = FALSE)
 colnames(cbio_df) <- gsub("[^A-Za-z0-9_]", "_", colnames(cbio_df))
+
+####################
+# 4b) Query GDC diagnosis-level clinical data (grade, location, clinical TNM)
+####################
+query_gdc_diagnoses <- function() {
+  filters <- list(op = "=", content = list(field = "project.project_id", value = "TCGA-ESCA"))
+
+  fields <- paste(c(
+    "submitter_id",
+    "diagnoses.ajcc_clinical_t", "diagnoses.ajcc_clinical_n", "diagnoses.ajcc_clinical_m",
+    "diagnoses.ajcc_clinical_stage",
+    "diagnoses.tumor_grade",
+    "diagnoses.tissue_or_organ_of_origin"
+  ), collapse = ",")
+
+  response <- request("https://api.gdc.cancer.gov/cases") |>
+    req_url_query(
+      filters = toJSON(filters, auto_unbox = TRUE),
+      fields  = fields,
+      size    = 500,
+      format  = "JSON"
+    ) |>
+    req_retry(max_tries = 4) |>
+    req_perform()
+
+  parsed <- resp_body_json(response, simplifyVector = FALSE)
+  hits <- parsed$data$hits
+  if (length(hits) == 0) {
+    stop("GDC cases query returned no TCGA-ESCA diagnoses.")
+  }
+
+  rows <- lapply(hits, function(h) {
+    pid <- h$submitter_id
+    for (dx in h$diagnoses) {
+      site <- safe_get(dx, "tissue_or_organ_of_origin", "")
+      if (grepl("esophag|gastroesoph", site, ignore.case = TRUE)) {
+        return(tibble(
+          case_barcode       = pid,
+          GDC_tumor_grade    = clean_missing(safe_get(dx, "tumor_grade")),
+          GDC_location       = clean_missing(safe_get(dx, "tissue_or_organ_of_origin")),
+          GDC_clinical_T     = clean_missing(safe_get(dx, "ajcc_clinical_t")),
+          GDC_clinical_N     = clean_missing(safe_get(dx, "ajcc_clinical_n")),
+          GDC_clinical_M     = clean_missing(safe_get(dx, "ajcc_clinical_m")),
+          GDC_clinical_stage = clean_missing(safe_get(dx, "ajcc_clinical_stage"))
+        ))
+      }
+    }
+    NULL
+  })
+  bind_rows(rows[!sapply(rows, is.null)]) |>
+    distinct(case_barcode, .keep_all = TRUE)
+}
+
+####################
+diag_cache <- load_or_build_cache(file.path(raw_dir, "Auto_gdc_diagnoses_query.rds"), query_gdc_diagnoses)
+run_summary <- add_cache_status(run_summary, diag_cache$label, diag_cache$path, diag_cache$reused)
+gdc_diag <- diag_cache$value
+write.csv(gdc_diag, file.path(tiers[["tables"]], "Auto_gdc_diagnoses.csv"), row.names = FALSE)
+####################
+message("GDC diagnosis rows: ", nrow(gdc_diag))
 
 
 ####################
@@ -366,10 +463,15 @@ patient_clin <- cbio_df %>%
     Age_at_diagnosis = clean_numeric(Diagnosis_Age),
     Stage = AJCC_Pathologic_Stage,
     Stage_Simple = normalise_stage(Stage),
+    AJCC_Edition = American_Joint_Committee_on_Cancer_Publication_Version_Type,
     Grade = NA_character_,
     AJCC_pathologic_T = AJCC_Pathologic_T_Stage,
     AJCC_pathologic_N = AJCC_Pathologic_N_Stage,
     AJCC_pathologic_M = AJCC_Pathologic_M_Stage,
+    AJCC_clinical_T = AJCC_Clinical_T_Stage,
+    AJCC_clinical_N = AJCC_Clinical_N_Stage,
+    AJCC_clinical_M = AJCC_Clinical_M_Stage,
+    Clinical_Stage = AJCC_Clinical_Group_Stage,
     Race = Race_Category,
     Ethnicity = Ethnicity_Category,
     Prior_malignancy = Prior_Malignancy,
@@ -398,20 +500,27 @@ sample_clin <- cbio_df %>%
 meta <- gdc_meta |>
   left_join(patient_clin, by = "case_barcode") |>
   left_join(sample_clin, by = c("case_barcode", "cbio_sample_id")) |>
+  left_join(gdc_diag, by = "case_barcode") |>
   mutate(
     type = if_else(!is.na(gdc_disease_type), gdc_disease_type, Disease_Type),
     HistologyGroup = infer_histology(type, Cancer_Type_Detailed),
     Stage_Simple = factor(Stage_Simple, levels = c("Stage I", "Stage II", "Stage III", "Stage IV")),
-    Grade = factor(Grade, levels = c("G1", "G2", "G3", "G4")),
-    Gender = factor(Gender, levels = c("Female", "Male"))
+    Grade = coalesce(GDC_tumor_grade, Grade),
+    Grade = factor(Grade, levels = c("G1", "G2", "G3", "G4", "GX")),
+    Gender = factor(Gender, levels = c("Female", "Male")),
+    Location = GDC_location,
+    AJCC_clinical_T = coalesce(AJCC_clinical_T, GDC_clinical_T),
+    AJCC_clinical_N = coalesce(AJCC_clinical_N, GDC_clinical_N),
+    AJCC_clinical_M = coalesce(AJCC_clinical_M, GDC_clinical_M),
+    Clinical_Stage = coalesce(Clinical_Stage, GDC_clinical_stage)
   ) |>
   arrange(case_barcode, sample_barcode, file_name)
 
 meta_rds <- file.path(tiers[["intermediate"]], "Auto_tcga_esca_meta.rds")
-meta_csv <- file.path(tiers[["intermediate"]], "Auto_tcga_esca_meta.csv")
+meta_csv <- file.path(tiers[["tables"]], "Auto_tcga_esca_meta.csv")
 saveRDS(meta, meta_rds)
 write.csv(meta, meta_csv, row.names = FALSE)
-saveRDS(meta, file.path(SCREF_REF_OUTS_DIR, "tcga_esca_meta.rds"))
+saveRDS(meta, tcga_live_path(file.path(SCREF_REF_OUTS_DIR, "tcga_esca_meta.rds")))
 
 ####################
 # 7) Build gene-symbol TPM mixture matrix
@@ -421,20 +530,12 @@ read_one_star_file <- function(path) {
   if (!"gene_id" %in% colnames(x)) {
     stop("Missing gene_id column in STAR-count file: ", path)
   }
-  tpm_col <- intersect(c("tpm_unstranded", "tpm"), colnames(x))[1]
-  if (is.na(tpm_col)) {
-    stop("No TPM column found in STAR-count file: ", path)
-  }
-  gene_symbol_col <- intersect(c("gene_name", "GeneSymbol", "gene"), colnames(x))[1]
-  if (is.na(gene_symbol_col)) {
-    gene_symbol_col <- "gene_id"
-  }
-  gene_type_col <- intersect(c("gene_type", "gene_biotype"), colnames(x))[1]
-  if (is.na(gene_type_col)) {
-    x$gene_type_tmp <- NA_character_
-    gene_type_col <- "gene_type_tmp"
-  }
-  x |>
+  required_columns <- c("tpm_unstranded", "gene_name", "gene_type")
+  if (!all(required_columns %in% colnames(x))) stop("STAR-count schema mismatch: ", path)
+  tpm_col <- "tpm_unstranded"
+  gene_symbol_col <- "gene_name"
+  gene_type_col <- "gene_type"
+  result <- x |>
     filter(!gene_id %in% c("N_unmapped", "N_multimapping", "N_noFeature", "N_ambiguous")) |>
     transmute(
       gene_id = sub("\\..*$", "", gene_id),
@@ -442,6 +543,12 @@ read_one_star_file <- function(path) {
       gene_type = clean_missing(.data[[gene_type_col]]),
       tpm = as.numeric(.data[[tpm_col]])
     )
+  ####################
+  if (any(!is.finite(result$tpm)) || any(result$tpm < 0) || anyDuplicated(result$gene_id)) {
+    stop("Invalid TPM values or duplicated gene IDs in: ", path)
+  }
+  result
+  ####################
 }
 
 if (anyDuplicated(meta$sample_barcode)) {
@@ -454,41 +561,56 @@ if (any(is.na(meta$path)) || any(!file.exists(meta$path))) {
   stop("Some downloaded GDC files are missing; first missing path: ", missing_paths[1])
 }
 
-message("Reading first STAR-count file to establish gene key.")
-first_expr <- read_one_star_file(meta$path[1])
-gene_key <- first_expr |> select(gene_id, gene_symbol, gene_type)
-expr_mat <- matrix(NA_real_, nrow = nrow(gene_key), ncol = nrow(meta))
-colnames(expr_mat) <- meta$sample_barcode
-rownames(expr_mat) <- gene_key$gene_id
-expr_mat[, 1] <- first_expr$tpm
+####################
+expression_cache <- tcga_cache(
+  file.path(tiers[["intermediate"]], "Auto_tcga_esca_expression_source.rds"),
+  inputs = c(clinical_path, metadata_path, meta$path),
+  build_fun = function() {
+    message("Reading first STAR-count file to establish gene key.")
+    first_expr <- read_one_star_file(meta$path[1])
+    gene_key <- first_expr |> select(gene_id, gene_symbol, gene_type)
+    expr_mat <- matrix(NA_real_, nrow = nrow(gene_key), ncol = nrow(meta))
+    colnames(expr_mat) <- meta$sample_barcode
+    rownames(expr_mat) <- gene_key$gene_id
+    expr_mat[, 1] <- first_expr$tpm
 
-if (nrow(meta) > 1) {
-  for (i in 2:nrow(meta)) {
-    message("Reading STAR-count file ", i, " / ", nrow(meta), ": ", meta$sample_barcode[i])
-    this_expr <- read_one_star_file(meta$path[i])
-    if (!identical(this_expr$gene_id, gene_key$gene_id)) {
-      idx <- match(gene_key$gene_id, this_expr$gene_id)
-      if (any(is.na(idx))) {
-        stop("Gene IDs in ", meta$path[i], " do not match the reference file.")
+    if (nrow(meta) > 1) {
+      for (i in 2:nrow(meta)) {
+        message("Reading STAR-count file ", i, " / ", nrow(meta), ": ", meta$sample_barcode[i])
+        this_expr <- read_one_star_file(meta$path[i])
+        if (!identical(this_expr$gene_id, gene_key$gene_id)) {
+          idx <- match(gene_key$gene_id, this_expr$gene_id)
+          if (any(is.na(idx))) {
+            stop("Gene IDs in ", meta$path[i], " do not match the reference file.")
+          }
+          expr_mat[, i] <- this_expr$tpm[idx]
+        } else {
+          expr_mat[, i] <- this_expr$tpm
+        }
       }
-      expr_mat[, i] <- this_expr$tpm[idx]
-    } else {
-      expr_mat[, i] <- this_expr$tpm
     }
+
+    valid_gene <- !is.na(gene_key$gene_symbol) & nzchar(gene_key$gene_symbol)
+    dt_expr <- as.data.table(expr_mat[valid_gene, , drop = FALSE])
+    dt_expr[, GeneSymbol := gene_key$gene_symbol[valid_gene]]
+    setcolorder(dt_expr, c("GeneSymbol", setdiff(colnames(dt_expr), "GeneSymbol")))
+    final_bulk <- dt_expr[, lapply(.SD, sum, na.rm = TRUE), by = GeneSymbol, .SDcols = setdiff(colnames(dt_expr), "GeneSymbol")]
+    setorder(final_bulk, GeneSymbol)
+
+    tpm_matrix <- as.matrix(final_bulk[, -1, with = FALSE])
+    rownames(tpm_matrix) <- final_bulk$GeneSymbol
+
+    if (any(!is.finite(tpm_matrix)) || any(tpm_matrix < 0)) stop("TPM matrix must be finite and nonnegative.")
+    list(gene_key = gene_key, tpm_matrix = tpm_matrix)
   }
-}
+)
+run_summary <- add_cache_status(run_summary, expression_cache$label, expression_cache$path, expression_cache$reused)
+gene_key <- expression_cache$value$gene_key
+tpm_matrix <- expression_cache$value$tpm_matrix
+final_bulk <- data.table(GeneSymbol = rownames(tpm_matrix), as.data.table(tpm_matrix))
+####################
 
-valid_gene <- !is.na(gene_key$gene_symbol) & nzchar(gene_key$gene_symbol)
-dt_expr <- as.data.table(expr_mat[valid_gene, , drop = FALSE])
-dt_expr[, GeneSymbol := gene_key$gene_symbol[valid_gene]]
-setcolorder(dt_expr, c("GeneSymbol", setdiff(colnames(dt_expr), "GeneSymbol")))
-final_bulk <- dt_expr[, lapply(.SD, sum, na.rm = TRUE), by = GeneSymbol, .SDcols = setdiff(colnames(dt_expr), "GeneSymbol")]
-setorder(final_bulk, GeneSymbol)
-
-tpm_matrix <- as.matrix(final_bulk[, -1, with = FALSE])
-rownames(tpm_matrix) <- final_bulk$GeneSymbol
-
-gene_key_path <- file.path(tiers[["intermediate"]], "Auto_tcga_esca_gene_key.csv")
+gene_key_path <- file.path(tiers[["tables"]], "Auto_tcga_esca_gene_key.csv")
 tpm_matrix_rds <- file.path(tiers[["intermediate"]], "Auto_tcga_esca_tpm_matrix.rds")
 mixture_path <- file.path(tiers[["tables"]], "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 compat_mixture_path <- file.path(SCREF_REF_OUTS_DIR, "cibersortx", "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
@@ -496,7 +618,7 @@ compat_mixture_path <- file.path(SCREF_REF_OUTS_DIR, "cibersortx", "TCGA_ESCA_TP
 write.csv(gene_key, gene_key_path, row.names = FALSE)
 saveRDS(tpm_matrix, tpm_matrix_rds)
 fwrite(final_bulk, mixture_path, sep = "\t")
-fwrite(final_bulk, compat_mixture_path, sep = "\t")
+fwrite(final_bulk, tcga_live_path(compat_mixture_path), sep = "\t")
 
 ####################
 # 8) Compact sample summary and run summary
@@ -510,6 +632,36 @@ write.csv(
   row.names = FALSE
 )
 
+####################
+# 8b) AJCC 8th edition staging annotation template (xlsx)
+#     Restricted to the cBioPortal sample IDs supplied in the pinned clinical TSV
+####################
+cbio_sample_ids <- unique(cbio_df$Sample_ID)
+
+staging_template <- meta |>
+  filter(cbio_sample_id %in% cbio_sample_ids) |>
+  transmute(
+    Sample_ID = cbio_sample_id,
+    Histology = HistologyGroup,
+    pT = AJCC_pathologic_T,
+    pN = AJCC_pathologic_N,
+    pM = AJCC_pathologic_M,
+    Grade = as.character(Grade),
+    Location = Location,
+    original_pathologic_staging = Stage,
+    AJCC_Edition = AJCC_Edition,
+    cT = AJCC_clinical_T,
+    cN = AJCC_clinical_N,
+    cM = AJCC_clinical_M,
+    original_clinical_staging = Clinical_Stage
+  ) |>
+  distinct(Sample_ID, .keep_all = TRUE) |>
+  arrange(Histology, Sample_ID)
+
+staging_xlsx_path <- file.path(tiers[["tables"]], "Auto_AJCC8_staging_annotation_template.xlsx")
+write.xlsx(staging_template, staging_xlsx_path, overwrite = TRUE)
+message("Staging annotation template: ", staging_xlsx_path, " (", nrow(staging_template), " samples)")
+
 write_run_summary(
   run_summary,
   file.path(tiers[["logs"]], "Auto_tcga_esca_reconstruction_run_summary.rds")
@@ -518,5 +670,6 @@ write_run_summary(
 message("TCGA ESCA reconstruction complete.")
 message("Metadata: ", meta_rds)
 message("TPM mixture: ", mixture_path)
+message("Staging xlsx: ", staging_xlsx_path)
 message("Compatibility metadata: ", file.path(SCREF_REF_OUTS_DIR, "tcga_esca_meta.rds"))
 message("Compatibility mixture: ", compat_mixture_path)

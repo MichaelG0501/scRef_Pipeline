@@ -2,25 +2,47 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/TCGA/tcga_gender_state_mp_validation.R
+#   Description: Compare scRef sample-level sex associations with TCGA GSVA effects.
 #   Methodology: analysis/methodology/TCGA/tcga_reconstruction_and_gender_validation_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
-#   Inputs:
+#   Inputs (paths relative to the live project unless absolute):
 #     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds
 #     - ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_tpm_matrix.rds
 #     - ref_outs/meta_full_epi.rds
-#     - canonical centred refined states, UCell scores, MP genes, and grouping table
-#     - /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx
+#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
+#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
+#     - ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv
+#     - ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
+#     - ref_outs/TCGA/gender_validation/intermediate/source_data/Concise_Summary_EAC_Ref.xlsx
+#     - Initial clinical import only: /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Concise_Summary_EAC_Ref.xlsx
+#     - analysis/shared/scRef_config.R; analysis/shared/scRef_helpers.R; analysis/TCGA/Auto_tcga_workflow_helpers.R
 #   Outputs:
-#     - ref_outs/TCGA/gender_validation/intermediate/Auto_tcga_gender_gsva_scores_centred17.rds
-#     - ref_outs/TCGA/gender_validation/tables/Auto_tcga_gender_*csv
-#     - ref_outs/TCGA/gender_validation/figures/Auto_tcga_gender_scRef_concordance.pdf/png
-#     - updates/new_updates/summaries/Auto_tcga_gender_scRef_concordance_summary.csv
+#     ref_outs/TCGA/gender_validation/intermediate/
+#       Auto_tcga_gender_figure_bundle.rds
+#       Auto_tcga_gender_gsva_scores_centred17.rds
+#       Auto_tcga_gender_plot_source_data.rds
+#       source_data/Concise_Summary_EAC_Ref.xlsx
+#     ref_outs/TCGA/gender_validation/tables/
+#       Auto_tcga_gender_scRef_concordance.csv
+#       Auto_tcga_gender_scRef_concordance_summary.csv
+#       Auto_tcga_gender_scref_feature_stats.csv
+#       Auto_tcga_gender_tcga_feature_stats.csv
+#     ref_outs/TCGA/gender_validation/figures/
+#       Auto_tcga_gender_scRef_concordance.pdf
+#       Auto_tcga_gender_scRef_concordance.png
+#     ref_outs/TCGA/gender_validation/logs/
+#       Auto_tcga_gender_replot_run_summary.rds
+#       Auto_tcga_gender_replot_run_summary.txt
+#       Auto_tcga_gender_scRef_concordance_run_summary.rds
+#       Auto_tcga_gender_scRef_concordance_run_summary.txt
+#     updates/new_updates/summaries/Auto_tcga_gender_scRef_concordance_summary.csv
 #   Cache/replot behavior:
-#     - GSVA scores are cached and reused unless SCREF_FORCE_REBUILD=TRUE.
-#     - Plot/stat regeneration is always performed from cached scores and current scRef inputs.
-#   Run:
-#     Rscript analysis/TCGA/tcga_gender_state_mp_validation.R
-#   Conda env: dmtcp
+#     SCREF_FORCE_REBUILD=TRUE rebuilds this script's computational caches.
+#     SCREF_REPLOT_ONLY=TRUE renders saved figure grobs without GSVA, tests or clustering.
+#     Replot requires a successful full run; missing or stale computational caches stop.
+#     All source data, caches, figure grobs and summaries remain inside the live project.
+#   Run: /opt/pbs/bin/qsub analysis/TCGA/Auto_tcga_gender_state_mp_validation.sh
+#   Conda env: dmtcp. Execution requires a PBS allocation.
 ####################
 
 library(data.table)
@@ -37,6 +59,11 @@ library(tidyr)
 source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
 source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_helpers.R")
 
+####################
+source(file.path(SCREF_ANALYSIS_DIR, "TCGA", "Auto_tcga_workflow_helpers.R"))
+tcga_execution_guard()
+####################
+
 setwd(SCREF_PROJECT_DIR)
 
 ####################
@@ -46,13 +73,31 @@ script_path <- file.path(SCREF_ANALYSIS_DIR, "TCGA", "tcga_gender_state_mp_valid
 tcga_recon_dir <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "esca_gdc_reconstruction")
 out_dir <- file.path(SCREF_REF_OUTS_DIR, "TCGA", "gender_validation")
 tiers <- ensure_output_tiers(out_dir)
-summary_dir <- SCREF_SUMMARY_DIR
+####################
+invisible(lapply(file.path(tiers, ".storage_guard"), tcga_live_path))
+####################
+summary_dir <- dirname(tcga_live_path(file.path(SCREF_SUMMARY_DIR, ".storage_guard")))
 dir.create(summary_dir, recursive = TRUE, showWarnings = FALSE)
 
 tcga_meta_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_meta.rds")
 tcga_matrix_path <- file.path(tcga_recon_dir, "intermediate", "Auto_tcga_esca_tpm_matrix.rds")
-tcga_mixture_path <- file.path(tcga_recon_dir, "tables", "TCGA_ESCA_TPM_CIBERSORTx_Mixture.txt")
 gsva_cache_path <- file.path(tiers[["intermediate"]], "Auto_tcga_gender_gsva_scores_centred17.rds")
+####################
+figure_bundle_path <- file.path(tiers[["intermediate"]], "Auto_tcga_gender_figure_bundle.rds")
+if (tcga_flag("SCREF_REPLOT_ONLY")) {
+  tcga_replot(figure_bundle_path,
+             file.path(tiers[["tables"]], "Auto_tcga_gender_scRef_concordance_summary.csv"),
+             file.path(tiers[["logs"]], "Auto_tcga_gender_replot_run_summary.rds"))
+  quit(save = "no")
+}
+SCREF_CLINICAL_XLSX <- tcga_stage_input(
+  SCREF_CLINICAL_XLSX,
+  file.path(tiers[["intermediate"]], "source_data", "Concise_Summary_EAC_Ref.xlsx")
+)
+tcga_require_files(c(tcga_meta_path, tcga_matrix_path, SCREF_META_FULL_EPI_RDS,
+                     SCREF_FINAL_STATE_RDS, SCREF_MP_UCELL_RDS, SCREF_MP_GENES_RDS,
+                     SCREF_MP_GROUPING_CSV, SCREF_CLINICAL_XLSX))
+####################
 
 state_groups <- SCREF_STATE_GROUPS
 core_state_order <- SCREF_PRIMARY_STATE_ORDER
@@ -150,10 +195,7 @@ make_feature_labels <- function(mp_features, state_features) {
 
 run_gsva_scores <- function(expr_mat, gene_sets) {
   gene_sets <- lapply(gene_sets, function(genes) intersect(unique(genes), rownames(expr_mat)))
-  gene_sets <- gene_sets[sapply(gene_sets, length) >= 5]
-  if (length(gene_sets) == 0) {
-    stop("No gene sets retained at >=5 genes for GSVA.")
-  }
+  if (any(lengths(gene_sets) < 5)) stop("Every current MP/state set requires >=5 expressed genes for GSVA.")
   suppressMessages(gsva(expr_mat, gene_sets, method = "gsva", kcdf = "Gaussian"))
 }
 
@@ -212,7 +254,7 @@ plot_tcga_boxes <- function(tcga_long_eac, tcga_stats_eac, features, feature_lab
       data = annot_df,
       aes(x = feature, y = y_pos, label = label),
       inherit.aes = FALSE,
-      size = 3.2,
+      size = 4.2,
       fontface = "bold"
     ) +
     scale_fill_manual(values = sex_palette, labels = legend_labels, drop = FALSE) +
@@ -225,7 +267,7 @@ plot_tcga_boxes <- function(tcga_long_eac, tcga_stats_eac, features, feature_lab
       fill = "Sex"
     ) +
     coord_cartesian(clip = "off") +
-    theme_classic(base_size = 12) +
+    ppt_theme() +
     theme(
       plot.title = element_text(face = "bold", size = 15),
       axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
@@ -239,13 +281,13 @@ plot_tcga_boxes <- function(tcga_long_eac, tcga_stats_eac, features, feature_lab
 ####################
 # 3) Gene sets for TCGA scoring
 ####################
-mp_genes <- readRDS(SCREF_MP_GENES_RDS)
+mp_genes <- tcga_validate_gene_sets(readRDS(SCREF_MP_GENES_RDS))
 
 preferred_mp_order <- c(
   "MP1", "MP5", "MP13+", "MP2+", "MP14", "MP3+", "MP6+", "MP11+",
   "MP9+", "MP10+", "MP8+", "MP8b", "MP16", "MP18b", "MP17", "MP12", "MP15"
 )
-mp_genes <- mp_genes[intersect(c(preferred_mp_order, setdiff(names(mp_genes), preferred_mp_order)), names(mp_genes))]
+mp_genes <- mp_genes[preferred_mp_order]
 mp_sets <- mp_genes
 
 state_sets <- lapply(state_groups, function(mps) {
@@ -253,34 +295,20 @@ state_sets <- lapply(state_groups, function(mps) {
     unlist(mp_genes[intersect(mps, names(mp_genes))], use.names = FALSE)
   ))
 })
-state_sets <- state_sets[sapply(state_sets, length) >= 5]
+if (any(lengths(state_sets) < 5)) stop("Every current state requires >=5 genes.")
 state_sets <- state_sets[intersect(core_state_order, names(state_sets))]
 feature_labels <- make_feature_labels(names(mp_sets), names(state_sets))
 
 ####################
 # 4) TCGA bulk score table
 ####################
-if (!file.exists(tcga_meta_path)) {
-  tcga_meta_path <- file.path(SCREF_REF_OUTS_DIR, "tcga_esca_meta.rds")
-}
-if (!file.exists(tcga_meta_path)) {
-  stop("Missing TCGA metadata. Run analysis/TCGA/tcga_esca_reconstruct_data.R first.")
-}
 meta_tcga <- readRDS(tcga_meta_path) |>
   mutate(
     Gender = normalise_sex(Gender),
     HistologyGroup = ifelse(is.na(HistologyGroup), "Other", HistologyGroup)
   )
 
-if (file.exists(tcga_matrix_path)) {
-  tpm_mat <- readRDS(tcga_matrix_path)
-} else if (file.exists(tcga_mixture_path)) {
-  tpm_df <- fread(tcga_mixture_path)
-  tpm_mat <- as.matrix(tpm_df[, -1, with = FALSE])
-  rownames(tpm_mat) <- tpm_df[[1]]
-} else {
-  stop("Missing TCGA TPM matrix. Run analysis/TCGA/tcga_esca_reconstruct_data.R first.")
-}
+tpm_mat <- readRDS(tcga_matrix_path)
 
 common_samples <- intersect(colnames(tpm_mat), meta_tcga$sample_barcode)
 if (length(common_samples) < 20) {
@@ -289,10 +317,11 @@ if (length(common_samples) < 20) {
 meta_tcga <- meta_tcga |> filter(sample_barcode %in% common_samples)
 tpm_mat <- tpm_mat[, meta_tcga$sample_barcode, drop = FALSE]
 expr_log <- log2(tpm_mat + 1)
-expr_log[!is.finite(expr_log)] <- 0
+if (any(!is.finite(expr_log))) stop("TCGA expression contains non-finite values.")
 
-gsva_cache <- load_or_build_cache(
+gsva_cache <- tcga_cache(
   gsva_cache_path,
+  inputs = c(tcga_matrix_path, SCREF_MP_GENES_RDS, SCREF_MP_GROUPING_CSV, file.path(SCREF_ANALYSIS_DIR, "shared", "scRef_config.R")),
   build_fun = function() {
     list(
       mp_scores = t(run_gsva_scores(expr_log, mp_sets)),
@@ -306,6 +335,9 @@ gsva_cache <- load_or_build_cache(
 )
 run_summary <- add_cache_status(run_summary, gsva_cache$label, gsva_cache$path, gsva_cache$reused)
 gsva_obj <- gsva_cache$value
+####################
+tcga_validate_scores(gsva_obj, mp_sets, state_sets, meta_tcga$sample_barcode)
+####################
 
 tcga_score_df <- meta_tcga |>
   select(sample_barcode, case_barcode, HistologyGroup, sample_type_code, sample_type, sex = Gender) |>
@@ -353,6 +385,13 @@ ucell_scores <- readRDS(SCREF_MP_UCELL_RDS)
 clinical_sheet <- read_excel(SCREF_CLINICAL_XLSX, sheet = 3, skip = 1) |>
   mutate(orig.ident = paste(Author, Year, `Sample Name`, sep = "_"))
 
+####################
+if (anyDuplicated(clinical_sheet$orig.ident)) stop("Clinical orig.ident must be unique.")
+if (!"orig.ident" %in% colnames(meta_full_epi)) stop("scRef metadata requires orig.ident.")
+unknown_states <- setdiff(na.omit(unique(as.character(final_states))),
+                          c(SCREF_PRIMARY_STATE_ORDER, SCREF_TECHNICAL_STATE_ORDER))
+if (length(unknown_states)) stop("Unexpected state labels: ", paste(unknown_states, collapse = ", "))
+####################
 cell_ids <- Reduce(intersect, list(rownames(meta_full_epi), rownames(ucell_scores), names(final_states)))
 cell_meta <- data.frame(
   cell = cell_ids,
@@ -362,7 +401,10 @@ cell_meta <- data.frame(
   left_join(clinical_sheet |> select(orig.ident, Gender), by = "orig.ident") |>
   mutate(sex = normalise_sex(Gender))
 
-scref_mp_cols <- intersect(names(mp_sets), colnames(ucell_scores))
+scref_mp_cols <- names(mp_sets)
+####################
+if (!all(scref_mp_cols %in% colnames(ucell_scores))) stop("Missing current MP UCell columns.")
+####################
 scref_mp_df <- as.data.frame(ucell_scores[cell_ids, scref_mp_cols, drop = FALSE])
 scref_mp_df$cell <- rownames(scref_mp_df)
 scref_mp_long <- scref_mp_df |>
@@ -377,7 +419,10 @@ scref_state_cell <- cell_meta |>
   mutate(state = as.character(final_states[cell])) |>
   filter(!is.na(sex), !is.na(state), !state %in% c("Unresolved", "Hybrid"))
 
-scref_state_levels <- intersect(names(state_sets), unique(scref_state_cell$state))
+scref_state_levels <- names(state_sets)
+####################
+if (!nrow(scref_state_cell)) stop("No sex-annotated scRef cells have current biological states.")
+####################
 scref_state_totals <- scref_state_cell |>
   count(orig.ident, sex, name = "total_cells")
 scref_state_long <- scref_state_cell |>
@@ -488,7 +533,7 @@ p_concordance <- ggplot(plot_conc, aes(scref_cliffs_delta, tcga_cliffs_delta)) +
   geom_vline(xintercept = 0, linewidth = 0.45, colour = "grey45") +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", linewidth = 0.35, colour = "grey65") +
   geom_point(aes(fill = direction, shape = feature_type, size = -log10(pmax(scref_p_value, 1e-6))), colour = "black", alpha = 0.9) +
-  geom_text_repel(aes(label = label), size = 3.0, max.overlaps = 80, min.segment.length = 0, box.padding = 0.35) +
+  geom_text_repel(aes(label = label), size = 4.0, max.overlaps = 80, min.segment.length = 0, box.padding = 0.35) +
   scale_fill_manual(values = c("Concordant" = "#1B9E77", "Discordant" = "#D95F02")) +
   scale_shape_manual(values = c("MP" = 21, "State" = 24)) +
   scale_size_continuous(range = c(2.4, 5.2), name = "-log10(scRef p)") +
@@ -501,7 +546,7 @@ p_concordance <- ggplot(plot_conc, aes(scref_cliffs_delta, tcga_cliffs_delta)) +
     fill = "Direction",
     shape = "Feature type"
   ) +
-  theme_classic(base_size = 12) +
+  ppt_theme() +
   theme(
     plot.title = element_text(face = "bold", size = 16),
     axis.text = element_text(colour = "black"),
@@ -561,12 +606,21 @@ p_effect_bar <- ggplot(effect_bar_df, aes(feature_label, tcga_cliffs_delta, fill
 
 pdf_path <- file.path(tiers[["figures"]], "Auto_tcga_gender_scRef_concordance.pdf")
 png_path <- file.path(tiers[["figures"]], "Auto_tcga_gender_scRef_concordance.png")
-grDevices::cairo_pdf(pdf_path, width = 13, height = 8.5, onefile = TRUE)
-print(p_concordance)
-if (!is.null(p_mp_boxes)) print(p_mp_boxes)
-if (!is.null(p_state_boxes)) print(p_state_boxes)
-print(p_effect_bar)
-dev.off()
+####################
+plot_pages <- Filter(Negate(is.null), list(p_concordance, p_mp_boxes, p_state_boxes, p_effect_bar))
+tcga_save_figure(basename(pdf_path), plot_pages, width = 20, height = 11)
+saveRDS(list(tcga_scores = tcga_score_df, tcga_values = tcga_long_all,
+             scref_sample_values = scref_long, tcga_stats = tcga_stats,
+             scref_stats = scref_stats, concordance = concordance,
+             mp_sets = mp_sets, state_sets = state_sets),
+        file.path(tiers[["intermediate"]], "Auto_tcga_gender_plot_source_data.rds"))
+saveRDS(list(figures = tcga_figure_bundle,
+             png = list(filename = basename(png_path), plot = p_concordance, width = 13, height = 8.5)),
+        figure_bundle_path)
+if (file.info(file.path(summary_dir, "Auto_tcga_gender_scRef_concordance_summary.csv"))$size >= 100000) {
+  stop("Compact TCGA summary must be <100 KB.")
+}
+####################
 
 ggsave(png_path, p_concordance, width = 13, height = 8.5, dpi = 300)
 
