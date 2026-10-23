@@ -7,11 +7,12 @@ Single-cell RNA-seq QC and analysis pipeline for OAC public reference datasets o
 ```text
 *.R / N_<Step>.sh   core steps 1–8 and PBS jobs
 *_master.sh         per-sample PBS orchestration
-analysis/           downstream analyses
+analysis/           downstream analyses and tracked essential setup scripts
+job_scripts/        local submission-only wrappers mirroring analysis/ (gitignored)
 analysis/ANALYSIS_MAP.md  canonical analysis inventory/dependency map
 analysis/methodology/     operational methods for complex workflows
 ref_outs/           pipeline and analysis outputs (gitignored)
-temp/               PBS logs
+temp/               historical PBS logs; new scheduler logs go in the project root
 ```
 
 | Step | Entry point | R script | Scope | Env |
@@ -42,6 +43,49 @@ temp/               PBS logs
 7. If a task requires submission, submit it yourself and monitor until exit status and expected outputs are verified. A zero exit code alone is insufficient.
 8. Strictly forbid fallbacks: must use only the first and best option for any analysis. If not available or if it fails, the script should stop immediately.
 
+####################
+## Commit-ready analysis code and figure organization
+
+- Keep `analysis/` limited to important, maintained scientific workflows and indispensable shared helpers or setup dependencies intended for Git. Consolidate small plotting extensions into their main analysis when practical. Do not keep a separate persistent script for each repair or verification step.
+- One-off preflight checks, audits, reference replays, validation probes, PDF render checks, and audit-only package installers are temporary session tools. Run them inline or place them outside `analysis/` in a Git-ignored project-local scratch directory such as `Auto_session_checks/`. They must not become required production dependencies or appear as active pipeline steps in the analysis inventory. Keep useful validation results in the output `reports/` tier.
+- This rule takes precedence over older placement or naming guidance for temporary checks. A package installer is an essential tracked setup dependency only when the scientific workflow itself needs it; an audit-only renderer does not qualify. Never delete files without explicit user permission. If deletion is prohibited, retain temporary tools in the ignored session archive outside `analysis/`.
+- Organize figures by purpose: a small, explicitly selected `Auto_final/` set; `Auto_supporting/` for secondary evidence; `Auto_diagnostics/` for QC; and, when needed, `Auto_archive/` for retained duplicates or obsolete exports. Use clear descriptive filenames, order final figures numerically, and provide a compact figure index explaining each file's role. Do not present all generated PDFs as necessary final figures.
+- Avoid exporting both combined panels and duplicate standalone panels by default. Keep scientific source data and tests reproducible independently of temporary auditing tools. Before handoff, check that production scripts do not source temporary files and that the proposed Git changes contain no session-only tools.
+####################
+
+####################
+## Visualization readability for presentations and papers
+
+- Wherever possible and space allows, use generous, clearly readable font sizes for figures intended for PowerPoint presentations and inclusion in papers. Apply this to titles, axis titles, tick labels, legends, annotations, panel labels, and heatmap row/column labels.
+- Judge readability at the intended final display or printed size, including after a figure is placed on a slide or reduced to a manuscript column. A large export canvas alone does not guarantee readable text after scaling.
+- Use available space to enlarge text and improve spacing without overlapping or clipped labels and legends. Increasing font size must never cause a figure to be split across additional pages. Preserve the intended comparison on one page; for clinical associations, keep all MPs on one page per clinical variable, as in OCCAMS. Adjust layout, label rotation/wrapping, margins, canvas dimensions and font sizes within that page. Only split pages when the user explicitly requests it, not to accommodate larger text. Keep point sizes and line widths clear at the intended final size.
+- Choose font sizes appropriate to the output dimensions and intended use; follow journal requirements when supplied. Check the exported figure at its intended presentation or publication size before handoff.
+####################
+
+####################
+## Stable current-result directories
+
+- Each maintained analysis has one stable, descriptive output directory under the project's canonical output root. Put current files directly in `figures/`, `tables/`, `reports/`, `logs/`, and, when needed, `intermediate/` and `reference/`. Do not create empty tiers without a purpose.
+- Do not create timestamped `Auto_run_*` directories, numbered attempts, `v2`/`v3` result directories, or competing final/latest copies for routine reruns or plot repairs. Timestamps and job IDs belong in logs, not in the current result path.
+- Authorized reruns update the analysis's documented current outputs. Keep a single selected final figure set and one compact current-results index with working relative links. Do not overwrite unrelated files or bypass an explicit user restriction on modification.
+- Current reports describe the implemented method, results, validation and unresolved scientific limitations. Exclude obsolete run inventories, failed-attempt narratives, superseded job IDs and debugging chronology from the current results index and scientific reports.
+- When previous attempts must be retained, move them to an ignored project-local session archive outside the active analysis output directory, such as `Auto_session_checks/<analysis>/Auto_archive/`. Do not leave old run directories mixed with current results. Never delete files without explicit permission, and do not move files outside the project without authorization.
+- Keep indispensable source data and references in the current live output tiers. Current scripts, reports and downstream analyses must not depend on the session archive or temporary audit scripts.
+- When reorganizing outputs, update the producing script, registry, methodology, analysis map and links together. Verify current file paths and figure/table integrity before handoff. This rule governs new work and scoped cleanup; it does not authorize unrelated migrations.
+####################
+
+####################
+## Analysis job scripts and PBS logs
+
+- Store every new submission-only shell wrapper for an R script under `analysis/` in the project-root `job_scripts/` directory. Create the directory and required subdirectories when needed. Mirror the R script's path relative to `analysis/` and keep its exact basename, replacing `.R` with `.sh`: `analysis/cell_states/example.R` uses `job_scripts/cell_states/example.sh`. Preserve deeper nesting. Do not create submission-only wrappers inside `analysis/`.
+- Before running or rerunning an analysis, first check that matching `job_scripts/` path. Reuse the existing launcher after checking its R command, arguments, environment, resources, and log destinations; update it there when needed. If it is absent, create it at that exact path rather than inventing another name. This basename rule takes precedence over generic shell-file naming prefixes.
+- Keep these launchers minimal: PBS directives, timestamps, standard module/conda activation, a change to the project root, and the R invocation. Record the resource requirements, environment, arguments, and run command in the R script's registry so the launcher can be recreated. Keep analytical logic in R; it must run directly on an allocated compute node without reading or depending on the launcher.
+- Submit from the project root, using the wrapper's `job_scripts/...` path, and change to that same root inside the job. Use `#PBS -koed` for live logging and explicit absolute `#PBS -o <project_root>/` and `#PBS -e <project_root>/` destinations. PBS stdout/stderr belong directly in the project root, alongside `analysis/` and `job_scripts/`; never place them in `analysis/`, `job_scripts/`, or an analysis output/log subdirectory. This rule concerns scheduler stdout/stderr; R-generated scientific logs and reports may still use the documented output tiers.
+- Ignore `/job_scripts/` in the project's `.gitignore`. These launchers are local, reconstructable execution aids and should not be staged or committed. Keep project-root PBS stdout/stderr untracked as well.
+- Essential shell scripts that implement nontrivial environment/tool installation, required input preparation, Python/helper orchestration, or other indispensable workflow logic must remain in the appropriate `analysis/` subdirectory, tracked by Git and maintained with the analysis. For example, scRef's `analysis/cell_states/Auto_drug_reversal/Auto_setup_drug_reversal_env.sh` is an essential setup script. Standard module/conda activation alone is not an exception. Do not hide indispensable logic or helper scripts solely in ignored `job_scripts/`; a disposable launcher may call a tracked essential script.
+- This policy governs future launcher creation and updates. Existing pipeline entry points and historical wrappers are not automatically moved, deleted, or renamed; migrate them only as part of an explicitly scoped change.
+####################
+
 Minimal wrapper:
 
 ```bash
@@ -50,6 +94,8 @@ Minimal wrapper:
 #PBS -l walltime=<HH:MM:SS>
 #PBS -N <jobname>
 #PBS -koed
+#PBS -o /rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/
+#PBS -e /rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/
 echo $(date +%T)
 module purge
 module load tools/dev
@@ -57,7 +103,7 @@ eval "$(~/miniforge3/bin/conda shell.bash hook)"
 source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
 WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 cd "$WD"
-Rscript <script>.R
+Rscript "analysis/<subdirectory>/<script>.R"
 echo $(date +%T)
 ```
 
@@ -120,7 +166,7 @@ Whenever a script is added, renamed, superseded, or changes inputs/outputs, upda
 - Per-sample R scripts read `commandArgs(trailingOnly=TRUE)` and use the first argument as the sample.
 - Filter MP collections before downstream use according to the current centred refinement outputs; historical uncentred analyses use silhouette `<0` filtering only for provenance.
 - Use Seurat accessors where practical; metadata grouping uses `orig.ident`.
-- Plot text, legends, rows/columns, points, and line widths must be readable on PowerPoint slides. Increase dimensions or paginate instead of shrinking labels.
+- Plot text, legends, rows/columns, points, and line widths must be readable on PowerPoint slides. Adjust dimensions, layout and font sizes without adding pages solely to enlarge text; preserve one page per intended comparison unless the user explicitly requests splitting.
 - New code inserted into an existing file is enclosed in 20-hash comment blocks where the language permits it. Existing lines may be changed when the user explicitly authorizes the requested repair; avoid unrelated rewrites.
 - Shell scripts start with `#!/bin/bash`, print start/end times, purge/load modules, initialize conda, and quote paths/variables.
 - Sentinel files (`no_ref`, `no_epi`, `no_cell`, `no_cancer`) and existing guard/skip behavior must be preserved.

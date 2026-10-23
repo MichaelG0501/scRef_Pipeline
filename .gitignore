@@ -25,3 +25,11 @@ __pycache__/
 
 # Mac
 .DS_Store
+
+# Local, reconstructable PBS launchers (mirror analysis/)
+/job_scripts/
+/Auto_session_checks/
+
+# PBS live stdout/stderr written directly in the project root
+/*.OU
+/*.ER
