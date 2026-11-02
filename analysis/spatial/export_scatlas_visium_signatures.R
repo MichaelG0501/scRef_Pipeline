@@ -33,13 +33,15 @@ grouping <- read.csv(grouping_path, check.names = FALSE)
 
 mp_descriptions <- setNames(grouping$description, grouping$mp)
 
+####################
 state_groups <- list(
   "Classic proliferation" = c("MP2+"),
-  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
-  "Stress adaptive" = c("MP12"),
+  "Squamous-to-intestinal" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
+  "Glandular-to-intestinal" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
+  "Stress-adaptive" = c("MP12"),
   "Cancer-cell immune mimicry" = c("MP15")
 )
+####################
 
 cc_mps <- c("MP1", "MP5", "MP13+")
 

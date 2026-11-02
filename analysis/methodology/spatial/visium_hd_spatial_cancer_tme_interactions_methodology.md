@@ -1,210 +1,333 @@
-####################
-# Visium HD malignant-state/MP–TME spatial interaction methodology
+# Visium HD cancer–TME spatial association analysis
 
-## Scope
+## Purpose and scope
 
-This terminal workflow tests whether malignant centred-refined states or MPs
-occur next to particular non-malignant cell types or non-malignant GeneNMF MPs
-more or less often than expected from their within-section abundance and
-spatial opportunity. It uses only filtered 16 µm bins from `SUR1231`, `FFPEA1`,
-and `FFPED1`. `FFPED1` is the canonical manifest identifier for the requested
-sample D1, whose Space Ranger input folder is named `D1`. The three samples are
-never joined into a common spatial graph.
+This terminal workflow asks whether cancer–TME interactions identified by
+`analysis/non_malignant_nmf/mp_cross_celltype_correlations.R` recur as local
+spatial enrichment in Visium HD. The executable is
+`analysis/spatial/visium_hd_spatial_cancer_tme_interactions.R`; the PBS wrapper
+is `job_scripts/spatial/visium_hd_spatial_cancer_tme_interactions.sh`.
 
-The analysis script is
-`analysis/spatial/visium_hd_spatial_cancer_tme_interactions.R`; its PBS wrapper
-is `analysis/spatial/visium_hd_spatial_cancer_tme_interactions.sh`.
+The analysis uses filtered 16 µm bins from all three supplied sections. Their
+relationship and treatment status were confirmed by the dataset owner:
 
-## Four analysis modes
+| Section | Donor | Treatment status |
+|---|---|---|
+| FFPED1 | Shared FFPE donor | Pretreatment |
+| FFPEA1 | Shared FFPE donor | Post-treatment |
+| SUR1231 | Separate SUR1231 donor | Post-treatment |
 
-The workflow mirrors the biologically relevant cancer–TME branches of the
-single-cell interaction workflow:
+Sections retain separate graphs and permutation tests. FFPED1 and FFPEA1 are
+repeated observations of one donor, not independent biological replicates.
+All three sections contribute to the primary pool through two independent
+donors. Both donors are independent of the six Xenium donors used downstream.
+One paired donor cannot support a population-level treatment-effect analysis.
 
-1. `01_cancer_mps_vs_tme_mps`: malignant centred-refined MPs versus
-   silhouette-retained non-malignant GeneNMF MPs.
-2. `02_cancer_states_vs_tme_mps`: malignant centred-refined states versus
-   silhouette-retained non-malignant GeneNMF MPs.
-3. `03_cancer_mps_vs_whole_celltypes`: malignant centred-refined MPs versus
-   whole final annotated non-epithelial cell types.
-4. `04_cancer_states_vs_whole_celltypes`: malignant centred-refined states
-   versus whole final annotated non-epithelial cell types.
+Four modes are retained:
 
-All four modes are cancer-to-TME tests. Within-cancer and within-TME edges are
-not introduced because they are outside the requested validation question.
+1. malignant MPs versus non-malignant MPs;
+2. malignant states versus non-malignant MPs;
+3. malignant MPs versus whole non-epithelial cell types;
+4. malignant states versus whole non-epithelial cell types.
 
-## Inputs and gates
+The scRNA-selected edges form a separate candidate family. All other spatial
+pairs are exploratory. Correlation between scRNA-seq samples and proximity
+within tissue are different estimands. Agreement provides spatial support for
+a candidate, not reproduction of its scRNA correlation coefficient or proof
+of cell–cell communication.
 
-### Malignant source bins
+## Current malignant MP and state contract
 
-The source table is
-`ref_outs/visium_hd_outs/state_mapping/tables/Auto_visiumhd_binned_malignant_state_annotations.csv.gz`.
-That upstream table already restricts bins to final epithelial targets with
-`Auto_malignancy` equal to `malignant_level_1` or `malignant_level_2`. It
-contains the centred-refined state assignment and all adjusted malignant MP
-scores.
+The script sources `analysis/shared/scRef_config.R` and reads:
 
-The spatial mapper retains historical display labels, so this workflow applies
-an explicit label-only crosswalk to the current centred-refined names:
+- `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds`;
+- `ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv`;
+- `ref_outs/visium_hd_outs/state_mapping/tables/Auto_visiumhd_binned_malignant_state_annotations.csv.gz`.
 
-- `Classic Proliferative` -> `Classic proliferation`
-- `Basal to Intestinal Metaplasia` -> `Basal to intestinal metaplasia`
-- `SMG-like Metaplasia` -> `SMG to intestinal metaplasia`
-- `Stress-adaptive` -> `Stress adaptive`
-- `Immune Infiltrating` -> `Cancer-cell immune mimicry`
+The grouping table must contain exactly the current 17 MPs and must match the
+MP gene object exactly. `MP2x`, `MP11c`, and `MP18a` are explicitly rejected if
+they reappear. MP names, descriptions, exact plotting order, state groups, and
+Approach-B labels come from the current shared configuration/grouping table;
+they are not redefined in this workflow.
 
-MP memberships and state compositions are unchanged. `Hybrid` and `Unresolved`
-are not tested as biological state nodes. Malignant MP positivity is adjusted
-MP score greater than `0.5`. `MP11c` and `MP18a` are excluded, matching the
-active single-cell cancer-MP interaction workflow; cell-cycle MPs remain
-auditable malignant MP nodes.
+The spatial state table was produced with the same five MP group memberships
+but retains three earlier display labels. The following label-only crosswalk is
+applied before analysis:
 
-### TME target bins
+- `Basal to intestinal metaplasia` → `Squamous-to-intestinal`;
+- `SMG to intestinal metaplasia` → `Glandular-to-intestinal`;
+- `Stress adaptive` → `Stress-adaptive`.
 
-Final filtered cell-type calls and coordinates come from each live binned
-malignancy table under
-`ref_outs/visium_hd_outs/malignancy/tables/Auto_<sample>_binned_malignancy.csv.gz`.
-Only `Auto_postfilter_keep == TRUE` bins are used. Whole-cell-type targets are
-exact `Auto_postfilter_celltype` calls excluding `epithelial` and `unresolved`.
-This permits additional spatially observed cell types beyond the seven
-GeneNMF compartments when they pass the minimum-bin requirement.
+`Classic proliferation` and `Cancer-cell immune mimicry` are unchanged.
+`Hybrid` and `Unresolved` remain technical assignments and are not biological
+source nodes. An unknown state label stops the run.
 
-### Non-malignant MP definitions and scoring
+Malignant source bins must occur in the mapped state table and the final
+post-filter annotation table. The mapped table is already restricted to
+epithelial bins with `Auto_malignancy` equal to `malignant_level_1` or
+`malignant_level_2`.
 
-The GeneNMF definitions come from:
+## Non-malignant targets and MP filtering
 
-- `nmf_fibroblast/MP_outs_default.rds`
-- `nmf_endothelial/MP_outs_default.rds`
-- `nmf_macrophage/MP_outs_default.rds`
-- `nmf_nk/MP_outs_default.rds`
-- `nmf_plasma/MP_outs_default.rds`
-- `nmf_cd4/MP_outs_default.rds`
-- `nmf_cd8/MP_outs_default.rds`
+Whole-cell-type targets are final `Auto_postfilter_celltype` calls among bins
+with `Auto_postfilter_keep == TRUE`, excluding `epithelial` and `unresolved`.
 
-Before scoring, every MP with silhouette below zero is removed. This is the
-mandatory repository-wide MP silhouette filter. Up to the first 100 ranked
-genes are retained per MP.
+Non-malignant MP definitions come from the current `MP_outs_default.rds`
+objects for fibroblast, endothelial, macrophage, NK, plasma, CD4, and CD8.
+Only MPs with GeneNMF silhouette at least zero are retained, and the first 100
+ranked genes form each spatial signature. The script stops for a missing or
+malformed MP object; it does not substitute another object.
 
-Each MP is scored only in bins carrying its parent annotation. CD4 and CD8 MPs
-are both scored within final `t.cell` bins, providing subtype/program-level
-resolution without inventing a whole-bin CD4/CD8 annotation. Per sample and
-parent cell type, counts are normalized to CP10K and transformed with `log1p`.
-Every available signature gene is standardized across those bins, the MP score
-is the unweighted mean of its gene z-scores, and each MP score is standardized
-again across the same sample/parent-bin population. A bin is MP-positive when
-the adjusted score is greater than `0.5`.
+Each MP is scored only in bins assigned to its parent cell type. CD4 and CD8
+programs are both scored in final `t.cell` bins because the binned annotation
+does not provide a validated CD4/CD8 split. These are therefore T-cell program
+labels, not claims that a bin is a purified CD4 or CD8 cell.
 
-The resulting score table, filtered gene sets, and membership matrices are
-saved persistently in live storage because they are required to reproduce the
-plots without rescoring Space Ranger matrices.
+## MP scoring and positivity
 
-## Spatial neighbourhood definition
+Both malignant and non-malignant MPs are rescored from raw Space Ranger counts
+with UCell (`maxRank = 1500`), using all measured genes as the ranking background.
+Malignant signatures also use the first 100 unique ranked genes. Signature
+genes absent from the matrix are intersected out explicitly. Every scored
+signature must retain at least one gene. Scores must be finite and align
+exactly with bin identities. Rank normalization does not eliminate sparsity,
+panel-coverage or annotation effects.
 
-The 16 µm grid row and column are parsed from the Space Ranger barcode, for
-example `s_016um_00107_00066-1`. The primary graph uses queen adjacency:
-all eight possible bins at Chebyshev distance one from each malignant source
-bin. This is a true immediate-bin contact test and cannot bridge gaps as a
-fixed-k nearest-neighbour graph can.
+This makes the score definition compatible with the upstream single-cell
+interaction workflow, which also uses UCell. The numerical UCell scale is
+platform-specific, so a scRNA-derived numeric cutoff is not transferred to
+Visium HD. Within each spatial sample and eligible parent population, an MP is
+positive when its UCell score exceeds:
 
-Sensitivity analyses repeat the full test at cumulative Chebyshev rings two
-and three, corresponding to neighbourhood extents of approximately 32 and
-48 µm. These are sensitivity modes; ring one is the primary result.
+`mean UCell + 1 × SD(UCell)`
 
-## Sample-specific permutation inference
+For malignant MPs the population is mapped malignant bins; for a TME MP it is
+the relevant parent-cell-type bins. States remain assignment based. Raw UCell
+scores, fitted cutoffs, positivity, and feature eligibility are persisted for
+audit and replotting.
 
-For a source feature and target feature, the observed statistic is the number
-of directed source-to-target adjacency edges. The malignant source labels and
-the tissue graph remain fixed.
+Minimum eligibility is 20 positive malignant source bins, 20 whole-cell-type
+target bins, 20 parent bins before TME-MP scoring, 10 positive TME-MP bins, and
+20 source neighbourhood slots. For TME-MP tests, slots count neighbours of
+the relevant parent; for whole-type tests, they count all TME neighbours.
+No lower-threshold fallback is used.
 
-The target null differs by target family:
+## Spatial neighbourhood
 
-- Whole-cell-type mode: final cell-type labels are permuted jointly across all
-  retained non-epithelial target bins in that sample. This preserves every
-  cell-type count and the exact source degrees/tissue mask.
-- TME-MP mode: the joint MP-positive membership matrix is permuted only among
-  bins of the same annotated parent cell type in that sample. This preserves
-  the parent cell type's spatial distribution, every MP-positive count, and
-  within-compartment MP overlap/correlation while testing MP-specific spatial
-  placement.
+The primary graph links a malignant source to eligible TME targets at Chebyshev
+grid distance at most one, excluding the same grid position. Ring one includes
+up to eight neighbouring 16 µm bins, with centre offsets up to ±16 µm per axis.
+Rings two and three are cumulative windows at ±32 and ±48 µm. Maximum Euclidean
+centre separations are approximately 22.63, 45.25 and 67.88 µm.
 
-The default is 499 permutations and can be changed with
-`SCREF_SPATIAL_PERMUTATIONS`. Permutation sums and sums of squares give a null
-mean, null standard deviation, and z-score. Two-sided normal-tail p-values are
-used for BH correction because their resolution is not capped at
-`1 / (permutations + 1)` across the large interaction family. Two-sided
-empirical permutation p-values are also exported as calibration diagnostics.
-BH correction is applied independently within sample, biological mode, and
-neighbour ring.
+The graph does not force a neighbour count or interpolate missing bins. It is
+a proximity graph: diagonal or broader-window edges do not establish a
+continuous tissue path or membrane contact. Ring one is primary; broader rings
+are separate sensitivity analyses, not additional opportunities to choose a
+significant radius.
 
-Pairs are skipped rather than treated as negative evidence when they fail any
-minimum:
+## Local permutation inference
 
-- 20 source-positive malignant bins;
-- 20 whole-cell-type target bins;
-- 20 parent cell-type bins before MP scoring;
-- 10 MP-positive target bins;
-- 20 observed source-to-TME neighbour slots.
+The observed statistic is the directed count of source-positive to
+target-positive adjacency edges. Source labels, the tissue mask, coordinates,
+and source degrees remain fixed.
 
-Thus rare populations in one sample do not prevent the other samples from
-being tested.
+Targets are permuted within 20 × 20 grid-bin tiles
+(320 × 320 µm) inside each sample. Four tile origins—`(0,0)`, `(10,0)`,
+`(0,10)`, and `(10,10)` bins—define four separate conditional randomisation
+tests. Each origin retains its own null counts and empirical p-value.
 
-## Pooled three-sample evidence
+- Whole-cell-type labels are shuffled jointly within each local tile. This
+  preserves tile-specific cell-type counts.
+- The complete TME-MP positivity matrix is shuffled jointly within parent cell
+  type and local tile. This preserves parent-cell-type location, each MP count,
+  and within-bin MP overlap while testing program-specific placement.
 
-The pooled analysis never creates cross-sample neighbours. For each pair tested
-in at least two samples, the independently derived sample z-scores are combined
-with weighted Stouffer meta-analysis, using the square root of the number of
-source-positive bins as the weight. Pooled log2 enrichment is calculated from
-summed observed contacts relative to summed sample-null means. BH correction is
-then applied within biological mode and ring.
+At least half of target bins must be movable under every shifted tiling or the
+run stops. The default and minimum are 4,999 permutations per origin, or 19,996
+draws in total for each section, target kind and ring. Eight fixed seeded
+chunks make the draws independent of the worker count. Each null assumes
+exchangeability of target memberships within its strata. It preserves broad
+local composition, but not arbitrary finer spatial autocorrelation.
 
-Recurrence is reported separately. A recurrent same-direction interaction has
-the same enrichment direction in all tested samples and sample FDR below 0.10
-in at least two samples. This prevents a strong pooled result from being
-misdescribed as recurrent when driven by only one section.
+With observed edge count `O`, permutation counts `O_b` and `B` permutations,
+the two-sided empirical p-value is
+`min(1, 2 * min((1 + count(O_b >= O))/(B + 1), (1 + count(O_b <= O))/(B + 1)))`
+within each origin. The section p-value is the maximum of the four origin
+p-values. Directions must also be nonzero and agree relative to every
+origin-specific null mean; otherwise the section p-value is one. This
+conservative conjunction requires evidence across all four boundary choices.
+It does not assume independence among origins. The tables retain every
+origin's null mean, upper/lower tail counts and p-value.
 
-## Validation against the scRNA interaction workflow
+Permutations from different origin-specific groups are not pooled to compute a
+test p-value: such a union need not itself be a permutation group. This follows
+the group-structure requirement for random permutation tests
+([Hemerik and Goeman, 2018](https://pmc.ncbi.nlm.nih.gov/articles/PMC6405018/)).
+Exchangeability within the chosen spatial strata remains a scientific assumption.
 
-Spatial pairs are matched to the corresponding live scRNA modes under
-`ref_outs/non_malignant_mp_correlations/`:
+The descriptive effect is `log2((O + 0.5)/(mean_expected + 0.5))`, where
+`mean_expected` averages the four origin-specific expected counts. Zero denotes the local null
+expectation; the 0.5 continuity correction is fixed. BH correction is applied
+within section, mode and ring.
+Normal-tail p-values derived from permutation z-scores are retained only as
+diagnostics and never drive FDR calls.
 
-- mode 01 -> `01_cancer_mps_cross_only`
-- mode 02 -> `03_cancer_states_cross_only`
-- mode 03 -> `05_cancer_mps_vs_whole_celltypes`
-- mode 04 -> `06_cancer_states_vs_whole_celltypes`
+## Donor-level evidence
 
-The exported validation table records availability, scRNA Spearman direction
-and p-value, spatial pooled direction/FDR, and whether directions agree. A
-spatially enriched edge validates recurrent proximity, not molecular signaling
-direction. Ligand-receptor causality requires the separate expression/LR
-evidence already produced by the scRNA workflow.
+Within each interaction and ring, the descriptive donor effect is the arithmetic
+mean of eligible section log2 enrichments. One eligible section contributes
+its empirical p-value and effect direction. For `m` eligible sections of one
+donor, concordant nonzero directions give
+`p_donor = min(1, m * min(p_section))`. Discordant or zero section directions
+give `p_donor = 1` and signed evidence zero. The donor remains represented;
+its descriptive effects are retained. Ineligible sections remain explicitly
+unavailable and do not receive substitute evidence.
 
-## Outputs
+The Bonferroni minimum-p rule is conservative under arbitrary within-donor
+dependence when the joint section null holds. It tests whether a donor contains
+section-level evidence, not whether every section is significant or whether
+the mean effect differs from zero. Direction consistency is an additional
+conservative requirement. This retains both paired sections without counting
+them as independent donors.
 
-All critical outputs are persistent under
+For each donor, `z_d = sign_d * normal_upper_quantile(p_donor/2)`. Equal-donor
+Stouffer pooling uses `Z = sum(z_d)/sqrt(n_donors)` and a two-sided normal-tail
+p-value. At least two eligible donors are required. BH correction is within
+mode and ring. The mean donor effect and the separately reported
+contact-weighted effect are descriptive; neither is a variance-weighted effect
+estimate or an effect confidence interval.
+
+An exploratory pooled call requires FDR below 0.05 and concordant nonzero
+direction across eligible donors. Donor recurrence remains descriptive and
+cannot turn repeated sections into independent replication. With two donors,
+results provide limited evidence of reproducibility, not population prevalence.
+
+## Comparison with scATLAS candidates
+
+The exact `Auto_celltype_correlations_all.csv` tables from the four matching
+upstream modes are required. Missing inputs stop the run. Earlier description
+aliases are converted to current MP IDs before joining, preventing a display
+label change from breaking an MP match.
+
+The current Visium HD annotation resolves `t.cell`, not CD4 and CD8 separately.
+For whole-cell-type validation only, upstream CD4 and CD8 candidates are tested
+against the same spatial `t.cell` compartment; upstream NK is tested against
+spatial `nk.cell`. The candidate-availability table retains both the original
+scRNA compartment and mapped spatial compartment. This crosswalk is not used
+for TME-MP targets, where CD4 and CD8 programs remain distinct within their
+shared spatial t-cell parent compartment.
+
+An upstream edge is prespecified as follows, matching the upstream selection:
+
+- malignant MP–TME MP: Spearman p below 0.05, finite Pearson effect, and
+  `-log10(Spearman p) >= 4`;
+- malignant state–TME MP: the same rule with threshold `1.5`;
+- whole-cell-type modes: Spearman p below 0.05 and a finite Pearson effect.
+
+The finite Pearson value is retained only as an upstream availability check.
+Candidate direction is defined consistently by the upstream Spearman
+correlation, which is also the effect plotted on the validation x-axis.
+
+Within mode and ring, candidate-family BH uses all unique selected spatial
+hypotheses. CD4/CD8 whole-type rows that map to the same source–`t.cell` test
+contribute one hypothesis. Original candidate rows remain available for
+interpretation, but neither establishes subtype-specific validation.
+Unavailable selected hypotheses remain in the multiplicity denominator and
+retain missing test results in the outputs.
+
+Spatial support requires candidate-family FDR below 0.05, at least two eligible
+donors, consistent donor directions and agreement with the upstream Spearman
+direction. Other results distinguish concordant evidence without support,
+discordant evidence, spatially unavailable hypotheses and non-selected pairs.
+Raw upstream selection p-values do not establish that the upstream study
+controlled FDR. Candidate-family correction concerns the spatial tests.
+
+## Figure interpretation
+
+Figures distinguish effect magnitude, availability and significance. Blank or
+explicitly unavailable entries are not zero effects. Current MP/state labels
+and a common zero-centred enrichment scale make comparisons interpretable.
+Individual section evidence remains visible alongside donor pooling.
+
+Whole-type and within-parent MP effects answer different questions. Whole-
+fibroblast depletion means fewer fibroblast neighbours than expected from local
+non-epithelial composition. A positive fibroblast-MP effect means enrichment
+of that programme relative to locally available fibroblast bins. Their signs
+can differ without contradiction.
+
+Main figures use editable vector text and are assessed at their intended
+publication size. [Nature's artwork guide](https://www.nature.com/documents/nature-final-artwork.pdf)
+specifies 183 mm for two-column figures and 5–7 pt ordinary text. The layout
+aims for 7 pt labels at that size without adding pages merely to enlarge text.
+Spatial maps retain a physical scale bar. Source tables remain live.
+
+## Outputs and cache behavior
+
+Persistent outputs are under
 `ref_outs/visium_hd_outs/spatial_interactions/`:
 
-- `intermediate/`: TME MP scores/gene sets and per-sample replot-ready spatial
-  membership RDS files.
-- `tables/`: all sample tests, pooled tests, significant subsets, recurrence,
-  radius sensitivity, source/target eligibility, map selection, parameters,
-  and scRNA validation.
-- `figures/Auto_spatial_interaction_dotmap_with_neg.pdf`: interaction dot-map
-  pages with the three independently tested samples side by side.
-- `figures/Auto_spatial_interaction_dotmap_with_neg_pooled.pdf`: pooled
-  three-sample dot maps.
-- `figures/Auto_0*_spatial_maps.pdf`: tissue maps for significant interactions,
-  or explicitly labelled exploratory best-ranked pairs when a mode/sample has
-  no FDR hit.
-- `figures/Auto_spatial_interaction_recurrence.pdf`: recurrent/pooled summary.
-- `figures/Auto_spatial_interaction_neighbourhood_sensitivity.pdf`: 16 versus
-  32/48 µm robustness.
-- `figures/Auto_spatial_interaction_scrna_validation.pdf`: spatial-versus-scRNA
-  direction concordance.
-- `logs/`: run parameters, cache status, timestamps, and session information.
+- `intermediate/`: current-version per-sample memberships, filtered gene sets,
+  and malignant/TME UCell scores with cutoffs;
+- `tables/`: section, donor, pooled, recurrence, eligibility, candidate,
+  map-summary, parameter, figure-source, paired-section sensitivity and compact-summary tables;
+- `figures/Auto_final/01_scatlas_spatial_evidence.pdf`: four pages, one comparison
+  per page, showing every selected scATLAS candidate and individual section effects;
+- `figures/Auto_final/02_supported_tissue_context.pdf`: tissue maps for supported
+  candidates, with all three sections on each page and a shared physical scale;
+- `figures/Auto_supporting/Auto_primary_all_pairs.pdf`: complete primary effects
+  and donor-concordant FDR calls, one page per comparison;
+- `figures/Auto_diagnostics/Auto_window_sensitivity.pdf`: broader-window effects
+  against the primary window, with all four comparisons on one page;
+- `reports/CURRENT_RESULTS.md`: the current results, limitations and figure index;
+- `logs/`: run summary and R session information.
 
-A compact result summary is also written to
+The current index identifies the selected figure set. Production reports and
+downstream code use these current paths.
+
+The plotting workflow also writes
 `updates/new_updates/summaries/visium_hd_spatial_cancer_tme_interactions_summary.csv`.
 
-Set `SCREF_FORCE_REBUILD=TRUE` to ignore persistent memberships/tests. Set
-`SCREF_REPLOT_ONLY=TRUE` to rebuild figures from the live memberships and
-tables without rereading the large Space Ranger matrices.
-####################
+`SCREF_FORCE_REBUILD=TRUE` rebuilds scores, memberships, tests, tables, and
+figures. `SCREF_REPLOT_ONLY=TRUE` requires current-version persistent
+memberships, scores and section result tables. It regenerates donor inference,
+candidate summaries and figures without repeating UCell or permutations.
+Missing or incompatible inputs stop immediately.
+
+## Limitations and validation checks
+
+Visium HD bins can contain mixed RNA and do not prove direct ligand–receptor
+communication. Parent-cell-type errors can propagate into TME-MP scores.
+Local tiling controls broad regional composition but cannot guarantee complete
+removal of fine-scale spatial autocorrelation. Ring sensitivity, empirical
+section tests, equal donor weighting, direction recurrence and the explicit
+candidate family limit overinterpretation. One paired donor does not establish
+a treatment effect.
+
+Recent benchmarking emphasizes that edge enrichment and the fraction of source
+cells involved describe different tissue properties. The current statistic is
+edge enrichment, not a contact probability or directed signalling score
+([Schiller et al., 2026](https://doi.org/10.1038/s41467-026-71699-z)).
+
+Every production run must verify:
+
+1. exact 17-MP agreement between grouping and gene objects;
+2. successful UCell scoring and non-empty signatures;
+3. eligibility and skip-reason tables, especially T-cell/NK coverage;
+4. empirical rather than normal-tail FDR columns;
+5. paired-donor identity, candidate availability and donor-level direction concordance;
+6. all three ring outputs and current cache version;
+7. canonical malignant MP order in every comparison figure;
+8. correct candidate-family multiplicity, figure-source data and physical map scale bars;
+9. compact summary, run log, session information, and readable PDFs.
+
+## Run
+
+Submit from the live project root:
+
+    /opt/pbs/bin/qsub -v SCREF_FORCE_REBUILD=TRUE job_scripts/spatial/visium_hd_spatial_cancer_tme_interactions.sh
+
+The wrapper uses eight CPUs, 160 GB RAM, a 24-hour walltime, `#PBS -koed`, and
+the required `dmtcp` environment. PBS stdout/stderr go directly to the project
+root. The job must be monitored to terminal PBS
+status and the expected persistent outputs must be checked after completion.

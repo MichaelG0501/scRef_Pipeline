@@ -2,14 +2,16 @@
 
 Generated: 2026-04-17 BST
 
-## Current-centred provenance correction (31 July 2026)
+## Current-centred contract (14 September 2026)
 
 The historical input descriptions below are retained to document the workflow's development, but they are superseded for all active runs as follows:
 
 - Cancer MP scores and gene sets are the live centred-refined objects under `ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/`; the historical nMP19 paths are not active cancer inputs.
 - Cancer state assignments are `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds`, restricted to the five current archetypal states. Hybrid and Unresolved cells remain in the malignant denominator but are not treated as archetype nodes.
-- State LR target sets are ranked from the sample-blocked edgeR table `ref_outs/Metaprogrammes_Results/centred/state_markers/tables/centred_refined_state_markers_all.csv`. Eligible genes have positive log fold-change, BH FDR below 0.05 and expression at CPM >=1 in at least half of paired target-state samples; up to 100 are retained per state.
-- Cache version `2026-07-31_v14_centred_state_markers` invalidates state/LR caches built from `Auto_five_state_markers`. The legacy tables remain fallback inputs only for historical reproduction and must not be used for a manuscript run.
+- State LR target sets are the top 100 best-state genes from the canonical recurrent within-sample marker table `ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_markers_ranked.csv`, ordered by its persistent ranking fields.
+- MP descriptions, state groups, state order, and colours are sourced from `analysis/shared/scRef_config.R`; the five current states are `Classic proliferation`, `Squamous-to-intestinal`, `Glandular-to-intestinal`, `Stress-adaptive`, and `Cancer-cell immune mimicry`.
+- `MP2x` and `MP11c` remain excluded for coverage and `MP18a` remains the explicit quality/coverage exclusion. Their reintroduction is not allowed.
+- Cache version `2026-09-14_v15_current_mp_state_contract` invalidates caches built with retired state labels. The current marker table is mandatory; no legacy marker fallback is permitted.
 - The canonical PBS wrapper is `analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh`; analytical outputs, caches, source tables and summaries remain in live storage.
 
 ## 1. Goal and Scope
@@ -39,7 +41,7 @@ Each mode writes to its own subfolder under `ref_outs/non_malignant_mp_correlati
 
 ## 2. Core Inputs
 
-- `ref_outs/EAC_Ref_merged_strict.rds`
+- `ref_outs/EAC_Ref_merged.rds`
   - Full scRNA-seq atlas containing all cell types and `celltype_update`.
 - `ref_outs/meta_full_epi.rds`
   - Epithelial metadata used to define malignant epithelial cells.
@@ -63,8 +65,8 @@ Each mode writes to its own subfolder under `ref_outs/non_malignant_mp_correlati
 - `ref_outs/nmf_cd8/UCell_default.rds`
 - `ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds`
   - Current five-state centred-refined noreg assignments, with Hybrid and Unresolved retained as technical labels.
-- `ref_outs/Metaprogrammes_Results/centred/state_markers/tables/centred_refined_state_markers_all.csv`
-  - Sample-blocked edgeR state-marker table used to define cancer-state gene sets for LR matching.
+- `ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_markers_ranked.csv`
+  - Canonical recurrent within-sample state-marker ranking used to define cancer-state gene sets for LR matching.
 - `/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx`
   - Ligand-receptor reference catalog, using sheet `All.Pairs`.
 
@@ -138,12 +140,11 @@ For the cancer state modes, cancer cells are represented by the current centred-
 
 The retained final states are:
 
-- `Classic Proliferative`
-- `Basal to Intestinal Metaplasia`
+- `Classic proliferation`
+- `Squamous-to-intestinal`
+- `Glandular-to-intestinal`
 - `Stress-adaptive`
-- `SMG-like Metaplasia`
-- `Immune Infiltrating`
-- `3CA_EMT_and_Protein_maturation`
+- `Cancer-cell immune mimicry`
 
 This branch does not apply any UCell threshold to cancer-state positivity. A cancer cell is positive for a state if and only if it carries that finalized state label. The sample-level cancer-state adjusted score is therefore the percentage of malignant epithelial cells in a sample assigned to that state.
 
@@ -153,7 +154,7 @@ This branch does not apply any UCell threshold to cancer-state positivity. A can
 
 These values are hard-coded in the current script:
 
-- Non-cancer UCell positivity cutoff: `0.25`
+- MP positivity cutoff: the global within-compartment mean UCell score plus the active SD multiplier (default `1.0`)
 - Minimum positive-sample coverage for a node to pass the coverage filter: `> 5` samples
 - Minimum shared samples per study for a celltype pair to be eligible: `10`
 - Minimum total eligible shared samples for a tested node pair: `3`
@@ -170,10 +171,9 @@ These values are hard-coded in the current script:
 
 ### 7.1 Resolve paths and create output structure
 
-The script resolves the project root from either HPC mount style:
+The script uses the live project root only:
 
-- `/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline`
-- `/rds/general/ephemeral/project/tumourheterogeneity1/ephemeral/scRef_Pipeline`
+- `/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline`
 
 It then sets the working directory to `ref_outs/` and creates:
 
@@ -512,29 +512,29 @@ Each cache stores the current `cache_version`. If the version changes, the step 
 ```bash
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
-cd /rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+cd /rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 AUTO_MPXCELL_FORCE_REBUILD=TRUE Rscript analysis/non_malignant_nmf/mp_cross_celltype_correlations.R
 ```
 
-### Interactive run with a custom non-cancer UCell cutoff
+### Interactive run with a custom UCell SD multiplier
 
 ```bash
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
-cd /rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline
+cd /rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
 AUTO_MPXCELL_FORCE_REBUILD=TRUE Rscript analysis/non_malignant_nmf/mp_cross_celltype_correlations.R 0.20
 ```
 
 ### PBS submission
 
 ```bash
-/opt/pbs/bin/qsub -v AUTO_MPXCELL_FORCE_REBUILD=TRUE analysis/non_malignant_nmf/Auto_mp_cross_celltype_correlations.sh
+/opt/pbs/bin/qsub -v AUTO_MPXCELL_FORCE_REBUILD=TRUE analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh
 ```
 
-### PBS submission with a custom non-cancer UCell cutoff
+### PBS submission with a custom UCell SD multiplier
 
 ```bash
-/opt/pbs/bin/qsub -v AUTO_MPXCELL_FORCE_REBUILD=TRUE,cutoff=0.20 analysis/non_malignant_nmf/Auto_mp_cross_celltype_correlations.sh
+/opt/pbs/bin/qsub -v AUTO_MPXCELL_FORCE_REBUILD=TRUE,SCREF_MP_Z_MULTIPLIER=0.20 analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh
 ```
 
 ---

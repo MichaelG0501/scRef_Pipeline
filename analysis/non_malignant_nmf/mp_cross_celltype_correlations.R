@@ -6,6 +6,18 @@
 #   Map: analysis/ANALYSIS_MAP.md
 #   Description: Sample-blocked co-occurrence networks linking the final centred
 #     malignant MPs/states to non-malignant GeneNMF MPs, with LR support audits.
+#   Inputs: ref_outs/{EAC_Ref_merged.rds,meta_full_epi.rds}; current centred
+#     17-MP genes/UCell scores/grouping, noreg states and state markers;
+#     ref_outs/nmf_*/{MP_outs_default,UCell_default}.rds; live LR workbook.
+#   Outputs:
+#     intermediate/: ref_outs/non_malignant_mp_correlations/<01_*--06_*>/cache/*.rds
+#     tables/: ref_outs/non_malignant_mp_correlations/<01_*--06_*>/Auto_{adjusted_scores_*,celltype_*,whole_celltype_*}.{csv,xlsx}
+#     figures/: ref_outs/non_malignant_mp_correlations/<01_*--06_*>/Auto_{celltype_*,whole_celltype_*}.pdf
+#     summaries/: updates/new_updates/summaries/Auto_mp_cross_celltype_correlations_summary.csv
+#   Cache/replot: AUTO_MPXCELL_FORCE_REBUILD=TRUE invalidates versioned caches;
+#     persistent adjusted-score and result tables support downstream plotting.
+#   Run: /opt/pbs/bin/qsub -v AUTO_MPXCELL_FORCE_REBUILD=TRUE analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh
+#   Environment: dmtcp
 ####################
 
 ####################
@@ -20,7 +32,7 @@
 #   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
 #   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_ucell_scores.rds
 #   ref_outs/Metaprogrammes_Results/centred/state_definition/intermediate/centred_refined_noreg_states.rds
-#   ref_outs/Metaprogrammes_Results/centred/state_markers/tables/centred_refined_state_markers_all.csv
+#   ref_outs/Metaprogrammes_Results/centred/state_markers/Auto_five_state_markers_ranked.csv
 #   ref_outs/nmf_*/MP_outs_default.rds
 #   ref_outs/nmf_*/UCell_default.rds
 #   /rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx
@@ -49,6 +61,9 @@ library(tibble)
 library(purrr)
 library(grid)
 library(openxlsx)
+####################
+source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
+####################
 
 ####################
 # Paths, parameters, and display metadata
@@ -88,9 +103,9 @@ force_rebuild <- toupper(Sys.getenv("AUTO_MPXCELL_FORCE_REBUILD", "FALSE")) %in%
 ####################
 # Current-centred marker dependency update (31 July 2026).
 # Incrementing the cache version prevents the state/LR branch from silently
-# reusing a cache constructed with the legacy Auto_five_state_markers table.
+# reusing a cache constructed with retired state labels or marker inputs.
 ####################
-cache_version <- "2026-07-31_v14_centred_state_markers"
+cache_version <- "2026-09-14_v15_current_mp_state_contract"
 ####################
 pair_evidence_allowed <- c("literature supported", "putative")
 min_positive_samples <- 5
@@ -103,20 +118,8 @@ cutoff_grid <- c(0.5, 1.0, 1.5, 2.0, z_score_multiplier)
 cutoff_grid <- sort(unique(cutoff_grid))
 annotated_positive_edges_n <- 18
 state_marker_top_n <- 100
-final_cancer_state_order <- c(
-  "Classic proliferation",
-  "Basal to intestinal metaplasia",
-  "Stress adaptive",
-  "SMG to intestinal metaplasia",
-  "Cancer-cell immune mimicry"
-)
-final_cancer_state_cols <- c(
-  "Classic proliferation" = "#E41A1C",
-  "Basal to intestinal metaplasia" = "#4DAF4A",
-  "Stress adaptive" = "#984EA3",
-  "SMG to intestinal metaplasia" = "#FF7F00",
-  "Cancer-cell immune mimicry" = "#377EB8"
-)
+final_cancer_state_order <- SCREF_PRIMARY_STATE_ORDER
+final_cancer_state_cols <- SCREF_STATE_COLOURS[final_cancer_state_order]
 
 celltype_display_order <- c("cancer", "fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma")
 focal_page_order <- celltype_display_order[-length(celltype_display_order)]
@@ -132,15 +135,9 @@ publication_colour_lookup <- c(
   "plasma" = "#999999"
 )
 
-cancer_state_groups <- list(
-  "Classic proliferation" = c("MP2+"),
-  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
-  "Stress adaptive" = c("MP12"),
-  "Cancer-cell immune mimicry" = c("MP15")
-)
-cancer_cc_mps <- c("MP1", "MP5", "MP13+")
-cancer_excluded_mps <- character(0)
+cancer_state_groups <- SCREF_STATE_GROUPS
+cancer_cc_mps <- SCREF_CC_MPS
+cancer_excluded_mps <- c("MP2x", "MP11c", "MP18a")
 cancer_refined_gene_set_path <- file.path(
   "Metaprogrammes_Results", "centred", "mp_refinement",
   "intermediate", "merged_refined_mp_genes.rds"
@@ -174,25 +171,7 @@ celltype_cfg <- tibble(
   plot_colour = unname(publication_colour_lookup[c("cancer", "fibroblast", "endothelial", "cd8", "cd4", "macrophage", "nk", "plasma")])
 )
 
-cancer_mp_descriptions <- c(
-  "MP1" = "G2/M cell cycle",
-  "MP5" = "G1/S cell cycle",
-  "MP13+" = "replication-stress-associated cell cycling",
-  "MP2+" = "MYC driven biosynthesis",
-  "MP14" = "Squamoid/basal transition",
-  "MP3+" = "Basal-columnar invasive epithelium",
-  "MP6+" = "Stress-reactive columnar epithelium",
-  "MP11+" = "Epithelial antiviral interferon response",
-  "MP9+" = "Metabolic columnar epithelium",
-  "MP10+" = "Intestinal metaplasia",
-  "MP8+" = "Glandular intestinal metaplasia",
-  "MP8b" = "Metabolic intestinal metaplasia",
-  "MP16" = "Mucous-secretory glandular epithelium",
-  "MP18b" = "Mucous-secretory differentiation",
-  "MP17" = "Immune-interactive glandular progenitor",
-  "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry"
-)
+cancer_mp_descriptions <- SCREF_MP_DESCRIPTIONS
 
 pair_order_lookup <- setNames(seq_along(celltype_display_order), celltype_display_order)
 plot_colour_lookup <- publication_colour_lookup
@@ -601,60 +580,27 @@ clean_lr_columns <- function(lr_df) {
 }
 
 load_ramilowski_reference <- function(project_dir) {
-  env_path <- Sys.getenv("RAMILOWSKI_LR_PATH", unset = "")
-  candidate_paths <- c(
-    env_path,
-    "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx",
-    file.path(project_dir, "ref_outs", "references", "ncomms8866-s3.xlsx"),
-    file.path(project_dir, "ref_outs", "references", "Ramilowski_2015_Supplementary_Data_2.xlsx"),
-    file.path(project_dir, "analysis", "references", "ncomms8866-s3.xlsx"),
-    file.path(project_dir, "analysis", "references", "Ramilowski_2015_Supplementary_Data_2.xlsx")
+  ####################
+  # The live LR workbook and its documented All.Pairs sheet are mandatory.
+  ####################
+  canonical_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/Ligand_Receptor_Pairs.xlsx"
+  if (!file.exists(canonical_path)) stop("Missing canonical ligand-receptor workbook: ", canonical_path)
+  sheets <- readxl::excel_sheets(canonical_path)
+  if (!"All.Pairs" %in% sheets) stop("Canonical ligand-receptor workbook lacks All.Pairs: ", canonical_path)
+  lr_df <- readxl::read_excel(canonical_path, sheet = "All.Pairs")
+  cleaned_all <- clean_lr_columns(lr_df)
+  if (!nrow(cleaned_all)) stop("Canonical ligand-receptor workbook yielded no valid pairs: ", canonical_path)
+  cleaned_keep <- cleaned_all %>%
+    filter(pair_evidence %in% pair_evidence_allowed)
+  if (!nrow(cleaned_keep)) stop("No allowed-evidence ligand-receptor pairs in canonical workbook: ", canonical_path)
+  list(
+    source = canonical_path,
+    sheet = "All.Pairs",
+    pairs = cleaned_keep,
+    n_pairs_all = nrow(cleaned_all),
+    n_pairs_retained = nrow(cleaned_keep),
+    n_pairs_excluded = nrow(cleaned_all) - nrow(cleaned_keep)
   )
-  candidate_paths <- candidate_paths[nzchar(candidate_paths)]
-
-  for (candidate in candidate_paths) {
-    if (!file.exists(candidate)) next
-
-    ext <- tolower(tools::file_ext(candidate))
-    lr_df <- NULL
-    sheet_used <- NA_character_
-
-    lr_df <- tryCatch(
-      {
-        if (ext %in% c("xlsx", "xls")) {
-          sheets <- readxl::excel_sheets(candidate)
-          sheet_used <- if ("All.Pairs" %in% sheets) "All.Pairs" else sheets[1]
-          readxl::read_excel(candidate, sheet = sheet_used)
-        } else if (ext == "csv") {
-          read.csv(candidate, stringsAsFactors = FALSE, check.names = FALSE)
-        } else if (ext %in% c("tsv", "txt")) {
-          read.delim(candidate, stringsAsFactors = FALSE, check.names = FALSE)
-        } else {
-          NULL
-        }
-      },
-      error = function(e) NULL
-    )
-
-    if (!is.null(lr_df)) {
-      cleaned_all <- tryCatch(clean_lr_columns(lr_df), error = function(e) NULL)
-      if (!is.null(cleaned_all) && nrow(cleaned_all) > 0) {
-        cleaned_keep <- cleaned_all %>%
-          filter(pair_evidence %in% pair_evidence_allowed)
-
-        return(list(
-          source = candidate,
-          sheet = sheet_used,
-          pairs = cleaned_keep,
-          n_pairs_all = nrow(cleaned_all),
-          n_pairs_retained = nrow(cleaned_keep),
-          n_pairs_excluded = nrow(cleaned_all) - nrow(cleaned_keep)
-        ))
-      }
-    }
-  }
-
-  NULL
 }
 
 ####################
@@ -664,29 +610,17 @@ load_ramilowski_reference <- function(project_dir) {
 ####################
 load_cancer_state_reference <- function() {
   state_path <- file.path("Metaprogrammes_Results", "centred", "state_definition", "intermediate", "centred_refined_noreg_states.rds")
-  marker_candidates <- c(
-    file.path("Auto_five_state_markers", "Auto_five_state_markers_ranked.csv"),
-    file.path("Auto_five_state_markers", "Auto_five_state_markers_final.csv")
-  )
-  marker_path <- marker_candidates[file.exists(marker_candidates)][1]
-
-  ####################
-  # Prefer the current sample-blocked centred-refined marker result. The two
-  # historical candidates remain explicit fallbacks for legacy reproduction,
-  # but an active manuscript run must use this current live table when present.
-  ####################
   current_marker_path <- file.path(
-    "Metaprogrammes_Results", "centred", "state_markers", "tables",
-    "centred_refined_state_markers_all.csv"
+    "Metaprogrammes_Results", "centred", "state_markers",
+    "Auto_five_state_markers_ranked.csv"
   )
-  if (file.exists(current_marker_path)) marker_path <- current_marker_path
-  ####################
+  marker_path <- current_marker_path
 
   if (!file.exists(state_path)) {
     stop("Missing finalized cancer states: ", state_path)
   }
-  if (is.na(marker_path) || !nzchar(marker_path)) {
-    stop("Missing ranked cancer-state marker table under ref_outs/Auto_five_state_markers/")
+  if (!file.exists(marker_path)) {
+    stop("Missing current centred-refined state marker table: ", marker_path)
   }
 
   state_labels <- readRDS(state_path)
@@ -705,42 +639,26 @@ load_cancer_state_reference <- function() {
     filter(state %in% state_keep)
 
   ####################
-  # Translate current edgeR columns into the pre-existing deterministic rank
-  # interface. Only positive, FDR-supported markers with recurrent target-state
-  # expression are eligible for LR target sets.
+  # The canonical current table is already ranked by recurrent within-sample
+  # evidence. Require its complete ranking interface and do not substitute a
+  # historical marker table.
   ####################
-  if (identical(marker_path, current_marker_path)) {
-    required_current_marker_cols <- c(
-      "logFC", "FDR", "target_sample_cpm1_fraction", "paired_sample_n"
+  required_current_marker_cols <- c(
+    "ranking_score", "reproducibility_score", "specificity_gap",
+    "median_log2FC_hit", "best_state_match"
+  )
+  if (!all(required_current_marker_cols %in% colnames(marker_df))) {
+    stop(
+      "Current centred marker table lacks required columns: ",
+      paste(setdiff(required_current_marker_cols, colnames(marker_df)), collapse = ", ")
     )
-    if (!all(required_current_marker_cols %in% colnames(marker_df))) {
-      stop(
-        "Current centred marker table lacks required columns: ",
-        paste(setdiff(required_current_marker_cols, colnames(marker_df)), collapse = ", ")
-      )
-    }
-    marker_df <- marker_df %>%
-      filter(
-        is.finite(logFC), logFC > 0,
-        is.finite(FDR), FDR < 0.05,
-        is.finite(target_sample_cpm1_fraction), target_sample_cpm1_fraction >= 0.5
-      ) %>%
-      mutate(
-        ranking_score = -log10(pmax(FDR, .Machine$double.xmin)) + pmax(logFC, 0),
-        reproducibility_score = target_sample_cpm1_fraction,
-        specificity_gap = logFC,
-        median_log2FC_hit = logFC
-      )
-    if (nrow(marker_df) == 0) {
-      stop("No positive FDR-supported current centred state markers passed LR ranking filters")
-    }
+  }
+  marker_df <- marker_df %>%
+    filter(is.na(best_state_match) | best_state_match)
+  if (nrow(marker_df) == 0) {
+    stop("No best-state current centred state markers passed LR ranking filters")
   }
   ####################
-
-  if ("best_state_match" %in% colnames(marker_df)) {
-    marker_df <- marker_df %>%
-      filter(is.na(best_state_match) | best_state_match)
-  }
 
   marker_df <- marker_df %>%
     mutate(
@@ -2787,17 +2705,8 @@ run_analysis_mode <- function(mode_cfg) {
           
           genes <- compartment_data[[tme_ct]]$gene_sets[[tme_mp_name]]
           if (is.null(genes) || length(genes) == 0) {
-              mp_path_orig <- file.path("ref_outs", compartment_data[[tme_ct]]$mp_path)
-              if (file.exists(mp_path_orig)) {
-                  mp_outs_orig <- readRDS(mp_path_orig)
-                  if ("metaprograms.genes" %in% names(mp_outs_orig)) {
-                      genes <- mp_outs_orig$metaprograms.genes[[tme_mp_name]]
-                  } else if ("programs.genes" %in% names(mp_outs_orig)) {
-                      genes <- mp_outs_orig$programs.genes[[tme_mp_name]]
-                  }
-              }
+              stop("Missing canonical retained gene set for ", tme_ct, " ", tme_mp_name)
           }
-          if (is.null(genes)) genes <- "No genes found"
           
           writeData(interaction_wb, sheet = tme_ct, x = genes, startRow = curr_row, startCol = curr_col)
           addStyle(interaction_wb, sheet = tme_ct, style = geneStyle, rows = curr_row:(curr_row + length(genes) - 1), cols = curr_col)

@@ -34,37 +34,38 @@ import scipy.sparse as sp
 import seaborn as sns
 
 
+####################
 MP_DESCRIPTIONS = {
     "MP1": "G2/M cell cycle", "MP5": "G1/S cell cycle",
-    "MP13+": "replication-stress-associated cell cycling",
+    "MP13+": "Single-nucleus cell cycle",
     "MP2+": "MYC driven biosynthesis", "MP14": "Squamoid/basal transition",
     "MP3+": "Basal-columnar invasive epithelium",
-    "MP6+": "Stress-reactive columnar epithelium",
-    "MP11+": "Epithelial antiviral interferon response",
+    "MP6+": "Inflammatory-reactive columnar epithelium",
+    "MP11+": "Epithelial type I interferon response",
     "MP9+": "Metabolic columnar epithelium", "MP10+": "Intestinal metaplasia",
     "MP8+": "Glandular intestinal metaplasia", "MP8b": "Metabolic intestinal metaplasia",
     "MP16": "Mucous-secretory glandular epithelium",
     "MP18b": "Mucous-secretory differentiation",
-    "MP17": "Immune-interactive glandular progenitor",
-    "MP12": "Hypoxic inflammatory adaptive plasticity",
-    "MP15": "T/NK-like cancer-cell immune mimicry",
+    "MP17": "MHC-II glandular progenitor",
+    "MP12": "Hypoxic-inflammatory adaptive plasticity",
+    "MP15": "Cancer-cell immune mimicry",
 }
 
 CC_MPS = ["MP1", "MP5", "MP13+"]
 
 STATE_GROUPS = {
     "Classic proliferation": ["MP2+"],
-    "Basal to intestinal metaplasia": ["MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"],
-    "SMG to intestinal metaplasia": ["MP8+", "MP8b", "MP16", "MP18b", "MP17"],
-    "Stress adaptive": ["MP12"],
+    "Squamous-to-intestinal": ["MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"],
+    "Glandular-to-intestinal": ["MP18b", "MP16", "MP17", "MP8b", "MP8+"],
+    "Stress-adaptive": ["MP12"],
     "Cancer-cell immune mimicry": ["MP15"],
 }
 
 STATE_COLORS = {
     "Classic proliferation": "#E41A1C",
-    "Basal to intestinal metaplasia": "#4DAF4A",
-    "SMG to intestinal metaplasia": "#FF7F00",
-    "Stress adaptive": "#984EA3",
+    "Squamous-to-intestinal": "#4DAF4A",
+    "Glandular-to-intestinal": "#FF7F00",
+    "Stress-adaptive": "#984EA3",
     "Cancer-cell immune mimicry": "#377EB8",
     "Unresolved": "#8F8F8F",
     "Hybrid": "#111111",
@@ -88,9 +89,9 @@ MP_COLORS = {
 
 STATE_ORDER = [
     "Classic proliferation",
-    "Basal to intestinal metaplasia",
-    "SMG to intestinal metaplasia",
-    "Stress adaptive",
+    "Squamous-to-intestinal",
+    "Glandular-to-intestinal",
+    "Stress-adaptive",
     "Cancer-cell immune mimicry",
     "Unresolved",
     "Hybrid",
@@ -99,11 +100,12 @@ STATE_ORDER = [
 
 STATE_SCORE_ORDER = [
     "Classic proliferation",
-    "Basal to intestinal metaplasia",
-    "SMG to intestinal metaplasia",
-    "Stress adaptive",
+    "Squamous-to-intestinal",
+    "Glandular-to-intestinal",
+    "Stress-adaptive",
     "Cancer-cell immune mimicry",
 ]
+####################
 
 
 def parse_args():
@@ -112,7 +114,7 @@ def parse_args():
     )
     parser.add_argument(
         "--dataset-root",
-        default="/rds/general/project/spatialtranscriptomics/ephemeral/Auto_Yates2025_EAC_spatial/Zenodo_upload",
+        default="/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/Yates_spatial/source_data/Zenodo_upload",
     )
     parser.add_argument(
         "--output-dir",

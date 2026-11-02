@@ -24,10 +24,10 @@ module load tools/dev
 eval "$(~/miniforge3/bin/conda shell.bash hook)"
 
 WD=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline
-DATASET_ROOT=/rds/general/project/spatialtranscriptomics/ephemeral/Auto_Yates2025_EAC_spatial/Zenodo_upload
+DATASET_ROOT=$WD/ref_outs/Yates_spatial/source_data/Zenodo_upload
 OUTPUT_DIR=/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/ref_outs/xenium_scatlas_states
 
-cd $WD
+cd "$WD"
 mkdir -p temp
 
 conda activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
