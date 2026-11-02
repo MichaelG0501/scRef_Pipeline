@@ -1,10 +1,19 @@
 ####################
+# Current OS inference and selected figures are produced by
+# analysis/clinical/Auto_malignant_bulk_survival.R. Historical survival-only
+# exports now reside under Auto_session_checks/clinical_malignant_survival/
+# Auto_archive/clinical_selected_survival/. Bulk scores, cohort membership,
+# manifests, source data, the reproduction cache and specimen boxplots remain
+# in their original live locations for maintained downstream consumers.
+# This terminal producer is not part of the current survival execution order.
+####################
+####################
 # Analysis registry:
-#   Status: active
+#   Status: terminal
 #   Script: analysis/clinical/survival_selected_cohorts.R
 #   Description: Selected-cohort OS/exploratory RFS stage KM panels, final-17-MP
 #     and dual-state-signature OS volcanoes, and neoadjuvant specimen boxplots,
-#     with stable current outputs, archived revisions, and reproducible caches.
+#     retained as completed source-data provenance and reproduction code.
 #   Methodology: analysis/methodology/clinical/survival_selected_cohorts_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md.
 # Exact inputs, relative to the live project root:
@@ -17,7 +26,7 @@
 #   ref_outs/clinical_selected_survival/source_data/TCGA_BCR_endpoint_candidates.csv
 #   ref_outs/Metaprogrammes_Results/centred/mp_refinement/intermediate/merged_refined_mp_genes.rds
 #   ref_outs/Metaprogrammes_Results/centred/mp_refinement/tables/centred_refined_mp_state_grouping.csv
-# Outputs under ref_outs/clinical_selected_survival/:
+# Original output contract under ref_outs/clinical_selected_survival/:
 #   intermediate/<signature>_<run_id>.rds: reproducible patient/score/model cache.
 #   intermediate/cache_pointer.txt
 #   tables/: patient data, cohort/endpoint eligibility, GSVA coverage (all 27 signatures),

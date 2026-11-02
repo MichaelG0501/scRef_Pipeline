@@ -1,5 +1,7 @@
 # Selected-cohort survival analysis
 
+This is the methodology of the completed selected-cohort bulk workflow. Current survival inference and figures use the [malignant-compartment workflow](malignant_bulk_survival_methodology.md). Historical survival exports and prior run directories are preserved in `Auto_session_checks/clinical_malignant_survival/Auto_archive/clinical_selected_survival/`; bulk scores, cohort membership, source data and specimen comparisons remain at their established live paths. Statements below describe the historical method and its original output contract.
+
 ## Scope and source contract
 
 ### Additional outputs requested on 17 October 2026

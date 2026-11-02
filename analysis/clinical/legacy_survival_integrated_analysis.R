@@ -1,7 +1,14 @@
 ####################
+# Retained for provenance. Current entry points are
+# analysis/clinical/Auto_bayesprism_bulk_deconvolution.R and
+# analysis/clinical/Auto_malignant_bulk_survival.R.
+# This historical workflow is not part of the current execution order.
+# Historical survival exports are retained in Auto_session_checks/clinical_malignant_survival/Auto_archive/clinical_integrated/.
+####################
+####################
 # Analysis registry:
-#   Status: active
-#   Script: analysis/clinical/survival_integrated_analysis.R
+#   Status: legacy
+#   Script: analysis/clinical/legacy_survival_integrated_analysis.R
 #   Description: Integrated volcano plot of unadjusted survival association 
 #     across TCGA, OCCAMS, and GEO datasets.
 #   Methodology: adaptation of analysis/metaprograms/centred/tcga_mp_survival_volcano_centred.R
@@ -10,7 +17,7 @@
 # Run command:
 #   eval "$(~/miniforge3/bin/conda shell.bash hook)"
 #   source activate /rds/general/user/sg3723/home/anaconda3/envs/dmtcp
-#   Rscript analysis/clinical/survival_integrated_analysis.R
+#   Rscript analysis/clinical/legacy_survival_integrated_analysis.R
 #
 # Conda env: dmtcp
 ####################

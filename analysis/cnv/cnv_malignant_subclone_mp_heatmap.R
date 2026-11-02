@@ -5,6 +5,8 @@
 #   Methodology: analysis/methodology/cnv/cnv_workflows_methodology.md
 #   Map: analysis/ANALYSIS_MAP.md
 #   Inputs/outputs: documented in this header below and in the analysis map.
+#   Effect policy: positive finite sample MAD only; degenerate effects are NA
+#   and never significant. Export sample_mad and effect_estimable with MP tests.
 ####################
 
 ####################
@@ -800,9 +802,12 @@ test_mps_by_subclone <- function(mp_z, subclone, sample_id) {
       median_score <- median(x, na.rm = TRUE)
       rest_median <- median(y, na.rm = TRUE)
       sample_mad <- mad(mp_df$score_z, na.rm = TRUE)
-      if (is.na(sample_mad) || sample_mad == 0) sample_mad <- 1e-6
+      ####################
+      # A degenerate MAD cannot define a standardized effect; never use epsilon.
+      effect_denominator <- if (is.finite(sample_mad) && sample_mad > 0) sample_mad else NA_real_
+      ####################
       
-      delta_mean <- (median_score - rest_median) / sample_mad
+      delta_mean <- (median_score - rest_median) / effect_denominator
       p_val <- if (length(x) >= 2 && length(y) >= 2) {
         tryCatch(wilcox.test(x, y)$p.value, error = function(e) NA_real_)
       } else {
@@ -817,6 +822,10 @@ test_mps_by_subclone <- function(mp_z, subclone, sample_id) {
         mean_score = mean_score,
         rest_mean = rest_mean,
         delta_mean = delta_mean,
+        ####################
+        sample_mad = sample_mad,
+        effect_estimable = is.finite(delta_mean),
+        ####################
         p_value = p_val,
         frac_large_effect = ifelse(delta_mean >= 0,
                                    mean(x > 1, na.rm = TRUE),
@@ -832,7 +841,7 @@ test_mps_by_subclone <- function(mp_z, subclone, sample_id) {
     ungroup() %>%
     group_by(.data$sample) %>%
     mutate(p_adj = p.adjust(.data$p_value, method = "BH"),
-           significant = !is.na(.data$p_adj) & .data$p_adj < 0.05 & abs(.data$delta_mean) >= robust_effect_size_threshold) %>%
+           significant = !is.na(.data$p_adj) & .data$p_adj < 0.05 & is.finite(.data$delta_mean) & abs(.data$delta_mean) >= robust_effect_size_threshold) %>%
     ungroup()
 
   list(long = long, tests = tests, sub_tests = sub_tests)
@@ -860,6 +869,15 @@ if (skip_loop) {
   sample_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_summary.csv"), stringsAsFactors = FALSE)
   mp_tests_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_mp_tests.csv"), stringsAsFactors = FALSE)
   sub_tests_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_mp_subclone_tests.csv"), stringsAsFactors = FALSE)
+  ####################
+  if (!all(c("sample_mad", "effect_estimable") %in% names(sub_tests_df))) {
+    stop("Cached MP effects predate the positive-MAD rule; rerun without SKIP_CNA_LOOP=TRUE")
+  }
+  expected_significance <- !is.na(sub_tests_df$p_adj) & sub_tests_df$p_adj < 0.05 &
+    is.finite(sub_tests_df$delta_mean) & sub_tests_df$sample_mad > 0 &
+    is.finite(sub_tests_df$sample_mad) & abs(sub_tests_df$delta_mean) >= robust_effect_size_threshold
+  if (!identical(sub_tests_df$significant, expected_significance)) stop("Cached MP significance does not match the positive-MAD rule and requested threshold")
+  ####################
   state_tests_df <- read.csv(file.path(out_dir, "Auto_malignant_subclone_state_tests.csv"), stringsAsFactors = FALSE)
   
   # Reconstruct qc_tests_df since it wasn't saved to CSV
