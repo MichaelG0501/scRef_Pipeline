@@ -7,6 +7,19 @@ and combines it with Visium HD evidence from three sections of two donors.
 All 17 current malignant MPs and the five biological states are included.
 Ordinary Visium does not contribute interaction statistics.
 
+The paper's 16 Xenium tissue samples are represented within six released patient
+coordinate fields: P4_A/B, P8, P10_A/B/C, P11_A/B/C, P12_A/B/C/D and P13_A/B/C.
+The authors' visualization notebook extracts these regions with coordinate
+windows. All 16 regions contain cells in the local release, and all 558,318
+released cell identities match the current pipeline metadata. Thus six denotes
+independent donors, not a selection of six of the 16 tissue samples. Current
+scoring and contact inference operate within patient fields; the release has no
+separate tissue-region column. The visualization rectangles can overlap and
+must not be treated as a validated disjoint tissue segmentation. Coverage and
+provenance are recorded in the Xenium output's
+`reports/Auto_paper_sample_reconciliation.md` and
+`reports/Auto_paper_xenium_region_coverage.csv`.
+
 `analysis/spatial/Auto_xenium_neighbourhoods.sh` is the essential compute-node
 orchestrator. It prepares metadata with `spatial_platform_neighbourhoods.py`,
 scores raw counts with `xenium_hd_ucell_scores.R`, then runs contact inference,

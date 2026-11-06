@@ -37,3 +37,11 @@ Enrichment uses BH-adjusted q-value 0.05 for Hallmark, GO Biological Process, 3C
 ## Persistent outputs and reruns
 
 All gene lists, weights, assignments, UCell matrices, correlations, enrichment results, tables, and final figures are written under `ref_outs/Metaprogrammes_Results/centred/mp_refinement/`. These files are required for downstream state definition or replotting and must remain in live storage. Only duplicate, fully rebuildable caches may be ephemeral. These steps are HPC workflows and must be run through PBS, not on a login node.
+
+## External reference UCell annotation
+
+Step 04 requires all six source datasets under the live EAC_Ref_all developmental root: adult stomach, adult oesophagus SCP1242, Barretts high-quality, early embryogenesis, normal developmental stomach and GSE157329 organogenesis. Missing files stop execution. SingleCellExperiment and SummarizedExperiment are loaded explicitly for Barretts. Metadata row names are aligned to cell identifiers before Seurat construction.
+
+UCell is computed per cell using the current filtered 17-MP gene lists, with at most 5,000 cells per annotation and seed 1234; the plotted value is the mean among sampled cells. Normal development is restricted to stomach, matching the enrichment terms. Organogenesis has major and subannotation summaries. These descriptive cell means do not constitute donor-level statistical inference. Unsupported reference terms remain unscored; no alternative reference is substituted.
+
+The external score cache validates exact gene lists, reference terms, input sizes/modification times, and scoring version. It requires all eight dataset/annotation sources and finite scores for every current MP. Old partial caches are rebuilt; plot-only mode rejects invalid caches. SCREF_FORCE_REBUILD also rebuilds external scores. The RDS, CSV score table and compact coverage summary are persistent live outputs. Validate source coverage, retained MP columns, finite scores, and exported PDF pages after PBS execution.

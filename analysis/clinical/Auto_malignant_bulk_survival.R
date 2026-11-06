@@ -8,7 +8,7 @@
 # Exact inputs relative to the live project root:
 #   analysis/clinical/OCCAMS_clinical_updated_RNA_source_status_FINAL_2026-09-25.xlsx
 #     Patient_Master_388: authoritative patient, treatment, specimen, AJCC stage,
-#     age, sex and OS fields. Alive/Not recorded dead is treated as censored;
+#     age, sex, OS, Recurrence_Ever and Estimated_Recurrence_Time_Days_From_Diagnosis_Surrogate fields. Alive/Not recorded dead is treated as censored;
 #     this source label does not establish independently confirmed vital status.
 #   analysis/clinical/TCGA_ESCA_EAC_AJCC8_MASTER_corrected_2026-09-18.xlsx
 #     EAC_RNA88_Final: authoritative 88 EAC subjects, exact primary RNA sample,
@@ -20,6 +20,8 @@
 #   ref_outs/TCGA/esca_gdc_reconstruction/intermediate/Auto_tcga_esca_meta.rds
 #     Exact sample/patient mapping and historical OS concordance audit only.
 #   ref_outs/OCCAMS/tables/OCCAMS_RNAseq_GRCh37_sample_qc_summary.csv
+#   ref_outs/clinical_selected_survival/source_data/TCGA_BCR_endpoint_candidates.csv
+#     Explicit historical new tumour event/death endpoint, including new primary; diagnosis origin.
 #   ref_outs/clinical_selected_survival/tables/cohort_membership.csv
 #     Validation only: cohort definitions come from current workbooks above.
 #   ref_outs/bulk_malignant_deconvolution/intermediate/{OCCAMS,TCGA}_counts.rds
@@ -31,18 +33,27 @@
 # Outputs under ref_outs/clinical_malignant_survival/:
 #   README.md: pointer to the current result index and methodology.
 #   intermediate/four_method_cache.rds; tables/four_method_{cox_results,cutpoint_grid,concordance}.csv.
-#   Final PDFs: one-page four-method overviews; supporting 07/08 have four forest pages each. Supporting 05/06 retain adjustment comparisons.
+#   Final PDFs: one-page four-method overviews; supporting 07/08 have four forest pages each.
+#   Supporting 05_continuous_os_adjustment.pdf and 06_continuous_rfs_adjustment.pdf:
+#     two pages each (MPs then states), unadjusted versus stage adjusted.
+#     Supporting 02/05/06 use shared significance symbols and panel n/event counts.
+#   intermediate/occams_context_cache.rds: five OCCAMS selections, four OS methods.
+#   tables/occams_context_{cox_results,cutpoint_grid,model_data,membership,figure_index}.csv.
+#   Supporting 02: 12 pages; specimen, pathway and combined comparisons, one method/page; OS/RFS panels.
+#   intermediate/rfs_analysis_cache.rds: matched exploratory RFS analyses.
+#   tables/rfs_{input_manifest,patient_metadata,model_data,cox_results,concordance_results}.csv;
+#     tables/endpoint_availability.csv. RFS sources are explicit, with no endpoint substitution.
 #   intermediate/analysis_cache.rds: complete reproducible scores/model/plot data.
 #   tables/: input_manifest, patient_metadata, cohort_membership, cohort_summary,
 #     metadata_source_audit, gene_sets, gene_coverage, scoring_gene_universe, feature_definitions,
 #     scores_and_fractions, model_data, cox_results, concordance_results,
 #     bulk_malignant_comparison, km_source_data, km_risk_tables, stage_km_source,
 #     stage_km_risk_tables, stage_cox_results, stage_model_summary and figure_index CSV files.
-#   figures/Auto_final/01_malignant_mp_survival.pdf (17 MPs per page; four methods)
-#   figures/Auto_final/02_malignant_state_survival.pdf (15 state features per page; four methods)
-#   figures/Auto_supporting/{01_bulk_vs_malignant,02_neoadjuvant_context,
+#   figures/final/01_malignant_mp_survival.pdf (17 MPs per page; four methods)
+#   figures/final/02_malignant_state_survival.pdf (15 state features per page; four methods)
+#   figures/supporting/{01_bulk_vs_malignant,02_neoadjuvant_context,
 #     03_prespecified_state_km,04_pathological_stage_km}.pdf
-#   figures/Auto_diagnostics/01_model_diagnostics.pdf
+#   figures/diagnostics/01_model_diagnostics.pdf
 #   reports/{current_results.md,validation.csv}; logs/package_versions.csv
 #   updates/new_updates/summaries/malignant_bulk_survival.csv (<100 KB).
 # Cache: hashes, statistical function bodies, settings and package versions must
@@ -77,8 +88,8 @@ if (force && replot) stop('Force rebuild and replot are mutually exclusive')
 threads <- as.integer(Sys.getenv('SCREF_SURVIVAL_THREADS', '4'))
 stopifnot(is.finite(threads), threads >= 1L)
 out <- file.path(project_dir, 'ref_outs/clinical_malignant_survival')
-for (d in c('intermediate', 'tables', 'reports', 'logs', 'figures/Auto_final',
-            'figures/Auto_supporting', 'figures/Auto_diagnostics'))
+for (d in c('intermediate', 'tables', 'reports', 'logs', 'figures/final',
+            'figures/supporting', 'figures/diagnostics'))
   dir.create(file.path(out, d), recursive=TRUE, showWarnings=FALSE)
 inputs <- c(
   occams_workbook='analysis/clinical/OCCAMS_clinical_updated_RNA_source_status_FINAL_2026-09-25.xlsx',
@@ -96,6 +107,10 @@ inputs <- c(
   config='analysis/shared/scRef_config.R')
 if (any(!file.exists(inputs))) stop('Missing required inputs: ', paste(inputs[!file.exists(inputs)], collapse=', '))
 manifest <- data.frame(input=names(inputs), path=normalizePath(inputs), md5=unname(tools::md5sum(inputs)))
+####################
+rfs_inputs <- c(tcga_events='ref_outs/clinical_selected_survival/source_data/TCGA_BCR_endpoint_candidates.csv')
+if(!all(file.exists(rfs_inputs))) stop('Missing required RFS source')
+####################
 packages <- c('GSVA', 'survival', 'splines', 'readxl', 'ggplot2', 'patchwork')
 versions <- data.frame(package=c('R', packages), version=c(as.character(getRversion()),
   vapply(packages, function(p) as.character(packageVersion(p)), character(1))))
@@ -200,6 +215,56 @@ read_metadata <- function() {
     mapped_OS_event=as.numeric(mapping$OS_event[j]), stringsAsFactors=FALSE)
   list(meta=meta, cohorts=cohorts, audit=audit)
 }
+
+####################
+read_rfs_metadata <- function(metadata) {
+  o <- as.data.frame(read_excel(inputs[['occams_workbook']],sheet='Patient_Master_388'))
+  e <- read.csv(rfs_inputs[['tcga_events']],stringsAsFactors=FALSE,na.strings='')
+  stopifnot(!anyDuplicated(o$SHA_ID),!anyDuplicated(e$Patient_ID))
+  meta <- metadata
+  meta$RFS_time <- meta$RFS_event <- NA_real_
+  meta$RFS_exclusion <- meta$RFS_definition <- ''
+  blank <- function(x) is.na(x) | trimws(as.character(x))==''
+  for (i in seq_len(nrow(meta))) {
+    if(meta$dataset[i]=='OCCAMS') {
+      j <- match(meta$subject_id[i],o$SHA_ID)
+      stopifnot(!is.na(j))
+      os_time <- as.numeric(o$Survival_Days[j])
+      os_event <- as.integer(o$Vital_Status[j]=='Dead')
+      recurrence <- as.numeric(o$Estimated_Recurrence_Time_Days_From_Diagnosis_Surrogate[j])
+      rec_yes <- !is.na(o$Recurrence_Ever[j]) && o$Recurrence_Ever[j]=='Yes'
+      rec_no <- !is.na(o$Recurrence_Ever[j]) && o$Recurrence_Ever[j]=='No'
+      meta$RFS_definition[i] <- 'Exploratory recurrence/death; assumed common first-therapy origin'
+      if(!positive(os_time)) meta$RFS_exclusion[i] <- 'missing/nonpositive survival interval'
+      else if(rec_yes && !positive(recurrence)) meta$RFS_exclusion[i] <- 'recorded recurrence without positive timed interval'
+      else if(positive(recurrence) && recurrence>os_time) meta$RFS_exclusion[i] <- 'recurrence interval exceeds survival/follow-up interval'
+      else if(!rec_yes && !rec_no && os_event==0L) meta$RFS_exclusion[i] <- 'living without recurrence ascertainment'
+      else if(rec_yes) {
+        meta$RFS_time[i] <- if(os_event==1L) min(recurrence,os_time) else recurrence
+        meta$RFS_event[i] <- 1L
+      } else {
+        meta$RFS_time[i] <- os_time
+        meta$RFS_event[i] <- os_event
+      }
+    } else {
+      j <- match(meta$subject_id[i],e$Patient_ID)
+      stopifnot(!is.na(j))
+      meta$RFS_definition[i] <- 'Original new tumour event or death; includes new primary; diagnosis origin'
+      if(!blank(e$exclusion_reason[j])) meta$RFS_exclusion[i] <- e$exclusion_reason[j]
+      else if(blank(e$tumour_event_indicator[j]) && blank(e$tumour_event_days[j]) && blank(e$death_days[j]))
+        meta$RFS_exclusion[i] <- 'living without tumour-event ascertainment'
+      if(meta$RFS_exclusion[i]=='') {
+        meta$RFS_time[i] <- as.numeric(e$candidate_rfs_days[j])
+        meta$RFS_event[i] <- as.numeric(e$candidate_rfs_event[j])
+      }
+    }
+  }
+  meta$RFS_eligible <- positive(meta$RFS_time) & meta$RFS_event %in% c(0L,1L)
+  invalid <- !meta$RFS_eligible & meta$RFS_exclusion==''
+  meta$RFS_exclusion[invalid] <- 'missing/nonpositive RFS interval or event status'
+  meta
+}
+####################
 
 make_features <- function() {
   grouping <- read.csv(inputs[['mp_grouping']], stringsAsFactors=FALSE)
@@ -584,6 +649,21 @@ interval_overflow <- function(d) list(
     position=position_dodge(.6),size=5,show.legend=FALSE))
 ####################
 
+####################
+# Counts are taken from the displayed models. Ranges reflect feature-specific
+# quartile sample sizes, rather than implying a single common denominator.
+count_range <- function(x) {
+  stopifnot(length(x)>0L,all(is.finite(x)))
+  limits <- range(x)
+  if(limits[1]==limits[2]) as.character(limits[1]) else paste(limits,collapse='–')
+}
+panel_count_label <- function(d,variable,levels,labels) {
+  paste(vapply(seq_along(levels),function(i) {
+    z <- d[as.character(d[[variable]])==levels[i],]
+    paste0(labels[i],': n=',count_range(z$n),', events=',count_range(z$events))
+  },character(1)),collapse='\n')
+}
+####################
 forest_plot <- function(d, feature_order, title, subtitle, facet='adjustment') {
   d$feature_plot <- factor(d$feature, levels=rev(feature_order))
 ####################
@@ -592,40 +672,40 @@ forest_plot <- function(d, feature_order, title, subtitle, facet='adjustment') {
   d$adjustment <- factor(d$adjustment, levels=c('unadjusted', 'stage', 'age_sex_stage'),
     labels=c('Unadjusted', 'Pathological stage adjusted', 'Age, sex and stage adjusted'))
 ####################
-  strip_labels <- setNames(vapply(levels(droplevels(d$adjustment)),function(a) {
-    counts <- unique(d[d$adjustment==a,c('dataset','n','events')])
-    stopifnot(!anyDuplicated(counts$dataset))
-    paste0(a,'\n',paste(paste0(counts$dataset,': n=',counts$n,', deaths=',counts$events),collapse='\n'))
-  },character(1)),levels(droplevels(d$adjustment)))
+  panel_names <- c('Unadjusted'='Unadjusted','Pathological stage adjusted'='Stage adjusted',
+    'Age, sex and stage adjusted'='Age, sex and stage adjusted')
+  strip_labels <- setNames(vapply(levels(droplevels(d$adjustment)),function(a)
+    paste(panel_names[[a]],panel_count_label(d[d$adjustment==a,],'dataset',
+      c('OCCAMS','TCGA'),c('OCCAMS','TCGA')),sep='\n'),character(1)),levels(droplevels(d$adjustment)))
+  d$significance <- factor(ifelse(d$P_BH<.05,'FDR',ifelse(d$P_value<.05,'Nominal','NS')),
+    levels=c('NS','Nominal','FDR'))
 ####################
   estimated <- d[d$status=='estimated', ]
   if (!nrow(estimated)) stop('No estimable models for requested forest panel')
 ####################
   estimated <- interval_coordinates(estimated)
-  estimated$point_fill <- ifelse(estimated$P_BH<.05,unname(cohort_colours[estimated$dataset]),'white')
 ####################
   dodge <- position_dodge(width=.6)
-  p <- ggplot(d, aes(y=feature_plot, colour=dataset, shape=dataset))+
+  p <- ggplot(d, aes(y=feature_plot, colour=dataset, group=dataset))+
 ####################
     geom_blank(aes(x=0))+
 ####################
     geom_vline(xintercept=0, linewidth=.4, colour='grey55', linetype=2)+
     geom_errorbar(data=estimated, aes(x=effect,xmin=left,xmax=right), orientation='y', width=.16,
       linewidth=.5, position=dodge)+
-    geom_point(data=estimated,aes(x=effect,fill=point_fill),size=2.3,stroke=.6,position=dodge)+
-    scale_fill_identity()+
+    geom_point(data=estimated,aes(x=effect,shape=significance),size=2.3,stroke=.6,position=dodge,show.legend=TRUE)+
     forest_axis()+
     scale_y_discrete(labels=format_feature)+
-    scale_colour_manual(values=cohort_colours)+scale_shape_manual(values=c(OCCAMS=21, TCGA=24))+
-    labs(x='Hazard ratio (95% CI)', y=NULL, title=title, subtitle=subtitle)+
-    theme(panel.grid.major.x=element_line(colour='grey92', linewidth=.25), panel.spacing.x=grid::unit(1, 'lines'))
+    scale_colour_manual(values=cohort_colours,name=NULL)+
+    scale_shape_manual(values=c(NS=1,Nominal=16,FDR=18),drop=FALSE,name='Evidence')+
+    labs(x='Hazard ratio (95% CI)', y=NULL, title=title)+
+    theme(panel.grid.major.x=element_line(colour='grey92', linewidth=.25), panel.spacing.x=grid::unit(1, 'lines'),
+      strip.text.x=element_text(size=10.5,face='plain',lineheight=1.1))
 ####################
   p <- p+geom_text(data=estimated,aes(x=-3,label=ifelse(left_overflow,'\u2039','')),
     position=dodge,size=5,show.legend=FALSE)+
     geom_text(data=estimated,aes(x=3,label=ifelse(right_overflow,'\u203a','')),
-      position=dodge,size=5,show.legend=FALSE)+
-    labs(caption='Filled symbols: within-cohort BH q < 0.05 across 32 features.\nBoundary points and arrowheads: estimates or CIs beyond the axis. Complete statistics are in source tables.')+
-    theme(plot.caption=element_text(size=9,hjust=0))
+      position=dodge,size=5,show.legend=FALSE)
 ####################
   if (facet=='adjustment') p <- p+facet_grid(.~adjustment,labeller=labeller(adjustment=strip_labels))
   if (facet=='family_adjustment') p <- p+facet_grid(family~adjustment, scales='free_y', space='free_y',
@@ -637,15 +717,6 @@ main <- cache$results[cache$results$cohort %in% primary_cohorts & cache$results$
   cache$results$adjustment %in% c('unadjusted', 'stage') & cache$results$family!='State logratio', ]
 mp_order <- cache$features$definitions$feature[cache$features$definitions$family=='MP']
 state_order <- cache$features$definitions$feature[cache$features$definitions$family %in% c('State MP union', 'State DGE', 'State fraction')]
-counts_label <- paste(vapply(primary_cohorts, function(c) {
-  z <- cohort_summary[cohort_summary$cohort==c, ]; paste0(ifelse(c=='occams_surgery', 'OCCAMS', 'TCGA'), ': ', z$n_OS, ' subjects, ', z$OS_events, ' deaths')
-}, character(1)), collapse='; ')
-p <- forest_plot(main[main$family=='MP', ], mp_order, 'Malignant-expression MP associations with overall survival',
-  paste0(counts_label, '\nHR per score SD. Stage-adjusted analyses exclude unknown stage; exact model counts are tabulated.'))
-ggsave(file.path(out, 'figures/Auto_supporting/05_continuous_mp_adjustment.pdf'), p, width=12, height=10, device=cairo_pdf)
-p <- forest_plot(main[main$family!='MP', ], state_order, 'Malignant state associations with overall survival',
-  paste0(counts_label, '\nScores: HR per SD. Fractions: HR per 10 percentage points, including all eight states in the denominator.'), 'family_adjustment')
-ggsave(file.path(out, 'figures/Auto_supporting/06_continuous_state_adjustment.pdf'), p, width=12, height=11, device=cairo_pdf)
 
 paired <- cache$results[cache$results$cohort %in% primary_cohorts & cache$results$adjustment=='unadjusted' &
   cache$results$family %in% c('MP', 'State MP union', 'State DGE'), ]
@@ -668,31 +739,7 @@ p <- ggplot(paired, aes(y=feature_plot, colour=source, shape=source))+
     subtitle='Identical patients, retained genes, log2(CPM+1) transformation and Gaussian GSVA in both compartments.')+
   labs(caption='Boundary points and arrowheads indicate estimates or CIs beyond the axis. Complete estimates are tabulated.')+
   theme(strip.text.y=element_text(angle=0,size=10),plot.caption=element_text(size=9,hjust=0))
-ggsave(file.path(out, 'figures/Auto_supporting/01_bulk_vs_malignant.pdf'), p, width=12, height=11, device=cairo_pdf)
-
-neo <- cache$results[cache$results$cohort %in% c('occams_neo_biopsy', 'occams_neo_surgery') &
-  cache$results$source=='malignant' & cache$results$adjustment=='unadjusted' & cache$results$family!='State logratio', ]
-neo$feature_plot <- factor(neo$feature, levels=rev(c(mp_order, state_order)))
-neo$specimen <- factor(neo$cohort, levels=c('occams_neo_biopsy', 'occams_neo_surgery'), labels=c('Biopsy specimen', 'Surgery specimen'))
-####################
-neo$family <- factor(neo$family,levels=names(family_labels))
-####################
-neo_estimated <- interval_coordinates(neo[neo$status=='estimated', ])
-p <- ggplot(neo, aes(y=feature_plot, colour=specimen, shape=specimen))+
-####################
-  geom_blank(aes(x=0))+
-####################
-  geom_vline(xintercept=0, linetype=2, colour='grey60', linewidth=.4)+
-  geom_errorbar(data=neo_estimated,aes(x=effect,xmin=left,xmax=right),orientation='y',width=.12,position=position_dodge(.6),linewidth=.4)+
-  geom_point(data=neo_estimated,aes(x=effect),position=position_dodge(.6),size=1.9)+interval_overflow(neo_estimated)+
-  facet_grid(family~.,scales='free_y',space='free_y',labeller=labeller(family=family_labels))+
-  forest_axis()+scale_y_discrete(labels=format_feature)+
-  scale_colour_manual(values=c('Biopsy specimen'='#009E73', 'Surgery specimen'='#CC79A7'))+
-  labs(x='Unadjusted hazard ratio (95% CI)', y=NULL, title='OCCAMS neoadjuvant pathway: specimen context',
-    subtitle='Supporting analysis; treatment and collection timing may affect expression. Scores per SD; fractions per 10 percentage points.')+
-  labs(caption='Boundary points and arrowheads indicate estimates or CIs beyond the axis. Complete estimates are tabulated.')+
-  theme(strip.text.y=element_text(angle=0,size=10),plot.caption=element_text(size=9,hjust=0))
-ggsave(file.path(out, 'figures/Auto_supporting/02_neoadjuvant_context.pdf'), p, width=12, height=11, device=cairo_pdf)
+ggsave(file.path(out, 'figures/supporting/01_bulk_vs_malignant.pdf'), p, width=12, height=11, device=cairo_pdf)
 
 km_colours <- c('At or below median'='#0072B2', 'Above median'='#D55E00')
 ####################
@@ -731,7 +778,7 @@ km_panel <- function(feature, cohort) {
       plot.margin=margin(0, 12, 5, 9))
   p/risk+plot_layout(heights=c(4, 1))
 }
-cairo_pdf(file.path(out, 'figures/Auto_supporting/03_prespecified_state_km.pdf'), width=12, height=9, onefile=TRUE)
+cairo_pdf(file.path(out, 'figures/supporting/03_prespecified_state_km.pdf'), width=12, height=9, onefile=TRUE)
 for (state in state_names) {
   panels <- lapply(c(' (MP union)', ' (fraction)'), function(suffix)
     lapply(primary_cohorts, function(c) km_panel(paste0(state, suffix), c)))
@@ -769,7 +816,7 @@ stage_panels <- lapply(primary_cohorts, function(cohort) {
 })
 p <- wrap_plots(stage_panels, ncol=2)+plot_annotation(title='Pathological stage in the primary surgery cohorts',
   subtitle='Current workbook AJCC categories; unknown stage excluded. Curves are descriptive; no matching of individual patients.')
-ggsave(file.path(out, 'figures/Auto_supporting/04_pathological_stage_km.pdf'), p, width=12, height=6.5, device=cairo_pdf)
+ggsave(file.path(out, 'figures/supporting/04_pathological_stage_km.pdf'), p, width=12, height=6.5, device=cairo_pdf)
 
 diagnostics <- main; diagnostics$feature_plot <- factor(diagnostics$feature, levels=rev(c(mp_order, state_order)))
 ####################
@@ -784,7 +831,7 @@ p <- ggplot(diagnostics, aes(-log10(PH_feature_P), feature_plot, colour=dataset,
   labs(x='−log10(feature proportional-hazards test P)', y=NULL, title='Proportional-hazards diagnostics',
     subtitle='Dashed line: nominal P = 0.05. Complete PH and eligible spline tests are in cox_results.csv; no automatic model replacement.')+
   theme(strip.text.y=element_text(angle=0,size=10))
-ggsave(file.path(out, 'figures/Auto_diagnostics/01_model_diagnostics.pdf'), p, width=12, height=11, device=cairo_pdf)
+ggsave(file.path(out, 'figures/diagnostics/01_model_diagnostics.pdf'), p, width=12, height=11, device=cairo_pdf)
 
 ####################
 # Four complementary displays requested by the user. Binary analyses are
@@ -898,8 +945,8 @@ four_method_figure<-function(features,path,title) {
   }
   dev.off()
 }
-four_method_figure(mp_order,file.path(out,'figures/Auto_supporting/07_four_method_mp_forests.pdf'),'Malignant MP survival')
-four_method_figure(state_order,file.path(out,'figures/Auto_supporting/08_four_method_state_forests.pdf'),'Malignant state survival')
+four_method_figure(mp_order,file.path(out,'figures/supporting/07_four_method_mp_forests.pdf'),'Malignant MP survival')
+four_method_figure(state_order,file.path(out,'figures/supporting/08_four_method_state_forests.pdf'),'Malignant state survival')
 ####################
 
 ####################
@@ -935,21 +982,263 @@ four_method_overview <- function(features,path,title) {
     theme=theme(plot.title=element_text(size=14,face='bold'),plot.subtitle=element_text(size=10.5),plot.caption=element_text(size=9,hjust=0)))
   ggsave(path,p,width=12,height=11,device=cairo_pdf)
 }
-four_method_overview(mp_order,file.path(out,'figures/Auto_final/01_malignant_mp_survival.pdf'),'Malignant MPs: four survival analyses')
-four_method_overview(state_order,file.path(out,'figures/Auto_final/02_malignant_state_survival.pdf'),'Malignant states: four survival analyses')
+four_method_overview(mp_order,file.path(out,'figures/final/01_malignant_mp_survival.pdf'),'Malignant MPs: four survival analyses')
+four_method_overview(state_order,file.path(out,'figures/final/02_malignant_state_survival.pdf'),'Malignant states: four survival analyses')
+####################
+
+####################
+# Reuse the verified parent scores; the combined clinical selection is an
+# additional subset, not a new GSVA reference population.
+context_path <- file.path(out,'intermediate/occams_context_cache.rds')
+context_cohorts <- c('occams_combined','occams_neo','occams_neo_biopsy','occams_neo_surgery','occams_surgery')
+context_contract <- list(parent=unname(tools::md5sum(cache_path)),four=four_contract,
+  cohorts=context_cohorts,version=1L)
+if (file.exists(context_path) && !force) {
+  context <- readRDS(context_path)
+  if (!identical(context$contract,context_contract)) stop('OCCAMS context cache changed; explicit rebuild required')
+} else {
+  if (replot) stop('First OCCAMS context run requires analysis mode')
+  combined_ids <- unique(c(cache$clinical$cohorts$occams_neo,cache$clinical$cohorts$occams_surgery))
+  previous <- read.csv(inputs[['prior_membership']],stringsAsFactors=FALSE)
+  stopifnot(length(combined_ids)==225L,
+    setequal(combined_ids,previous$subject_id[previous$cohort=='occams_combined']))
+  combined <- build_model_data(cache$clinical$meta,list(occams_combined=combined_ids),cache$features,cache$scored)
+  selected <- rbind(cache$model_data[cache$model_data$cohort %in% context_cohorts,],combined)
+  selected <- selected[selected$source=='malignant' & selected$family!='State logratio',]
+  continuous <- cache$results[cache$results$cohort %in% context_cohorts & cache$results$source=='malignant' &
+    cache$results$adjustment=='unadjusted' & cache$results$family!='State logratio',]
+  additional <- selected[selected$cohort=='occams_combined',]
+  additional_results <- do.call(rbind,lapply(split(additional,additional$feature),function(d)fit_one(d,'unadjusted')))
+  for (column in setdiff(names(continuous),names(additional_results))) additional_results[[column]] <- NA_real_
+  continuous <- rbind(continuous,additional_results[,names(continuous)])
+  binary <- grids <- list()
+  for (d in split(selected,interaction(selected$cohort,selected$feature,drop=TRUE))) {
+    binary[[length(binary)+1L]] <- binary_model(d,'median')
+    binary[[length(binary)+1L]] <- binary_model(d,'q1q4')
+    grid <- do.call(rbind,lapply(four_contract$grid,function(p)binary_model(d,'optimal_cut',p)))
+    grids[[length(grids)+1L]] <- grid
+    available <- which(grid$status=='estimated')
+    if (!length(available)) stop('No estimable optimal-cut candidate: ',d$cohort[1],' / ',d$feature[1])
+    best <- grid[available[which.min(grid$P_raw[available])],]
+    best$P_value <- min(1,length(four_contract$grid)*best$P_raw)
+    binary[[length(binary)+1L]] <- best
+  }
+  binary <- do.call(rbind,binary)
+  continuous$adjustment <- 'continuous'; continuous$P_raw <- continuous$P_value
+  for (column in setdiff(names(binary),names(continuous))) continuous[[column]] <- NA_real_
+  results <- rbind(continuous[,names(binary)],binary)
+  results$P_BH <- NA_real_
+  for (i in split(seq_len(nrow(results)),interaction(results$cohort,results$adjustment)))
+    results$P_BH[i] <- p.adjust(results$P_value[i],'BH',n=32L)
+  stopifnot(nrow(results)==640L)
+  context <- list(contract=context_contract,results=results,grid=do.call(rbind,grids),model_data=selected,
+    membership=unique(selected[,c('cohort','subject_id','sample_id','OS_eligible')]))
+  saveRDS(context,context_path)
+}
+####################
+# RFS is the exploratory endpoint used by the earlier selected-cohort workflow.
+# Reuse the fixed malignant scores; endpoint eligibility determines score SDs.
+rfs_path <- file.path(out,'intermediate/rfs_analysis_cache.rds')
+rfs_manifest <- data.frame(input=names(rfs_inputs),path=normalizePath(rfs_inputs),
+  md5=unname(tools::md5sum(rfs_inputs)))
+rfs_cohorts <- cache$clinical$cohorts
+rfs_cohorts$occams_combined <- unique(c(rfs_cohorts$occams_neo,rfs_cohorts$occams_surgery))
+####################
+# Use a fixed tighter convergence tolerance for every binary RFS fit.
+# Near-null coefficients can otherwise trigger the Cox infinite-coefficient heuristic.
+rfs_binary_model <- function(d,method,prob=NA_real_) {
+  d <- d[d$RFS_eligible, ]
+  r <- data.frame(cohort=d$cohort[1],dataset=d$dataset[1],source='malignant',feature=d$feature[1],family=d$family[1],
+    adjustment=method,n=nrow(d),events=sum(d$RFS_event),low_n=NA_integer_,high_n=NA_integer_,cutpoint=NA_real_,
+    q1=NA_real_,q3=NA_real_,probability=prob,status='estimated',logHR=NA_real_,SE=NA_real_,HR=NA_real_,
+    lower_CI=NA_real_,upper_CI=NA_real_,P_raw=NA_real_,P_value=NA_real_)
+  if(method=='median') {r$cutpoint<-median(d$value);high<-d$value>r$cutpoint}
+  if(method=='q1q4') {
+    q<-quantile(d$value,c(.25,.75),names=FALSE);r$q1<-q[1];r$q3<-q[2]
+    if(q[1]>=q[2]) {r$status<-'not estimated: tied quartiles';return(r)}
+    d<-d[d$value<=q[1]|d$value>=q[2], ];high<-d$value>=q[2]
+  }
+  if(method=='optimal_cut') {r$cutpoint<-unname(quantile(d$value,prob));high<-d$value>=r$cutpoint}
+  d$high<-as.integer(high);r$n<-nrow(d);r$events<-sum(d$RFS_event);r$low_n<-sum(!high);r$high_n<-sum(high)
+  if(r$n<20L || r$events<5L || min(r$low_n,r$high_n)<5L || any(tapply(d$RFS_event,d$high,sum)==0)) {
+    r$status<-'not estimated: insufficient group/event support';return(r)
+  }
+  fit<-withCallingHandlers(coxph(Surv(RFS_time,RFS_event)~high,data=d,ties='efron',control=coxph.control(iter.max=50,eps=1e-12,toler.chol=1e-14)),
+    warning=function(w) stop(r$cohort,' / ',r$feature,' / ',method,': ',conditionMessage(w)))
+  s<-summary(fit);r$logHR<-unname(coef(fit));r$SE<-s$coefficients[1,'se(coef)']
+  r$HR<-s$conf.int[1,'exp(coef)'];r$lower_CI<-s$conf.int[1,'lower .95'];r$upper_CI<-s$conf.int[1,'upper .95']
+  r$P_raw<-r$P_value<-s$coefficients[1,'Pr(>|z|)']
+  stopifnot(all(is.finite(c(r$logHR,r$SE,r$P_value))))
+  r
+}
+####################
+build_rfs_analysis <- function() {
+  metadata <- read_rfs_metadata(cache$clinical$meta[cache$clinical$meta$subject_id %in%
+    unique(unlist(rfs_cohorts)),])
+  endpoint_metadata <- metadata
+  endpoint_metadata$OS_time <- metadata$RFS_time
+  endpoint_metadata$OS_event <- metadata$RFS_event
+  endpoint_metadata$OS_eligible <- metadata$RFS_eligible
+  endpoint_metadata$OS_exclusion <- metadata$RFS_exclusion
+  model_cohorts <- rfs_cohorts[unique(c(context_cohorts,primary_cohorts))]
+  selected <- build_model_data(endpoint_metadata,model_cohorts,cache$features,cache$scored)
+  selected <- selected[selected$source=='malignant' & selected$family!='State logratio',]
+  continuous <- do.call(rbind,lapply(split(selected,interaction(selected$cohort,selected$feature,drop=TRUE)),function(d) {
+    adjustments <- if(d$cohort[1] %in% primary_cohorts) c('unadjusted','stage') else 'unadjusted'
+    do.call(rbind,lapply(adjustments,function(a)fit_one(d,a)))
+  }))
+  continuous$status <- gsub('deaths','events',continuous$status,fixed=TRUE)
+  continuous$P_BH <- NA_real_
+  for(i in split(seq_len(nrow(continuous)),interaction(continuous$cohort,continuous$adjustment,drop=TRUE)))
+    continuous$P_BH[i] <- p.adjust(continuous$P_value[i],'BH',n=32L)
+  binary <- grids <- list()
+  for(d in split(selected[selected$cohort %in% context_cohorts,],
+    interaction(selected$cohort[selected$cohort %in% context_cohorts],
+      selected$feature[selected$cohort %in% context_cohorts],drop=TRUE))) {
+    binary[[length(binary)+1L]] <- rfs_binary_model(d,'median')
+    binary[[length(binary)+1L]] <- rfs_binary_model(d,'q1q4')
+    grid <- do.call(rbind,lapply(four_contract$grid,function(p)rfs_binary_model(d,'optimal_cut',p)))
+    grids[[length(grids)+1L]] <- grid
+    available <- which(grid$status=='estimated')
+    if(!length(available)) stop('No estimable RFS optimal-cut candidate: ',d$cohort[1],' / ',d$feature[1])
+    best <- grid[available[which.min(grid$P_raw[available])],]
+    best$P_value <- min(1,length(four_contract$grid)*best$P_raw)
+    binary[[length(binary)+1L]] <- best
+  }
+  binary <- do.call(rbind,binary)
+  context_continuous <- continuous[continuous$cohort %in% context_cohorts & continuous$adjustment=='unadjusted',]
+  context_continuous$adjustment <- 'continuous'
+  context_continuous$P_raw <- context_continuous$P_value
+  for(column in setdiff(names(binary),names(context_continuous))) context_continuous[[column]] <- NA_real_
+  context_results <- rbind(context_continuous[,names(binary)],binary)
+  context_results$P_BH <- NA_real_
+  for(i in split(seq_len(nrow(context_results)),interaction(context_results$cohort,context_results$adjustment,drop=TRUE)))
+    context_results$P_BH[i] <- p.adjust(context_results$P_value[i],'BH',n=32L)
+  stopifnot(nrow(context_results)==640L,nrow(continuous)==256L)
+  list(metadata=metadata,model_data=selected,continuous=continuous,
+    context_results=context_results,grid=do.call(rbind,grids),
+    concordance=cross_cohort(continuous[continuous$cohort %in% primary_cohorts,],cache$features$definitions))
+}
+rfs_contract <- list(parent=unname(tools::md5sum(cache_path)),inputs=rfs_manifest,
+  four=four_contract,cohorts=rfs_cohorts,version=1L,
+  endpoint_code=paste(deparse(body(read_rfs_metadata)),collapse='\n'),
+  analysis_code=paste(deparse(body(build_rfs_analysis)),collapse='\n'),
+  binary_code=paste(deparse(body(rfs_binary_model)),collapse='\n'))
+if(file.exists(rfs_path) && !force) {
+  rfs <- readRDS(rfs_path)
+  if(!identical(rfs$contract,rfs_contract)) stop('RFS cache changed; explicit rebuild required')
+} else {
+  if(replot) stop('First RFS run requires analysis mode')
+  rfs <- build_rfs_analysis()
+  rfs$contract <- rfs_contract
+  saveRDS(rfs,rfs_path)
+}
+endpoint_source <- function(d,endpoint) {
+  names(d)[match(c('OS_time','OS_event','OS_eligible','OS_exclusion'),names(d))] <-
+    c('endpoint_time','endpoint_event','endpoint_eligible','endpoint_exclusion')
+  d$endpoint <- endpoint
+  d
+}
+table_out(rfs_manifest,'rfs_input_manifest')
+table_out(rfs$metadata,'rfs_patient_metadata')
+table_out(endpoint_source(rfs$model_data,'RFS'),'rfs_model_data')
+table_out(transform(rfs$continuous,endpoint='RFS'),'rfs_cox_results')
+table_out(transform(rfs$concordance,endpoint='RFS'),'rfs_concordance_results')
+endpoint_summary <- do.call(rbind,lapply(names(rfs_cohorts),function(key) {
+  d <- rfs$metadata[match(rfs_cohorts[[key]],rfs$metadata$subject_id),]
+  do.call(rbind,lapply(c('OS','RFS'),function(endpoint) {
+    eligible <- d[[paste0(endpoint,'_eligible')]]
+    events <- d[[paste0(endpoint,'_event')]]
+    stage_complete <- eligible & !is.na(d$pstage)
+    data.frame(cohort=key,endpoint=endpoint,n_selected=nrow(d),n=sum(eligible),
+      events=sum(events[eligible]),n_stage=sum(stage_complete),events_stage=sum(events[stage_complete]))
+  }))
+}))
+table_out(endpoint_summary,'endpoint_availability')
+context_results <- rbind(transform(context$results,endpoint='OS'),transform(rfs$context_results,endpoint='RFS'))
+context_grid <- rbind(transform(context$grid,endpoint='OS'),transform(rfs$grid,endpoint='RFS'))
+os_context_source <- endpoint_source(context$model_data,'OS')
+rfs_context_source <- endpoint_source(rfs$model_data[rfs$model_data$cohort %in% context_cohorts,],'RFS')
+# Export a common patient-level schema; RFS-specific provenance is in rfs_patient_metadata.
+context_source <- rbind(os_context_source,rfs_context_source[,names(os_context_source)])
+table_out(context_results,'occams_context_cox_results')
+table_out(context_grid,'occams_context_cutpoint_grid')
+table_out(context_source,'occams_context_model_data')
+table_out(unique(context_source[,c('cohort','subject_id','sample_id','endpoint','endpoint_eligible')]),
+  'occams_context_membership')
+
+for(endpoint in c('OS','RFS')) {
+  d <- if(endpoint=='OS') main else rfs$continuous[rfs$continuous$cohort %in% primary_cohorts,]
+  filename <- if(endpoint=='OS') '05_continuous_os_adjustment.pdf' else '06_continuous_rfs_adjustment.pdf'
+  cairo_pdf(file.path(out,'figures/supporting',filename),width=12,height=11,onefile=TRUE)
+  print(forest_plot(d[d$family=='MP',],mp_order,paste(endpoint,'| MPs'),NULL))
+  print(forest_plot(d[d$family!='MP',],state_order,paste(endpoint,'| States'),NULL,'family_adjustment'))
+  dev.off()
+}
+####################
+
+context_panels <- list(
+  specimens=list(title='Neoadjuvant specimens',cohorts=c('occams_neo_biopsy','occams_neo_surgery'),
+    labels=c('Biopsy','Surgery'),colours=c('#009E73','#CC79A7')),
+  pathways=list(title='OCCAMS treatment pathways',cohorts=c('occams_neo','occams_surgery'),
+    labels=c('Neoadjuvant','Surgery pathway'),colours=c('#0072B2','#D55E00')),
+  combined=list(title='OCCAMS combined pathways',cohorts='occams_combined',
+    labels='Combined',colours='#333333'))
+context_method_labels <- c(continuous='Continuous',median='Median',q1q4='Q1 vs Q4',optimal_cut='Optimal cut')
+context_page_index <- list()
+cairo_pdf(file.path(out,'figures/supporting/02_neoadjuvant_context.pdf'),width=12,height=11,onefile=TRUE)
+for (comparison in names(context_panels)) {
+  panel <- context_panels[[comparison]]
+  for (method in names(context_method_labels)) {
+    d <- context_results[context_results$cohort %in% panel$cohorts & context_results$adjustment==method,]
+    d$endpoint <- factor(d$endpoint,levels=c('OS','RFS'))
+    d$feature_plot <- factor(d$feature,levels=rev(c(mp_order,state_order)))
+    d$family <- factor(d$family,levels=names(family_labels))
+    d$cohort_plot <- factor(d$cohort,levels=panel$cohorts,labels=panel$labels)
+    d$significance <- factor(ifelse(d$P_BH<.05,'FDR',ifelse(d$P_value<.05,'Nominal','NS')),
+      levels=c('NS','Nominal','FDR'))
+    estimated <- interval_coordinates(d[d$status=='estimated',])
+    endpoint_labels <- setNames(vapply(c('OS','RFS'),function(endpoint)
+      paste(endpoint,panel_count_label(d[d$endpoint==endpoint,],'cohort',panel$cohorts,panel$labels),
+        sep='\n'),character(1)),c('OS','RFS'))
+    p <- ggplot(d,aes(y=feature_plot,colour=cohort_plot,group=cohort_plot))+
+      geom_blank(aes(x=0))+
+      geom_vline(xintercept=0,linetype=2,colour='grey60',linewidth=.4)+
+      geom_errorbar(data=estimated,aes(x=effect,xmin=left,xmax=right),orientation='y',
+        width=.12,position=position_dodge(.6),linewidth=.5)+
+      geom_point(data=estimated,aes(x=effect,shape=significance),position=position_dodge(.6),size=2.3,show.legend=TRUE)+
+      interval_overflow(estimated)+
+      facet_grid(family~endpoint,scales='free_y',space='free_y',
+        labeller=labeller(family=family_labels,endpoint=endpoint_labels))+
+      forest_axis()+scale_y_discrete(labels=format_feature)+
+      scale_colour_manual(values=setNames(panel$colours,panel$labels),name=NULL)+
+      scale_shape_manual(values=c(NS=1,Nominal=16,FDR=18),drop=FALSE,name='Evidence')+
+      labs(x=if(method=='continuous')'Hazard ratio per SD / 10 percentage points' else 'Hazard ratio: high vs low',
+        y=NULL,title=paste(panel$title,'|',context_method_labels[[method]]))+
+      theme(strip.text.y=element_text(angle=0,size=10),plot.title=element_text(size=16,face='bold'),
+        legend.text=element_text(size=11),axis.text.y=element_text(size=10),
+        strip.text.x=element_text(size=10.5,face='plain',lineheight=1.1))
+    print(p)
+    context_page_index[[length(context_page_index)+1L]] <- data.frame(page=length(context_page_index)+1L,
+      comparison=comparison,method=method,cohorts=paste(panel$cohorts,collapse=' | '),endpoints='OS | RFS',features=32L)
+  }
+}
+dev.off()
+context_page_index <- do.call(rbind,context_page_index)
+table_out(context_page_index,'occams_context_figure_index')
 ####################
 
 figure_index <- data.frame(role=c(rep('final', 2), rep('supporting', 4), 'diagnostics'),
-  path=c('figures/Auto_final/01_malignant_mp_survival.pdf', 'figures/Auto_final/02_malignant_state_survival.pdf',
-    'figures/Auto_supporting/01_bulk_vs_malignant.pdf', 'figures/Auto_supporting/02_neoadjuvant_context.pdf',
-    'figures/Auto_supporting/03_prespecified_state_km.pdf', 'figures/Auto_supporting/04_pathological_stage_km.pdf',
-    'figures/Auto_diagnostics/01_model_diagnostics.pdf'),
-  pages=c(1L, 1L, 1L, 1L, 5L, 1L, 1L),
+  path=c('figures/final/01_malignant_mp_survival.pdf', 'figures/final/02_malignant_state_survival.pdf',
+    'figures/supporting/01_bulk_vs_malignant.pdf', 'figures/supporting/02_neoadjuvant_context.pdf',
+    'figures/supporting/03_prespecified_state_km.pdf', 'figures/supporting/04_pathological_stage_km.pdf',
+    'figures/diagnostics/01_model_diagnostics.pdf'),
+  pages=c(1L, 1L, 1L, nrow(context_page_index), 5L, 1L, 1L),
   purpose=c('All 17 malignant MP estimates in both surgery cohorts', 'All 15 state score/fraction estimates in both surgery cohorts',
-    'Paired bulk-versus-malignant estimates on identical patients', 'Neoadjuvant specimens kept separate from primary cohorts',
+    'Paired bulk-versus-malignant estimates on identical patients', 'OCCAMS specimens, treatment pathways and combined selection; OS/RFS panels and four methods on separate pages',
     'Prespecified median state curves with risk counts', 'Current pathological stage curves and risk counts', 'PH diagnostic overview'))
-figure_index <- rbind(figure_index,data.frame(role='supporting',path=c('figures/Auto_supporting/05_continuous_mp_adjustment.pdf','figures/Auto_supporting/06_continuous_state_adjustment.pdf'),pages=1L,purpose=c('Continuous MP models before and after stage adjustment','Continuous state models before and after stage adjustment')))
-figure_index <- rbind(figure_index,data.frame(role='supporting',path=c('figures/Auto_supporting/07_four_method_mp_forests.pdf','figures/Auto_supporting/08_four_method_state_forests.pdf'),pages=4L,purpose=c('Four-method MP estimates and confidence intervals','Four-method state estimates and confidence intervals')))
+figure_index <- rbind(figure_index,data.frame(role='supporting',path=c('figures/supporting/05_continuous_os_adjustment.pdf','figures/supporting/06_continuous_rfs_adjustment.pdf'),pages=2L,purpose=c('OS: MPs then states, unadjusted and stage adjusted','Exploratory RFS: MPs then states, unadjusted and stage adjusted')))
+figure_index <- rbind(figure_index,data.frame(role='supporting',path=c('figures/supporting/07_four_method_mp_forests.pdf','figures/supporting/08_four_method_state_forests.pdf'),pages=4L,purpose=c('Four-method MP estimates and confidence intervals','Four-method state estimates and confidence intervals')))
 table_out(figure_index, 'figure_index')
 stopifnot(all(file.exists(file.path(out, figure_index$path))), all(file.info(file.path(out, figure_index$path))$size>1000))
 primary_replication <- cache$concordance[cache$concordance$source=='malignant' & cache$concordance$family!='State logratio', ]
@@ -1018,7 +1307,7 @@ for (adjustment in c('unadjusted','stage')) for (source in c('bulk','malignant')
 }
 ####################
 ####################
-four_method_text <- c('Exploratory unadjusted comparisons across the four displayed methods:', '',
+four_method_text <- c('Exploratory unadjusted OS comparisons across the four displayed methods:', '',
   '| Method | Same direction / 32 | Nominal P < 0.05 in both | Cross-cohort BH q < 0.05 |',
   '|---|---:|---:|---:|')
 for (method in names(method_titles)) {
@@ -1030,6 +1319,26 @@ four_method_text <- c(four_method_text, '',
   'These method-specific q values do not correct for choosing among four methods. No method gives FDR-supported cross-cohort replication. Cohort-specific significance therefore must not be interpreted as replicated evidence.', '',
   '[Four-method estimates](../tables/four_method_cox_results.csv) | [Four-method concordance](../tables/four_method_concordance.csv) | [Cutpoint search grid](../tables/four_method_cutpoint_grid.csv)')
 ####################
+####################
+rfs_text <- c('Exploratory RFS in the primary surgery cohorts:', '',
+  '| Model | Same direction / 32 | Nominal P < 0.05 in both | Cross-cohort BH q < 0.05 |',
+  '|---|---:|---:|---:|')
+for(adjustment in c('unadjusted','stage')) {
+  z <- rfs$concordance[rfs$concordance$adjustment==adjustment,]
+  rfs_text <- c(rfs_text,sprintf('| %s | %d | %d | %d |',adjustment,
+    sum(z$concordant),sum(z$nominal_replication),sum(z$FDR_replication)))
+}
+rfs_support <- rfs$concordance[rfs$concordance$nominal_replication,]
+rfs_text <- c(rfs_text,'',
+  if(!nrow(rfs_support)) 'No RFS feature has nominal significance in both cohorts.' else
+    vapply(seq_len(nrow(rfs_support)),function(i) {
+      z <- rfs_support[i,]
+      sprintf('- %s (%s): %s; OCCAMS P %.3g, TCGA P %.3g; cross-cohort BH q %.3g.',
+        z$feature,z$adjustment,z$direction,z$P_value_OCCAMS,z$P_value_TCGA,z$conjunction_BH)
+    },character(1)), '',
+  'Nominal associations do not establish FDR-supported replication. MP12 and the stress-adaptive MP union are identical tests, not independent findings. RFS remains exploratory because the historical endpoint definitions and origins differ across cohorts.',
+  '', '[RFS cross-cohort results](../tables/rfs_concordance_results.csv)')
+####################
 report <- c('# Current malignant survival analysis', '',
   'Primary comparison: the exact OCCAMS curative-intent surgery-pathway 68 and TCGA surgery-Yes 72 subject lists. Endpoint and covariate exclusions are explicit in the tables. These are comparable clinical subsets, not individually matched patients or proven equivalent treatment histories.', '',
   'OCCAMS metadata come from the 25 September 2026 workbook. TCGA stage, surgery and sample selection come from the 18 September 2026 workbook; OS, age and sex come from the local cBioPortal clinical table because the workbook does not contain them. Exact GDC sample mapping is independently checked. Current patient lists match the previous selected-cohort analysis.', '',
@@ -1038,12 +1347,16 @@ report <- c('# Current malignant survival analysis', '',
   'Multiplicity: BH correction across all 32 primary features within each cohort, compartment and adjustment. Concordant cross-cohort conjunction P is the larger two-sided cohort P; discordant estimates receive P=1. BH correction across 32 conjunction tests defines FDR replication. Expected biological directions are hypotheses, never filters or selection rules.', '',
   summary_markdown, '',
 ####################
-  support_text, '',unadjusted_text, '',paired_expression_text, '',four_method_text, '',
+  support_text, '',unadjusted_text, '',paired_expression_text, '',four_method_text, '',rfs_text, '',
 ####################
-  'Each final PDF has one page comparing four explicitly labelled methods: continuous, median, Q1/Q4 and optimal cutpoint. State colours, numerical P/q values and explicit significance labels accompany every feature. Optimal-cutpoint P values are corrected for all 13 searched thresholds before BH correction. Stage-adjusted continuous models remain the primary inference in supporting figures 05 and 06. The final overviews show all features; supporting forests 07/08 provide the corresponding 95% confidence intervals. No signature is selected because its direction matches an expectation. Descriptive median Kaplan–Meier curves do not provide the primary significance test. Bulk-versus-malignant differences are paired descriptive comparisons; their effect difference is not tested as if independent. Both cohorts were examined previously: concordant findings provide retrospective cross-cohort support, not untouched external validation.', '',
+  'Each final PDF has one page comparing four explicitly labelled methods: continuous, median, Q1/Q4 and optimal cutpoint. State colours, numerical P/q values and explicit significance labels accompany every feature. Optimal-cutpoint P values are corrected for all 13 searched thresholds before BH correction. Supporting 05 contains OS and supporting 06 exploratory RFS, each with MPs and states on separate pages and unadjusted/stage-adjusted panels. The OS stage-adjusted models remain primary. The final overviews show all features; supporting forests 07/08 provide the corresponding 95% confidence intervals. No signature is selected because its direction matches an expectation. Descriptive median Kaplan–Meier curves do not provide the primary significance test. Bulk-versus-malignant differences are paired descriptive comparisons; their effect difference is not tested as if independent. Both cohorts were examined previously: concordant findings provide retrospective cross-cohort support, not untouched external validation.', '',
   'Limitations: limited deaths constrain adjustment and spline diagnostics. Broad pathological stages can retain residual confounding and differ after neoadjuvant treatment. OCCAMS uses its recorded survival interval; TCGA uses the cBioPortal diagnosis-based OS interval, so identical time origins are not asserted. OCCAMS Alive/Not recorded dead is censored as encoded by its source. BayesPrism fractions are RNA contributions, not validated cell proportions, and reference uncertainty is not propagated into Cox standard errors. Many inferred fractions are near zero, with high relative conditional posterior uncertainty; numerical model estimates do not establish accurately measured state abundance. Normal epithelial contamination and similar malignant-state programs remain limitations. Survival associations are prognostic observations, not causal validation.', '',
-  '[Final MP figure](../figures/Auto_final/01_malignant_mp_survival.pdf) | [Final state figure](../figures/Auto_final/02_malignant_state_survival.pdf)',
+  '[Final MP figure](../figures/final/01_malignant_mp_survival.pdf) | [Final state figure](../figures/final/02_malignant_state_survival.pdf)',
   '[Figure index](../tables/figure_index.csv) | [Cox results](../tables/cox_results.csv) | [Cross-cohort concordance](../tables/concordance_results.csv)',
+  'Exploratory RFS reproduces the earlier selected-cohort endpoint: OCCAMS recurrence/death under the previously approved common-first-therapy assumption; TCGA new tumour event/death from diagnosis, including new primary. These are not harmonized PFS endpoints. Missing or inconsistent recurrence records are excluded explicitly. Supporting 02 places OS and RFS side by side on every method/comparison page. Supporting 02/05/06 use open circles for NS, solid circles for nominal P<0.05 and diamonds for BH q<0.05. Panel headers report cohort n and events; ranges denote feature-dependent counts.', '',
+  '[Endpoint availability](../tables/endpoint_availability.csv) | [RFS results](../tables/rfs_cox_results.csv) | [RFS definitions and exclusions](../tables/rfs_patient_metadata.csv)',
+  '[OS adjustment](../figures/supporting/05_continuous_os_adjustment.pdf) | [RFS adjustment](../figures/supporting/06_continuous_rfs_adjustment.pdf)',
+  '[OCCAMS subgroup survival](../figures/supporting/02_neoadjuvant_context.pdf) | [Subgroup page index](../tables/occams_context_figure_index.csv)',
   '[Cohort counts](../tables/cohort_summary.csv) | [Metadata source audit](../tables/metadata_source_audit.csv) | [Validation](validation.csv)',
   '[State-fraction resolution](../../bulk_malignant_deconvolution/tables/state_fraction_resolution.csv)',
   '[Methodology](../../../analysis/methodology/clinical/malignant_bulk_survival_methodology.md)')
@@ -1051,7 +1364,7 @@ writeLines(report, file.path(out, 'reports/current_results.md'))
 ####################
 writeLines(c('# Current malignant survival analysis','',
   'Start with the [current results and figure index](reports/current_results.md).',
-  'The selected final figures are in `figures/Auto_final/`; complete model and source tables are in `tables/`.',
+  'The selected final figures are in `figures/final/`; complete model and source tables are in `tables/`.',
   'Methods: [malignant-compartment survival](../../analysis/methodology/clinical/malignant_bulk_survival_methodology.md).'),
   file.path(out,'README.md'))
 ####################

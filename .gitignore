@@ -31,5 +31,5 @@ __pycache__/
 /Auto_session_checks/
 
 # PBS live stdout/stderr written directly in the project root
-/*.OU
-/*.ER
+*.OU
+*.ER

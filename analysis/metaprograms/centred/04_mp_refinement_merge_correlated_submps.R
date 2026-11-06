@@ -35,6 +35,14 @@
 #   - ref_outs/Metaprogrammes_Results/centred/mp_refinement/figures/*merged* and enrichment PDFs
 #   - updates/new_updates/summaries/mp_refinement_merge_correlated_submps_summary.csv
 #
+# External inputs: live/EAC_Ref_all/00_merged/developmental/Stomach.rds and
+#   raw_data/{barretts,adult_oesophagus/SCP1242,early_embryogenesis,normal_development,organogenesis};
+#   exact required filenames are listed in required_inputs below.
+# External outputs: intermediate/merged_refined_mp_external_ucell_scores.rds;
+#   tables/merged_refined_mp_external_ucell_scores.csv;
+#   figures/merged_refined_mp_ucell_reference_anno.pdf and ucell_merged_*.png;
+#   updates/new_updates/summaries/merged_refined_mp_external_ucell_coverage.csv.
+# PBS: 8 CPUs, 120 GB, 12 hours; qsub job_scripts/metaprograms/centred/04_mp_refinement_merge_correlated_submps.sh
 # Cache/replot behavior:
 #   SCREF_FORCE_REBUILD=TRUE rebuilds merged gene/UCell caches.
 #   SCREF_REPLOT_ONLY=TRUE reuses valid merged caches and regenerates tables/figures.
@@ -61,6 +69,10 @@ library(ggplot2)
 library(tidyr)
 library(pheatmap)
 library(openxlsx)
+####################
+library(SingleCellExperiment)
+library(SummarizedExperiment)
+####################
 
 
 project_dir <- "/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline"
@@ -966,6 +978,18 @@ mp_gene_lists <- merged_mp_genes[final_col_order]
 ####################
 # Extend display labels for enrichment to cover all features
 merged_display_labels <- setNames(display_label(final_col_order), final_col_order)
+
+####################
+# Canonical descriptions shared by enrichment and reference UCell heatmaps.
+mp_description_table <- read.csv(file.path(outdir, "tables", "centred_refined_mp_state_grouping.csv"), stringsAsFactors = FALSE)
+mp_annotation_labels <- function(mps, sizes) {
+  descriptions <- mp_description_table$description[match(mps, mp_description_table$mp)]
+  if (anyNA(descriptions) || any(!nzchar(descriptions))) stop("Missing canonical MP descriptions.")
+  wrapped <- vapply(descriptions, function(x) paste(strwrap(x, width = 24), collapse = "\n"), character(1))
+  paste0(mps, " (n=", sizes, ")\n", wrapped)
+}
+####################
+
 ####################
 
 cluster_enrich <- lapply(names(mp_gene_lists), function(mp_name) {
@@ -1101,7 +1125,7 @@ enrich_heatmap <- function(cluster_enrich, element,
   
   # Format column labels to be on the same line
   mp_sizes <- sapply(colnames(mat), function(x) length(mp_gene_lists[[x]]))
-  col_labels <- paste0(merged_display_labels[colnames(mat)], " (n=", mp_sizes, ")")
+  col_labels <- mp_annotation_labels(colnames(mat), mp_sizes)
   
   cluster_rows_param <- FALSE; row_gaps <- NULL
   if (is_custom) {
@@ -1145,6 +1169,7 @@ enrich_heatmap <- function(cluster_enrich, element,
                      main = paste0(element, " Enrichment (-log10 padj)"))
   
   ht@column_names_param$rot <- 35
+  ht@column_names_param$max_height <- grid::unit(100, "mm")
   ComplexHeatmap::draw(ht, padding = grid::unit(c(2, 35, 2, 2), "mm"))
                      
   target_mps <- c("MP17", "MP12", "MP15")
@@ -1225,7 +1250,43 @@ dev.off()
 cat("\n=== UCell Scoring in External References ===\n")
 score_external_references_for_heatmap <- function() {
   external_cache <- file.path(outdir, "intermediate", "merged_refined_mp_external_ucell_scores.rds")
-  if (file.exists(external_cache) && !force_rebuild) return(readRDS(external_cache))
+  ####################
+  raw_root <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data"
+  required_inputs <- c(
+    file.path(dirname(raw_root), "Stomach.rds"),
+    file.path(raw_root, "barretts/alldatahighquality.rds"),
+    file.path(raw_root, "adult_oesophagus/SCP1242/metadata/EoE_meta.txt"),
+    file.path(raw_root, "adult_oesophagus/SCP1242/expression/63f5559ca03dda60911f184e",
+              c("EoE-processed.mtx", "EoE_cell_processed.tsv", "EoE_gene_processed.tsv")),
+    file.path(raw_root, "early_embryogenesis/psd.R3.6.em.seurat.ob.rds"),
+    file.path(raw_root, "normal_development", c("Stomach_gene_count.RDS", "df_cell.RDS", "df_gene.RDS")),
+    file.path(raw_root, "organogenesis", c("GSE157329_cell_annotate.txt.gz", "GSE157329_gene_annotate.txt.gz", "GSE157329_raw_counts.mtx.gz"))
+  )
+  if (any(!file.exists(required_inputs))) stop("Missing external reference inputs: ", paste(required_inputs[!file.exists(required_inputs)], collapse = ", "))
+  expected_sources <- c("Adult_Stomach", "Adult_Oesophagus", "Barretts_HighQuality",
+                        "Early_Embryogenesis_integrated", "Normal_Development_Stomach_long",
+                        "Normal_Development_Stomach_short", "Organogenesis_GSE157329_major",
+                        "Organogenesis_GSE157329_sub")
+  external_signature <- list(version = 2L, genes = mp_gene_lists,
+    inputs = file.info(required_inputs)[, c("size", "mtime")],
+    terms = lapply(custom_refs, function(x) x$TERM2NAME$term), seed = 1234L)
+  valid_external <- function(x) {
+    is.data.frame(x) && all(c("dataset_source", "term", "n_cells_scored", names(mp_gene_lists)) %in% names(x)) &&
+      all(expected_sources %in% x$dataset_source) && all(x$n_cells_scored > 0) &&
+      all(is.finite(as.matrix(x[, names(mp_gene_lists), drop = FALSE])))
+  }
+  if (file.exists(external_cache) && !force_rebuild) {
+    cached_external <- readRDS(external_cache)
+    if (identical(attr(cached_external, "external_signature"), external_signature) && valid_external(cached_external)) return(cached_external)
+    if (replot_only) stop("External UCell cache invalid; rerun without SCREF_REPLOT_ONLY.")
+  }
+  set.seed(1234L)
+  scoring_metadata <- function(x) {
+    x <- as.data.frame(x)
+    rownames(x) <- x$cell
+    x
+  }
+  ####################
 
   clean_counts <- function(mat) {
     rn <- gsub("_", "-", rownames(mat))
@@ -1272,7 +1333,7 @@ score_external_references_for_heatmap <- function() {
     usable_mp_genes <- lapply(mp_gene_lists, function(genes) intersect(genes, rownames(stomach_counts)))
     usable_mp_genes <- usable_mp_genes[lengths(usable_mp_genes) > 0]
 
-    obj <- CreateSeuratObject(counts = stomach_counts, meta.data = as.data.frame(stomach_sampled))
+    obj <- CreateSeuratObject(counts = stomach_counts, meta.data = scoring_metadata(stomach_sampled))
     obj <- UCell::AddModuleScore_UCell(obj, features = usable_mp_genes, slot = "counts", name = "_UCell", ncores = 1)
     score_cols <- paste0(names(usable_mp_genes), "_UCell")
     score_df <- cbind(stomach_sampled[, c("cell", "term", "dataset_source")], obj@meta.data[, score_cols, drop=FALSE])
@@ -1283,7 +1344,7 @@ score_external_references_for_heatmap <- function() {
   }
 
   # 2. Barretts High Quality
-  barretts_path <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/barretts/alldatahighquality.rds"
+  barretts_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/barretts/alldatahighquality.rds"
   if (file.exists(barretts_path)) {
     cat("Scoring Barretts high-quality SingleCellExperiment with external UCell logic.\n")
     barrett_term_map <- c(
@@ -1301,7 +1362,7 @@ score_external_references_for_heatmap <- function() {
       "Mucous_MUC5B_High" = "Mucous_Submucosal_Glands..Barretts_Oesophagus"
     )
     barretts_sce <- readRDS(barretts_path)
-    if ("SummarizedExperiment" %in% loadedNamespaces()) {
+    if (inherits(barretts_sce, "SummarizedExperiment")) {
       b_counts <- SummarizedExperiment::assay(barretts_sce, "counts")
       b_counts <- as(b_counts, "CsparseMatrix")
       b_meta <- as.data.frame(SummarizedExperiment::colData(barretts_sce), stringsAsFactors = FALSE)
@@ -1318,7 +1379,7 @@ score_external_references_for_heatmap <- function() {
       usable_mp_genes <- lapply(mp_gene_lists, function(genes) intersect(genes, rownames(b_counts)))
       usable_mp_genes <- usable_mp_genes[lengths(usable_mp_genes) > 0]
 
-      obj <- CreateSeuratObject(counts = b_counts, meta.data = as.data.frame(b_sampled))
+      obj <- CreateSeuratObject(counts = b_counts, meta.data = scoring_metadata(b_sampled))
       obj <- UCell::AddModuleScore_UCell(obj, features = usable_mp_genes, slot = "counts", name = "_UCell", ncores = 1)
       score_cols <- paste0(names(usable_mp_genes), "_UCell")
       score_df <- cbind(b_sampled[, c("cell", "term", "dataset_source")], obj@meta.data[, score_cols, drop=FALSE])
@@ -1330,7 +1391,7 @@ score_external_references_for_heatmap <- function() {
   }
   
   # 3. Adult Oesophagus
-  oesophagus_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/adult_oesophagus/SCP1242"
+  oesophagus_dir <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/adult_oesophagus/SCP1242"
   oes_mtx <- file.path(oesophagus_dir, "expression", "63f5559ca03dda60911f184e", "EoE-processed.mtx")
   if (file.exists(oes_mtx)) {
     cat("Scoring adult oesophagus MatrixMarket counts with external UCell logic.\n")
@@ -1347,6 +1408,7 @@ score_external_references_for_heatmap <- function() {
         all_cells <- data.table::fread(cell_path, header = FALSE, col.names = "cell")$cell
         all_genes <- data.table::fread(gene_path, header = FALSE, col.names = "gene")$gene
         keep_idx <- match(sampled_meta$cell, all_cells)
+        if (anyNA(keep_idx) || anyDuplicated(keep_idx)) stop("Invalid oesophagus cell alignment.")
         index_map <- data.frame(old_index = keep_idx, new_index = seq_along(keep_idx))
         map_path <- file.path(outdir, "intermediate", "Auto_oesophagus_subset_map.tsv")
         triplet_path <- file.path(outdir, "intermediate", "Auto_oesophagus_subset_triplets.tsv")
@@ -1354,7 +1416,7 @@ score_external_references_for_heatmap <- function() {
         write.table(index_map, map_path, sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
         awk_program <- "FNR==NR {map[$1]=$2; next} /^%/ {next} !seen_dims {seen_dims=1; next} NF==3 {if ($2 in map) print $1, map[$2], $3}"
         cmd <- sprintf("awk '%s' %s %s > %s", awk_program, shQuote(map_path), shQuote(mtx_path), shQuote(triplet_path))
-        system(cmd)
+        if (system(cmd) != 0L) stop("Oesophagus matrix subsetting failed.")
         n_entries <- as.integer(scan(text = system2("wc", c("-l", triplet_path), stdout = TRUE), what = character(), quiet = TRUE)[1])
         writeLines(c("%%MatrixMarket matrix coordinate integer general", paste(length(all_genes), length(keep_idx), n_entries)), filtered_mtx_path)
         file.append(filtered_mtx_path, triplet_path)
@@ -1370,7 +1432,7 @@ score_external_references_for_heatmap <- function() {
       usable_mp_genes <- lapply(mp_gene_lists, function(genes) intersect(genes, rownames(oes_counts)))
       usable_mp_genes <- usable_mp_genes[lengths(usable_mp_genes) > 0]
 
-      obj <- CreateSeuratObject(counts = oes_counts, meta.data = as.data.frame(oes_sampled))
+      obj <- CreateSeuratObject(counts = oes_counts, meta.data = scoring_metadata(oes_sampled))
       obj <- UCell::AddModuleScore_UCell(obj, features = usable_mp_genes, slot = "counts", name = "_UCell", ncores = 1)
       score_cols <- paste0(names(usable_mp_genes), "_UCell")
       score_df <- cbind(oes_sampled[, c("cell", "term", "dataset_source")], obj@meta.data[, score_cols, drop=FALSE])
@@ -1382,7 +1444,7 @@ score_external_references_for_heatmap <- function() {
   }
 
   # 4. Early Embryogenesis
-  early_path <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/early_embryogenesis/psd.R3.6.em.seurat.ob.rds"
+  early_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/early_embryogenesis/psd.R3.6.em.seurat.ob.rds"
   if (file.exists(early_path)) {
     cat("Scoring Early Embryogenesis...\n")
     early_obj <- readRDS(early_path)
@@ -1403,7 +1465,7 @@ score_external_references_for_heatmap <- function() {
       usable_mp_genes <- lapply(mp_gene_lists, function(genes) intersect(genes, rownames(early_counts)))
       usable_mp_genes <- usable_mp_genes[lengths(usable_mp_genes) > 0]
       if(length(usable_mp_genes) > 0) {
-        obj <- CreateSeuratObject(counts = early_counts, meta.data = as.data.frame(early_sampled))
+        obj <- CreateSeuratObject(counts = early_counts, meta.data = scoring_metadata(early_sampled))
         obj <- UCell::AddModuleScore_UCell(obj, features = usable_mp_genes, slot = "counts", name = "_UCell", ncores = 1)
         score_cols <- paste0(names(usable_mp_genes), "_UCell")
         score_df <- cbind(early_sampled[, c("cell", "term", "dataset_source")], obj@meta.data[, score_cols, drop=FALSE])
@@ -1416,9 +1478,9 @@ score_external_references_for_heatmap <- function() {
   }
   
   # 5. Normal Development Stomach
-  normal_counts_path <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/normal_development/Stomach_gene_count.RDS"
-  normal_cell_path <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/normal_development/df_cell.RDS"
-  normal_gene_path <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/normal_development/df_gene.RDS"
+  normal_counts_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/normal_development/Stomach_gene_count.RDS"
+  normal_cell_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/normal_development/df_cell.RDS"
+  normal_gene_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/normal_development/df_gene.RDS"
   if (file.exists(normal_counts_path) && file.exists(normal_cell_path) && file.exists(normal_gene_path)) {
     cat("Scoring Normal Development Stomach...\n")
     normal_counts <- readRDS(normal_counts_path)
@@ -1453,7 +1515,7 @@ score_external_references_for_heatmap <- function() {
         usable_mp_genes <- lapply(mp_gene_lists, function(genes) intersect(genes, rownames(sub_counts)))
         usable_mp_genes <- usable_mp_genes[lengths(usable_mp_genes) > 0]
         if(length(usable_mp_genes) > 0) {
-          obj <- CreateSeuratObject(counts = sub_counts, meta.data = as.data.frame(sampled))
+          obj <- CreateSeuratObject(counts = sub_counts, meta.data = scoring_metadata(sampled))
           obj <- UCell::AddModuleScore_UCell(obj, features = usable_mp_genes, slot = "counts", name = "_UCell", ncores = 1)
           score_cols <- paste0(names(usable_mp_genes), "_UCell")
           score_df <- cbind(sampled[, c("cell", "term", "dataset_source")], obj@meta.data[, score_cols, drop=FALSE])
@@ -1469,9 +1531,9 @@ score_external_references_for_heatmap <- function() {
   }
   
   # 6. Organogenesis
-  org_meta_path <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/organogenesis/GSE157329_cell_annotate.txt.gz"
-  org_gene_path <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/organogenesis/GSE157329_gene_annotate.txt.gz"
-  org_mtx_path <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/Auto_developmental_mp_enrichment_unified/downloads/organogenesis/GSE157329_raw_counts.mtx.gz"
+  org_meta_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/organogenesis/GSE157329_cell_annotate.txt.gz"
+  org_gene_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/organogenesis/GSE157329_gene_annotate.txt.gz"
+  org_mtx_path <- "/rds/general/project/tumourheterogeneity1/live/EAC_Ref_all/00_merged/developmental/raw_data/organogenesis/GSE157329_raw_counts.mtx.gz"
   if (file.exists(org_meta_path) && file.exists(org_gene_path) && file.exists(org_mtx_path)) {
     cat("Scoring Organogenesis...\n")
     org_meta <- data.table::fread(org_meta_path)
@@ -1515,7 +1577,7 @@ score_external_references_for_heatmap <- function() {
           usable_mp_genes <- lapply(mp_gene_lists, function(genes) intersect(genes, rownames(sub_counts)))
           usable_mp_genes <- usable_mp_genes[lengths(usable_mp_genes) > 0]
           if(length(usable_mp_genes) > 0) {
-            obj <- CreateSeuratObject(counts = sub_counts, meta.data = as.data.frame(sampled))
+            obj <- CreateSeuratObject(counts = sub_counts, meta.data = scoring_metadata(sampled))
             obj <- UCell::AddModuleScore_UCell(obj, features = usable_mp_genes, slot = "counts", name = "_UCell", ncores = 1)
             score_cols <- paste0(names(usable_mp_genes), "_UCell")
             score_df <- cbind(sampled[, c("cell", "term", "dataset_source")], obj@meta.data[, score_cols, drop=FALSE])
@@ -1532,6 +1594,12 @@ score_external_references_for_heatmap <- function() {
   }
 
   out <- dplyr::bind_rows(summaries)
+  ####################
+  if (!valid_external(out)) stop("External UCell scoring incomplete or non-finite; cache not saved. Missing sources: ", paste(setdiff(expected_sources, out$dataset_source), collapse = ", "))
+  attr(out, "external_signature") <- external_signature
+  write.csv(out, file.path(outdir, "tables", "merged_refined_mp_external_ucell_scores.csv"), row.names = FALSE)
+  write.csv(out[, c("dataset_source", "term", "n_cells_scored")], file.path(project_dir, "updates/new_updates/summaries/merged_refined_mp_external_ucell_coverage.csv"), row.names = FALSE)
+  ####################
   saveRDS(out, external_cache)
   out
 }
@@ -1542,7 +1610,7 @@ ucell_heatmap <- function(external_summary, element, cols = colorRampPalette(c("
     mat <- matrix(NA, nrow = 1, ncol = length(final_col_order), dimnames = list("No single-cell reference available", final_col_order))
     terms_use <- rownames(mat)
     mp_sizes <- sapply(colnames(mat), function(x) length(mp_gene_lists[[x]]))
-    col_labels <- paste0(merged_display_labels[colnames(mat)], " (n=", mp_sizes, ")")
+    col_labels <- mp_annotation_labels(colnames(mat), mp_sizes)
     if (heatmap_gaps_col > 0 && heatmap_gaps_col < ncol(mat)) {
       mat <- cbind(mat[, 1:heatmap_gaps_col, drop=FALSE], " " = rep(NA, nrow(mat)), mat[, (heatmap_gaps_col+1):ncol(mat), drop=FALSE])
       col_labels <- c(col_labels[1:heatmap_gaps_col], "", col_labels[(heatmap_gaps_col+1):length(col_labels)])
@@ -1551,6 +1619,7 @@ ucell_heatmap <- function(external_summary, element, cols = colorRampPalette(c("
     hm_name <- paste0("ucell_", element)
     ht <- ComplexHeatmap::pheatmap(mat, name = hm_name, display_numbers = text_mat, number_color = "black", fontsize_number = fontsize_row * 1.1, labels_col = col_labels, color = cols, na_col = "#F0F0F0", breaks = seq(0, 1, length.out = length(cols) + 1), cluster_rows = FALSE, cluster_cols = FALSE, border_color = NA, show_colnames = TRUE, angle_col = "45", fontsize_row = 12, fontsize_col = fontsize_col, main = paste0(element, " Mean UCell in Reference Cells\n(No single-cell data)"))
     ht@column_names_param$rot <- 35
+  ht@column_names_param$max_height <- grid::unit(100, "mm")
     ComplexHeatmap::draw(ht, padding = grid::unit(c(2, 35, 2, 2), "mm"))
     
     target_mps <- c("MP17", "MP12", "MP15")
@@ -1593,7 +1662,7 @@ ucell_heatmap <- function(external_summary, element, cols = colorRampPalette(c("
   }
   
   mp_sizes <- sapply(colnames(mat), function(x) length(mp_gene_lists[[x]]))
-  col_labels <- paste0(merged_display_labels[colnames(mat)], " (n=", mp_sizes, ")")
+  col_labels <- mp_annotation_labels(colnames(mat), mp_sizes)
   
   if (heatmap_gaps_col > 0 && heatmap_gaps_col < ncol(mat)) {
     mat <- cbind(mat[, 1:heatmap_gaps_col, drop=FALSE], " " = rep(NA, nrow(mat)), mat[, (heatmap_gaps_col+1):ncol(mat), drop=FALSE])
@@ -1626,6 +1695,7 @@ ucell_heatmap <- function(external_summary, element, cols = colorRampPalette(c("
                      main = main_title)
                      
   ht@column_names_param$rot <- 35
+  ht@column_names_param$max_height <- grid::unit(100, "mm")
   ComplexHeatmap::draw(ht, padding = grid::unit(c(2, 35, 2, 2), "mm"))
   
   target_mps <- c("MP17", "MP12", "MP15")
@@ -1887,7 +1957,7 @@ run_enrichment_and_plot <- function(mp_list, valid_cluster_ids, mp_tree_order, o
     mat <- matrix(as.numeric(mat), nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
     
     mp_sizes <- sapply(colnames(mat), function(x) length(mp_list[[x]]))
-    col_labels <- paste0(colnames(mat), "\nn=", mp_sizes)
+    col_labels <- mp_annotation_labels(colnames(mat), mp_sizes)
     
     cluster_rows_param <- FALSE; row_gaps <- NULL
     if (is_custom) {
@@ -1903,11 +1973,11 @@ run_enrichment_and_plot <- function(mp_list, valid_cluster_ids, mp_tree_order, o
     }
     
     breaks <- seq(0, cap, length.out = length(cols) + 1)
-    pheatmap::pheatmap(mat, display_numbers = text_mat, number_color = "black", fontsize_number = fontsize_row * 1.1, labels_col = col_labels, color = cols, breaks = breaks, cluster_rows = cluster_rows_param, cluster_cols = FALSE, gaps_row = row_gaps, border_color = NA, show_colnames = TRUE, angle_col = 0, fontsize_row = fontsize_row, fontsize_col = fontsize_col, main = paste0(element, " Enrichment (-log10 padj)"))
+    pheatmap::pheatmap(mat, display_numbers = text_mat, number_color = "black", fontsize_number = fontsize_row * 1.1, labels_col = col_labels, color = cols, breaks = breaks, cluster_rows = cluster_rows_param, cluster_cols = FALSE, gaps_row = row_gaps, border_color = NA, show_colnames = TRUE, angle_col = 45, fontsize_row = fontsize_row, fontsize_col = fontsize_col, main = paste0(element, " Enrichment (-log10 padj)"))
     return(invisible(mat))
   }
   
-  pdf(out_pdf, width = 12, height = 10)
+  pdf(out_pdf, width = 14, height = 12)
   enrich_heatmap(cluster_enrich, "Hallmark", top_per_program = 8, top_n = 80, cols = cols_palette)
   enrich_heatmap(cluster_enrich, "GO",       top_per_program = 6, top_n = 60, cols = cols_palette)
   enrich_heatmap(cluster_enrich, "MPs_3CA",        top_per_program = 8, top_n = 80, cols = cols_palette)
