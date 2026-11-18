@@ -1,0 +1,9 @@
+# GSE Krish workflow inventory
+
+Current scripts and clinical source metadata are in `analysis/GSE_Krish/`; current outputs are in `ref_outs/GSE_Krish/`. The active RNA-seq cohort is exactly the 110 GSE207526 tumour biopsies. Original GEO source files retain ten normal specimens solely for provenance; fitted and scored matrices exclude them. GSE112926 is not a workflow input.
+
+Run order: `geo_oac_bulk_download.py`, `geo_oac_bulk_metadata_prep.py`, `gse_bayesprism_deconvolution.R`, `gse_malignant_survival.R`, `gse_malignant_clinical_associations.R`, and the independently runnable `gse_deconvolution_quality.R`. Local PBS launchers mirror the basenames in `job_scripts/GSE_Krish/`. The detailed [methodology](../methodology/GSE_Krish/gse_krish_methodology.md) documents resources, input contracts, model/clinical thresholds and limitations. The canonical `analysis/ANALYSIS_MAP.md` contains the current workflow entry.
+
+Mandard presence/missingness defines the neoadjuvant/surgery-only proxy groups by explicit user instruction. Mandard associations are evaluated only within neoadjuvant. Source metadata provide recorded sex, five-year age bands, OS duration/status and baseline AJCC stage. Clinical tests use the exact <50/≥50 split derived from those intervals and broad stage only; detailed-stage and five-year-band comparisons are excluded. The single younger surgery-only patient makes that age test ineligible. Treatment histories are not independently verified, and exact ages are not inferred.
+
+Persistent intermediates make fitting, rescoring and plot-only reruns reproducible without any temporary session tools. Historical matching reports and incomplete transport probes are retained outside the active output root in the ignored session archive. They are not downstream dependencies.
