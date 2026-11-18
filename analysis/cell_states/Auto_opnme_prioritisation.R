@@ -33,6 +33,7 @@
 #       - opnme_scatlas_pathway_state_heatmap.pdf/png
 #       - opnme_pdo_pathway_state_heatmap.pdf/png
 #       - opnme_rank_scatlas_vs_pdo.pdf/png
+#       - landscape.pdf (2-page concise landscape: P1=S1 vs S4, P2=S1/S4 multi-state targeting)
 #     excel/:
 #       - opnme_scatlas_prioritisation.xlsx
 #       - opnme_pdo_prioritisation.xlsx
@@ -1003,6 +1004,219 @@ ggsave(file.path(fig_dir, "opnme_rank_scatlas_vs_pdo.pdf"),
        p_rank, width = 10, height = 10, useDingbats = FALSE)
 ggsave(file.path(fig_dir, "opnme_rank_scatlas_vs_pdo.png"),
        p_rank, width = 10, height = 10, dpi = 300)
+
+####################
+# Figure: Two-page State-Specific Landscape PDF (Merged)
+# Page 1: S1 vs S4 score landscape with tested compound crosses
+# Page 2: S1 and S4 specific candidates across all cellular states (S1-S6)
+####################
+
+message("\n=== Generating 2-page landscape.pdf ===")
+
+suppressPackageStartupMessages({
+  library(ggrepel)
+  library(patchwork)
+})
+
+tested_drugs <- c("BI-0319", "BI-2536", "BI-2545", "BI-3406", "BI-4732", 
+                  "BI-4916", "BI-8128", "MZ1", "BI-5521", "BIX 02565", "BI-4926")
+
+landscape_df <- combined %>%
+  mutate(
+    mean_s1_comp = (scatlas_s1_composite + pdo_s1_composite) / 2,
+    mean_s4_comp = (scatlas_s4_composite + pdo_s4_composite) / 2,
+    simple_cat = case_when(
+      state_specificity == "State 1-specific" ~ "S1",
+      state_specificity == "State 4-specific" ~ "S4",
+      state_specificity == "Both S1 and S4"   ~ "S1+S4",
+      TRUE ~ "Other"
+    ),
+    is_tested = compound %in% tested_drugs,
+    label_txt = ifelse(simple_cat != "Other" | is_tested, compound, NA_character_)
+  )
+
+landscape_df$simple_cat <- factor(landscape_df$simple_cat, levels = c("S1", "S4", "S1+S4", "Other"))
+
+cat_colors <- c(
+  "S1"    = "#E41A1C", # Red
+  "S4"    = "#984EA3", # Purple
+  "S1+S4" = "#FF7F00", # Orange
+  "Other" = "#BDC3C7"  # Muted grey
+)
+
+# Page 1: Concise Landscape (no titles, no shading, simple legend, crosses on tested)
+p_landscape_page1 <- ggplot(landscape_df, aes(x = mean_s1_comp, y = mean_s4_comp)) +
+  geom_vline(xintercept = 0.60, linetype = "dashed", color = "grey65", linewidth = 0.4) +
+  geom_hline(yintercept = 0.60, linetype = "dashed", color = "grey65", linewidth = 0.4) +
+  geom_point(aes(fill = simple_cat), shape = 21, size = 4.2, stroke = 0.4, color = "black", alpha = 0.9) +
+  geom_point(data = subset(landscape_df, is_tested), shape = 3, size = 3.2, stroke = 1.3, color = "black") +
+  scale_fill_manual(values = cat_colors, name = "") +
+  geom_text_repel(
+    aes(label = label_txt, color = simple_cat),
+    size = 3.3, fontface = "bold", max.overlaps = 40,
+    box.padding = 0.4, point.padding = 0.3,
+    segment.color = "grey50", segment.size = 0.3,
+    bg.color = "white", bg.r = 0.15, show.legend = FALSE
+  ) +
+  scale_color_manual(values = cat_colors) +
+  scale_x_continuous(limits = c(0, 0.95), breaks = seq(0, 0.9, 0.1), expand = c(0.01, 0.01)) +
+  scale_y_continuous(limits = c(0, 0.88), breaks = seq(0, 0.8, 0.1), expand = c(0.01, 0.01)) +
+  labs(
+    x = "State 1 score",
+    y = "State 4 score"
+  ) +
+  theme_classic(base_size = 13) +
+  theme(
+    axis.title = element_text(face = "bold", size = 12),
+    axis.text = element_text(size = 11, color = "black"),
+    legend.position = "top",
+    legend.text = element_text(size = 11, face = "bold"),
+    legend.box.background = element_rect(color = "grey85", linewidth = 0.5)
+  )
+
+# Page 2: S1 and S4 specific candidates across other states (S2, S3, S5, S6)
+calc_state_score_util <- function(prior, pct, fc, conf) {
+  prior_s <- prior / 3.0
+  pct_v <- ifelse(is.na(pct), 0, pmin(pct / 50.0, 1.0))
+  fc_v <- ifelse(is.na(fc), 0, pmin(pmax(fc / 1.0, 0.0), 1.0))
+  tgt_s <- pct_v * 0.6 + fc_v * 0.4
+  pw_s <- 0.5
+  conf_w <- ifelse(conf == "High", 1.0, ifelse(conf == "Medium", 0.7, 0.4))
+  (prior_s * 0.45 + tgt_s * 0.35 + pw_s * 0.20) * conf_w
+}
+
+s1_drugs_list <- combined %>% filter(state_specificity == "State 1-specific") %>% pull(compound)
+s4_drugs_list <- combined %>% filter(state_specificity == "State 4-specific") %>% pull(compound)
+
+build_state_scores_df <- function(cmp_list, grp_label) {
+  bind_rows(lapply(cmp_list, function(c) {
+    r_sc <- scatlas_final %>% filter(compound == c)
+    r_pd <- pdo_final %>% filter(compound == c)
+    r_cb <- combined %>% filter(compound == c)
+    conf <- r_cb$confidence[1]
+    
+    sc_1 <- r_sc$s1_composite[1]; pd_1 <- r_pd$s1_composite[1]; m_1 <- (sc_1 + pd_1)/2
+    sc_2 <- calc_state_score_util(r_sc$state2_score[1], r_sc$pct_Squamous_to_intestinal[1], r_sc$fc_Squamous_to_intestinal[1], conf)
+    pd_2 <- calc_state_score_util(r_pd$state2_score[1], r_pd$pct_Columnar_to_intestinal[1], r_pd$fc_Columnar_to_intestinal[1], conf)
+    m_2 <- (sc_2 + pd_2)/2
+    sc_3 <- calc_state_score_util(r_sc$state3_score[1], r_sc$pct_Glandular_to_intestinal[1], r_sc$fc_Glandular_to_intestinal[1], conf)
+    pd_3 <- calc_state_score_util(r_pd$state3_score[1], r_pd$pct_Glandular_differentiation[1], r_pd$fc_Glandular_differentiation[1], conf)
+    m_3 <- (sc_3 + pd_3)/2
+    sc_4 <- r_sc$s4_composite[1]; pd_4 <- r_pd$s4_composite[1]; m_4 <- (sc_4 + pd_4)/2
+    sc_5 <- calc_state_score_util(0, r_sc$pct_Cancer_cell_immune_mimicry[1], r_sc$fc_Cancer_cell_immune_mimicry[1], conf)
+    pd_5 <- calc_state_score_util(0, r_pd$pct_ECM_remodelling[1], r_pd$fc_ECM_remodelling[1], conf)
+    m_5 <- (sc_5 + pd_5)/2
+    pd_6 <- calc_state_score_util(0, r_pd$pct_Motile_cilia_differentiation[1], r_pd$fc_Motile_cilia_differentiation[1], conf)
+    m_6 <- pd_6
+    
+    tibble(
+      compound = c,
+      group = grp_label,
+      is_tested = c %in% tested_drugs,
+      S1 = m_1, S2 = m_2, S3 = m_3, S4 = m_4, S5 = m_5, S6 = m_6,
+      max_other_s1 = pmax(m_2, m_3, m_4, m_5, m_6),
+      max_other_s4 = pmax(m_1, m_2, m_3, m_5, m_6)
+    )
+  }))
+}
+
+all_state_scores <- bind_rows(
+  build_state_scores_df(s1_drugs_list, "S1 specific"),
+  build_state_scores_df(s4_drugs_list, "S4 specific")
+)
+
+all_state_long <- all_state_scores %>%
+  pivot_longer(cols = c(S1, S2, S3, S4, S5, S6), names_to = "state", values_to = "score") %>%
+  mutate(state = factor(state, levels = c("S1", "S2", "S3", "S4", "S5", "S6")))
+
+p2_scatter_s1 <- ggplot(subset(all_state_scores, group == "S1 specific"), aes(x = S1, y = max_other_s1)) +
+  geom_point(shape = 21, fill = "#E41A1C", size = 4.2, stroke = 0.4, color = "black") +
+  geom_point(data = subset(all_state_scores, group == "S1 specific" & is_tested), shape = 3, size = 3.2, stroke = 1.3, color = "black") +
+  geom_text_repel(aes(label = compound), size = 3.4, fontface = "bold", max.overlaps = 15) +
+  scale_x_continuous(limits = c(0, 0.95), breaks = seq(0, 0.9, 0.2)) +
+  scale_y_continuous(limits = c(0, 0.60), breaks = seq(0, 0.6, 0.2)) +
+  labs(x = "State 1 score", y = "Other states score") +
+  facet_wrap(~ "S1 specific", ncol = 1) +
+  theme_classic(base_size = 12) +
+  theme(
+    axis.title = element_text(face = "bold", size = 11),
+    axis.text = element_text(size = 10.5, color = "black"),
+    strip.text = element_text(face = "bold", size = 12),
+    strip.background = element_rect(fill = "#ECEFF1", color = NA)
+  )
+
+p2_scatter_s4 <- ggplot(subset(all_state_scores, group == "S4 specific"), aes(x = S4, y = max_other_s4)) +
+  geom_point(shape = 21, fill = "#984EA3", size = 4.2, stroke = 0.4, color = "black") +
+  geom_point(data = subset(all_state_scores, group == "S4 specific" & is_tested), shape = 3, size = 3.2, stroke = 1.3, color = "black") +
+  geom_text_repel(aes(label = compound), size = 3.2, fontface = "bold", max.overlaps = 25) +
+  scale_x_continuous(limits = c(0, 0.95), breaks = seq(0, 0.9, 0.2)) +
+  scale_y_continuous(limits = c(0, 0.65), breaks = seq(0, 0.6, 0.2)) +
+  labs(x = "State 4 score", y = "Other states score") +
+  facet_wrap(~ "S4 specific", ncol = 1) +
+  theme_classic(base_size = 12) +
+  theme(
+    axis.title = element_text(face = "bold", size = 11),
+    axis.text = element_text(size = 10.5, color = "black"),
+    strip.text = element_text(face = "bold", size = 12),
+    strip.background = element_rect(fill = "#ECEFF1", color = NA)
+  )
+
+p2_traj_s1 <- ggplot(subset(all_state_long, group == "S1 specific"), aes(x = state, y = score, group = compound, color = compound)) +
+  geom_line(linewidth = 0.9, alpha = 0.8) +
+  geom_point(aes(fill = compound), shape = 21, size = 3.8, stroke = 0.4, color = "black") +
+  geom_point(data = subset(all_state_long, group == "S1 specific" & is_tested), shape = 3, size = 2.8, stroke = 1.3, color = "black") +
+  geom_text_repel(
+    data = subset(all_state_long, group == "S1 specific" & state == "S1"),
+    aes(label = compound), size = 3.4, fontface = "bold", nudge_x = -0.3, show.legend = FALSE
+  ) +
+  scale_y_continuous(limits = c(0, 0.95), breaks = seq(0, 0.9, 0.2)) +
+  labs(x = "State", y = "State score") +
+  facet_wrap(~ "S1 targeting across states", ncol = 1) +
+  theme_classic(base_size = 12) +
+  theme(
+    axis.title = element_text(face = "bold", size = 11),
+    axis.text = element_text(size = 10.5, color = "black"),
+    strip.text = element_text(face = "bold", size = 12),
+    strip.background = element_rect(fill = "#ECEFF1", color = NA),
+    legend.position = "none"
+  )
+
+p2_traj_s4 <- ggplot(subset(all_state_long, group == "S4 specific"), aes(x = state, y = score, group = compound, color = compound)) +
+  geom_line(linewidth = 0.8, alpha = 0.7) +
+  geom_point(aes(fill = compound), shape = 21, size = 3.6, stroke = 0.4, color = "black") +
+  geom_point(data = subset(all_state_long, group == "S4 specific" & is_tested), shape = 3, size = 2.6, stroke = 1.3, color = "black") +
+  geom_text_repel(
+    data = subset(all_state_long, group == "S4 specific" & state == "S4" & (is_tested | score >= 0.40)),
+    aes(label = compound), size = 3.2, fontface = "bold", max.overlaps = 20, nudge_x = 0.35, show.legend = FALSE
+  ) +
+  scale_y_continuous(limits = c(0, 0.95), breaks = seq(0, 0.9, 0.2)) +
+  labs(x = "State", y = "State score") +
+  facet_wrap(~ "S4 targeting across states", ncol = 1) +
+  theme_classic(base_size = 12) +
+  theme(
+    axis.title = element_text(face = "bold", size = 11),
+    axis.text = element_text(size = 10.5, color = "black"),
+    strip.text = element_text(face = "bold", size = 12),
+    strip.background = element_rect(fill = "#ECEFF1", color = NA),
+    legend.position = "none"
+  )
+
+p_landscape_page2 <- (p2_scatter_s1 | p2_traj_s1) / (p2_scatter_s4 | p2_traj_s4)
+
+landscape_pdf_path <- file.path(fig_dir, "landscape.pdf")
+pdf(landscape_pdf_path, width = 11, height = 8.5, useDingbats = FALSE)
+print(p_landscape_page1)
+print(p_landscape_page2)
+dev.off()
+
+# Save PNG copies of each page
+ggsave(file.path(fig_dir, "landscape_page1.png"), p_landscape_page1, width = 11, height = 8.5, dpi = 300)
+ggsave(file.path(fig_dir, "landscape_page2.png"), p_landscape_page2, width = 11, height = 8.5, dpi = 300)
+# Also save opnme_landscape.pdf as identical copy for standard naming
+file.copy(landscape_pdf_path, file.path(fig_dir, "opnme_landscape.pdf"), overwrite = TRUE)
+
+message("  Saved 2-page landscape.pdf: ", landscape_pdf_path)
+####################
 
 ####################
 # Excel workbooks

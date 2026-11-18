@@ -19,8 +19,50 @@
 #   updates/new_updates/summaries/Auto_xenium_visiumhd_meta_summary.csv.
 # Cache/replot: full PBS runs rebuild; --stage contacts reuses persisted UCell
 #   scores and metadata; SCREF_REPLOT_ONLY=TRUE plots saved meta tables only.
-#   SCREF_FIGURE_SCOPE=cross-platform-final restricts a replot to the four-page
+#   SCREF_FIGURE_SCOPE=cross-platform-final restricts a replot to the five-page
 #   cross-platform final PDF and its current-results index; default is all.
+#   SCREF_FIGURE_SCOPE=final-comparisons updates both significant-only final
+#   five-page PDFs, figure-source/summary tables and indexes, without other figures.
+#   --stage comparison-figures redraws HD, Xenium, cross-platform and scATLAS
+#   comparisons from saved tables; --stage hd-figures / atlas-figures serve the R producers.
+#   HD output: figures/Auto_spatial_interaction_four_mode_significant_comparison.pdf
+#   and tables/Auto_significant_comparison_figure_source.csv under HDROOT.
+#   scATLAS output: ref_outs/non_malignant_mp_correlations/Auto_four_mode_interaction_summary.pdf
+#   and tables/reports Auto_significant_comparison* source/summary files.
+#   Specimen comparison inference: all three HD sections receive equal weights;
+#   original patient identities and donor-aware source tables are preserved.
+#   New MOUT tables: Auto_specimen_{within_platform_meta,cross_platform_meta}.csv;
+#   HDROOT tables/Auto_specimen_pooled_interactions.csv; MOUT
+#   logs/Auto_specimen_pooling_provenance.json.
+#   scATLAS source: each four-mode Auto_celltype_interaction_dotmap_data.csv
+#   plus Auto_celltype_correlations_{all,negative}.csv; canonical aliases supplied by
+#   analysis/spatial/scatlas_hd_xenium_directional.py (maintained dependency).
+#   Detail rendering: spatial pages call the original R dotmap function in
+#   analysis/non_malignant_nmf/mp_cross_celltype_correlations.R through
+#   SCREF_DOTMAP_RENDER_SPEC; dmtcp R, no atlas loading. Saved replot inputs:
+#   tables/Auto_comparison_detail_{nodes,edges}.csv and logs/Auto_detail_plot_spec.json.
+#   scATLAS pages 2–5 are unchanged first pages from modes 01/03/05/06
+#   Auto_celltype_interaction_dotmap_with_neg.pdf; overview includes both signs.
+#   bidcell_temp Poppler pdfseparate/pdfunite assemble all four five-page reports.
+#   Current assembly PDFs remain in each root's intermediate/ tier.
+#   Ranked workbooks under MOUT/tables/:
+#   Auto_{01_scATLAS,02_VisiumHD,03_Xenium,04_pooled}_TME_interactions.xlsx.
+#   Each has four mode sheets, significant rows first, three blank rows, then
+#   all remaining observed hypotheses in figure cell-type/programme order.
+#   Plain header/data tables retain full malignant MP descriptions, requested
+#   effect/P/FDR/sample statistics and spatial specimen log2 enrichments only.
+#   The one significance flag matches the bubbles; scATLAS BH FDR remains
+#   numeric and does not redefine its nominal-P plot flag. No titles, notes,
+#   colours, ranks, filters or extra display columns. Pooled significance uses both native
+#   spatial FDR<0.05 with matching means; combined pooled P/FDR are separate.
+#   --stage workbooks exports current validated inputs; --stage meta updates
+#   workbooks automatically. Dependency: installed openpyxl in bidcell_temp.
+#   Reports: Auto_interaction_workbooks.md, Auto_interaction_workbook_summary.csv;
+#   provenance: logs/Auto_interaction_workbook_provenance.json.
+#   --stage restore-binned explicitly copies the verified binned reference to
+#   current HD outputs and preserves segmented HD/meta/directional outputs in
+#   live reference tiers. No deletion/movement; no permutation recalculation.
+#   HDROOT/logs/Auto_binned_restoration.json records restoration checks.
 #   SCREF_FORCE_REBUILD=TRUE explicitly requests full rebuild in the wrapper.
 #   SCREF_CONTACT_ONLY=TRUE calibrates/rebuilds contacts from audited persisted
 #   UCell scores. SCREF_META_ONLY=TRUE pools completed per-section tests and plots.
@@ -50,6 +92,9 @@
 #   meta figures/Auto_final/01_cross_platform_contact_enrichment.pdf,
 #   figures/Auto_supporting/02_section_and_donor_evidence.pdf and
 #   figures/Auto_diagnostics/03_eligibility_and_coverage.pdf.
+# Both roots also export tables/Auto_significant_comparison_figure_source.csv,
+#   reports/Auto_significant_comparison_summary.csv and compact figure summaries
+#   updates/new_updates/summaries/Auto_{xenium,cross_platform}_significant_figure.csv.
 # Reports: both roots reports/Auto_current_results.md; meta
 #   reports/Auto_cross_platform_{run_report.txt,result_summary.csv}.
 # Logs: Xenium logs/Auto_{contact_parameters.json,ucell_session_info.txt};
@@ -62,6 +107,9 @@ import hashlib
 import json
 import multiprocessing as mp
 import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 from textwrap import fill
 
@@ -71,12 +119,16 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
+from matplotlib.patches import Rectangle
+from matplotlib.colors import Normalize, LinearSegmentedColormap
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 from scipy import sparse
 from scipy.spatial import cKDTree
 from scipy.stats import norm
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 ####################
 ROOT = Path('/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline')
@@ -449,7 +501,7 @@ def contacts(args):
                             graph_definition='HD-equivalent Chebyshev windows; max(abs(dx),abs(dy)) <= 16*ring um')
         sample_results = []
         for ring in [1, 2, 3]:
-            # The same physical queen-window condition as the HD lattice,
+            # The same physical Chebyshev window as the HD centroid graph,
             # evaluated directly on calibrated cell centroids (no binning).
             max_length = np.sqrt(2) * 16 * ring
             distances = source_tree.sparse_distance_matrix(target_tree, max_distance=16*ring, p=np.inf, output_type='coo_matrix')
@@ -779,7 +831,7 @@ def meta_analysis():
         'Both platforms use four separate shifted 320-um permutation grids and the same physical queen-window rule.',
         'Each grid has 4,999 or more permutations. The section p value is the maximum of the four two-sided empirical p values, with matching nonzero effect directions required across grids.',
         'Null draws from distinct grids are never mixed to calculate a test p value. Mean expected contacts across grids provide the descriptive effect baseline.',
-        'HD uses 16-um bins; Xenium uses segmented cell centroids. Their measurement units remain different.',
+        'HD uses filtered 16-um bins; Xenium uses calibrated segmented-cell centroids. Proximity is not membrane contact.',
         'Xenium centroid units follow the authors\' image-based SOPA workflow; 0.2125 um/pixel is corroborated by supplied XOA boundary vertices. The boundary-grid check alone does not identify H5AD coordinate units.',
         'TME programme eligibility counts source contacts to that programme parent; whole-celltype eligibility uses all TME contacts.',
         'The targeted Xenium panel can change signature ranking and positivity; signature coverage is retained for interpretation.',
@@ -821,97 +873,494 @@ def plot_settings():
     })
 
 
-def heatmap_pages(table, availability, path, title, cross_platform):
-    """One complete source-target comparison per page, at 183-mm width."""
+####################
+# The parent order is shared with the scATLAS interaction workflow.
+TARGET_ORDER = ['fibroblast', 'endothelial', 'cd8', 'cd4', 't.cell', 'macrophage',
+                'nk', 'nk.cell', 'plasma', 'b.cell', 'dendritic', 'mast',
+                'erythrocyte', 'keratinocyte', 'lymph', 'neutrophil']
+
+
+def specimen_pooled_tables():
+    """Equal section weights under the user's explicit specimen-independence assumption."""
+    hd = pd.read_csv(HDROOT / 'tables/Auto_spatial_interactions_by_sample.csv.gz')
+    x = pd.read_csv(XOUT / 'tables/Auto_xenium_neighbourhood_interactions_by_sample.csv.gz')
+    hd['platform'] = 'visium_hd'
+    x['platform'] = 'xenium'
+    columns = KEYS + ['sample', 'platform', 'p_empirical', 'log2_enrichment', 'eligible_pair']
+    raw = pd.concat([hd[columns], x[columns]], ignore_index=True)
+    raw['eligible_pair'] = strict_bool(raw['eligible_pair'])
+    design = read_sample_design().rename(columns={'orig.ident': 'sample', 'donor_id': 'biological_donor_id'})
+    raw = raw.merge(design[['sample', 'platform', 'biological_donor_id']], on=['sample', 'platform'],
+                    how='left', validate='many_to_one')
+    if raw['biological_donor_id'].isna().any() or raw.duplicated(KEYS + ['sample', 'platform']).any():
+        raise ValueError('Unmatched or duplicated specimen evidence')
+    raw = raw.loc[raw['eligible_pair'] & np.isfinite(raw['p_empirical'])].copy()
+    def summarize(group):
+        p = group['p_empirical'].to_numpy()
+        effects = group['log2_enrichment'].to_numpy()
+        z = float(np.sum(np.sign(effects) * norm.isf(p / 2)) / np.sqrt(len(group)))
+        return {'pooled_z': z, 'pooled_p': float(2 * norm.sf(abs(z))) if len(group)>=2 else np.nan,
+                'mean_log2_enrichment': float(effects.mean()), 'n_statistical_units': len(group),
+                'n_donors_tested': group['biological_donor_id'].nunique(),
+                'specimens_tested': ';'.join(group['platform'] + '::' + group['sample']),
+                'biological_donors': ';'.join(sorted(group['biological_donor_id'].unique())),
+                'pooling_unit': 'specimen', 'independence_assumption': 'specimen tests treated as independent; repeated patient specimens remain biologically dependent'}
+    within = pd.DataFrame([{**dict(zip(KEYS+['platform'],key)), **summarize(group)}
+                           for key,group in raw.groupby(KEYS+['platform'], sort=False)])
+    within = apply_fdr(within, 'pooled_p', 'pooled_fdr', ['platform','mode_id','ring'])
+    pooled = pd.DataFrame([{**dict(zip(KEYS,key)), **summarize(group)} for key,group in raw.groupby(KEYS, sort=False)
+                           if group['platform'].nunique()==2])
+    pooled = apply_fdr(pooled, 'pooled_p', 'pooled_fdr', ['mode_id','ring'])
+    provenance_inputs = [HDROOT / 'tables/Auto_spatial_interactions_by_sample.csv.gz',
+                         XOUT / 'tables/Auto_xenium_neighbourhood_interactions_by_sample.csv.gz', SAMPLE_DESIGN]
+    (MOUT / 'logs/Auto_specimen_pooling_provenance.json').write_text(json.dumps({
+        'pooling_unit': 'specimen', 'biological_patient_ids_preserved': True,
+        'assumption': 'section permutation tests treated as independent for equal-weight Stouffer pooling',
+        'inputs': {str(p): {'size_bytes':p.stat().st_size,'mtime_ns':p.stat().st_mtime_ns} for p in provenance_inputs}
+    },indent=2)+'\n')
+    within.to_csv(MOUT / 'tables/Auto_specimen_within_platform_meta.csv', index=False)
+    pooled.to_csv(MOUT / 'tables/Auto_specimen_cross_platform_meta.csv', index=False)
+    within.loc[within['platform']=='visium_hd'].to_csv(HDROOT / 'tables/Auto_specimen_pooled_interactions.csv', index=False)
+    return within, pooled
+
+
+def target_plot_key(feature):
+    parent = feature.split('__')[0]
+    rank = TARGET_ORDER.index(parent) if parent in TARGET_ORDER else len(TARGET_ORDER)
+    number = re.search(r'MP(\d+)', feature)
+    return rank, parent, int(number[1]) if number else 0, feature
+
+
+####################
+def restore_binned_outputs():
+    """Restore the verified 16-um analysis by copy, preserving segmented evidence."""
+    if not os.getenv('PBS_JOBID'):
+        raise ValueError('Restore analysis outputs within PBS')
+    reference = HDROOT / 'reference/binned'
+    parameters = pd.read_csv(reference / 'tables/Auto_spatial_interaction_parameters.csv').set_index('parameter')['value']
+    if float(parameters['bin_size_um']) != 16:
+        raise ValueError('The saved reference is not the original 16-um analysis')
+    current = pd.read_csv(HDROOT / 'tables/Auto_spatial_interaction_parameters.csv').set_index('parameter')['value']
+    if 'bin_size_um' in current:
+        raise ValueError('Current outputs are already binned; restore must not overwrite the segmented reference')
+    if current['spatial_unit'] != 'segmented_cell':
+        raise ValueError('Unexpected current HD representation')
+    preserved = []
+    roots = [(HDROOT, HDROOT / 'reference/segmented'),
+             (MOUT, MOUT / 'reference/segmented_hd'),
+             (ROOT / 'ref_outs/spatial_scatlas_hd_xenium_directional',
+              ROOT / 'ref_outs/spatial_scatlas_hd_xenium_directional/reference/segmented_hd')]
+    for source_root, destination_root in roots:
+        for tier in ['tables', 'figures', 'reports', 'logs', 'intermediate']:
+            for source in (source_root / tier).rglob('*'):
+                if not source.is_file():
+                    continue
+                destination = destination_root / source.relative_to(source_root)
+                if destination.exists():
+                    raise ValueError(f'Preserved segmented output already exists: {destination}')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+                preserved.append(str(destination.relative_to(ROOT)))
+    restored = []
+    for tier in ['tables', 'figures', 'reports']:
+        for source in (reference / tier).rglob('*'):
+            if source.is_file():
+                destination = HDROOT / source.relative_to(reference)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+                restored.append(str(destination.relative_to(ROOT)))
+    original = reference / 'tables/Auto_spatial_interactions_by_sample.csv.gz'
+    restored_source = HDROOT / 'tables/Auto_spatial_interactions_by_sample.csv.gz'
+    def digest(path):
+        value = hashlib.sha256()
+        with path.open('rb') as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                value.update(chunk)
+        return value.hexdigest()
+    if digest(original) != digest(restored_source):
+        raise ValueError('Restored section tests differ from the verified binned reference')
+    (HDROOT / 'logs/Auto_binned_restoration.json').write_text(json.dumps({
+        'current_representation': '16um_bin', 'section_tests_sha256': digest(restored_source),
+        'preserved_segmented_outputs': preserved, 'restored_outputs': restored,
+        'operation': 'copy only; no files deleted or moved'}, indent=2) + '\n')
+    print('Restored original binned tables/figures; segmented results preserved; section-test hash matches', flush=True)
+
+
+def workbook_sources():
+    """Build exact full-family, primary-window sources for four dataset workbooks."""
+    provenance = json.loads((MOUT / 'logs/Auto_input_provenance.json').read_text())
+    if provenance['version'] != VERSION:
+        raise ValueError('Workbooks require current-version spatial inference')
+    for name, previous in provenance['inputs'].items():
+        path = Path(name)
+        if path.resolve() == Path(__file__).resolve():
+            continue
+        stat = path.stat()
+        if stat.st_size != previous['size_bytes'] or stat.st_mtime_ns != previous['mtime_ns']:
+            raise ValueError(f'Rebuild current spatial meta-analysis before exporting workbooks: {path}')
+    from scatlas_hd_xenium_directional import read_atlas, RAW
     grouping = pd.read_csv(GROUPING)
-    mp_order = grouping['mp'].tolist()
-    if grouping[['mp', 'description', 'plot_label']].isna().any().any() or grouping['mp'].duplicated().any():
-        raise ValueError('Current MP labels must be complete and unique')
-    mp_labels = grouping.set_index('mp')['plot_label'].to_dict()
-    primary = table.loc[table['ring'] == 1]
-    available_primary = availability.loc[availability['ring'] == 1]
-    colour_map = plt.get_cmap('RdBu_r').copy()
-    colour_map.set_bad('#E5E5E5')
-    with PdfPages(path) as pdf:
-        for mode in sorted(MODE.values()):
-            page = primary.loc[primary['mode_id'] == mode].copy()
-            target_rows = available_primary.loc[available_primary['mode_id'] == mode]
-            targets = sorted(target_rows['target_feature'].unique())
-            sources = mp_order if mode.startswith(('01_', '03_')) else STATES
-            values = page.pivot(index='target_feature', columns='source_feature', values='mean_log2_enrichment')
-            values = values.reindex(index=targets, columns=sources)
-            if cross_platform:
-                # Omit untestable rows, including unmatched NK and plasma labels.
-                # This changes the display only; testing families remain intact.
-                values = values.loc[values.notna().any(axis=1)]
-                targets = values.index.tolist()
-                if not targets:
-                    raise ValueError(f'No cross-platform results to display for {mode}')
-            q_values = page.pivot(index='target_feature', columns='source_feature', values='pooled_fdr').reindex_like(values)
-            if not cross_platform:
-                counts = page.pivot(index='target_feature', columns='source_feature', values='n_donors_tested').reindex_like(values)
-                values = values.where(counts >= 2)
-            if cross_platform:
-                label_height = 35 if len(sources) == 5 else 60
-                matrix_height = max(70, 3.5 * len(targets))
-                height = 12 + matrix_height + label_height
-                fig, ax = plt.subplots(figsize=(183 / 25.4, height / 25.4))
-                fig.subplots_adjust(left=.24, right=.80, bottom=label_height / height, top=1 - 12 / height)
+    atlas = read_atlas(grouping)
+    parts = []
+    for mode, path in RAW.items():
+        raw = pd.read_csv(path)[['edge_id', 'pearson_r', 'co_positive_sample_pct', 'eligible_studies']]
+        part = atlas.loc[atlas['mode_id'] == mode].merge(raw, left_on='scrna_edge_id', right_on='edge_id',
+                                                      validate='one_to_one')
+        parts.append(part)
+    atlas = pd.concat(parts, ignore_index=True)
+    shown = pd.read_csv(ROOT / 'ref_outs/non_malignant_mp_correlations/tables/Auto_significant_comparison_figure_source.csv')
+    atlas['in_bubble'] = pd.MultiIndex.from_frame(atlas[['mode_id', 'scrna_edge_id']]).isin(
+        pd.MultiIndex.from_frame(shown[['mode_id', 'scrna_edge_id']]))
+    atlas['significant'] = atlas['in_bubble']
+    atlas['effect'] = atlas['scatlas_rho']
+    atlas['celltype'] = atlas['scrna_target_compartment']
+    atlas['programme'] = np.where(atlas['target_kind'] == 'tme_mp', atlas['target_feature'].str.split('__').str[-1], '')
+    within = pd.read_csv(MOUT / 'tables/Auto_specimen_within_platform_meta.csv')
+    within = within.loc[within['ring'] == 1].copy()
+    columns = ['platform', 'mode_id', 'source_feature', 'target_feature']
+    data = {'scATLAS': atlas}
+    raw_platforms = []
+    for platform, path in [('visium_hd', HDROOT / 'tables/Auto_spatial_interactions_by_sample.csv.gz'),
+                           ('xenium', XOUT / 'tables/Auto_xenium_neighbourhood_interactions_by_sample.csv.gz')]:
+        raw = pd.read_csv(path)
+        raw = raw.loc[raw['ring'] == 1].copy()
+        raw['platform'] = platform
+        raw['eligible_pair'] = strict_bool(raw['eligible_pair'])
+        if raw.duplicated(columns + ['sample']).any():
+            raise ValueError('Duplicated per-specimen workbook evidence')
+        raw_platforms.append(raw)
+        universe = raw[columns + ['target_kind', 'target_compartment']].drop_duplicates()
+        native = universe.merge(within.loc[within['platform'] == platform].drop(columns=['target_kind', 'target_compartment']),
+                                on=columns, how='left', validate='one_to_one')
+        native['significant'] = (native['pooled_fdr'] < .05) & (native['n_statistical_units'] >= 2)
+        native['in_bubble'] = native['significant']
+        native['effect'] = native['mean_log2_enrichment']
+        native['celltype'] = native['target_compartment']
+        native['programme'] = np.where(native['target_kind'] == 'tme_mp', native['target_feature'].str.split('__').str[-1], '')
+        data[platform] = native
+    pooled = pd.read_csv(MOUT / 'tables/Auto_specimen_cross_platform_meta.csv')
+    pooled = pooled.loc[pooled['ring'] == 1].copy()
+    for platform in ['visium_hd', 'xenium']:
+        native = within.loc[within['platform'] == platform, ['mode_id', 'source_feature', 'target_feature',
+            'mean_log2_enrichment', 'pooled_p', 'pooled_fdr', 'n_statistical_units']]
+        native = native.rename(columns={c: platform + '_' + c for c in native.columns if c not in columns})
+        pooled = pooled.merge(native, on=['mode_id', 'source_feature', 'target_feature'], how='left', validate='one_to_one')
+    pooled['significant'] = ((pooled['visium_hd_pooled_fdr'] < .05) & (pooled['xenium_pooled_fdr'] < .05) &
+                            (pooled['visium_hd_mean_log2_enrichment'] * pooled['xenium_mean_log2_enrichment'] > 0))
+    pooled['in_bubble'] = pooled['significant']
+    pooled['effect'] = pooled['mean_log2_enrichment']
+    pooled['celltype'] = pooled['target_compartment']
+    pooled['programme'] = np.where(pooled['target_kind'] == 'tme_mp', pooled['target_feature'].str.split('__').str[-1], '')
+    data['pooled'] = pooled
+    return grouping, data, pd.concat(raw_platforms, ignore_index=True)
+
+
+def write_interaction_workbooks():
+    """Plain four-mode tables using exactly the corresponding bubble selections."""
+    if not os.getenv('PBS_JOBID'):
+        raise ValueError('Write interaction workbooks within PBS')
+    grouping, data, raw = workbook_sources()
+    design = read_sample_design()
+    source_order = {name: i for i, name in enumerate(list(grouping['mp']) + STATES)}
+    labels = grouping.set_index('mp')['plot_label'].to_dict()
+    sheet_names = ['1 MPs vs TME MPs', '2 States vs TME MPs', '3 MPs vs cell types', '4 States vs cell types']
+    files = {'scATLAS': 'Auto_01_scATLAS_TME_interactions.xlsx',
+             'visium_hd': 'Auto_02_VisiumHD_TME_interactions.xlsx',
+             'xenium': 'Auto_03_Xenium_TME_interactions.xlsx',
+             'pooled': 'Auto_04_pooled_TME_interactions.xlsx'}
+    titles = {'scATLAS': 'scATLAS', 'visium_hd': 'Visium HD 16-um bins',
+              'xenium': 'Xenium', 'pooled': 'HD and Xenium pooled evidence'}
+    summaries = []
+    for dataset, frame in data.items():
+        book = Workbook()
+        book.remove(book.active)
+        for mode, sheet_name in zip(sorted(MODE_TITLES), sheet_names):
+            page = frame.loc[frame['mode_id'] == mode].copy()
+            page['_target_order'] = page.apply(lambda r: target_plot_key(
+                r['celltype'] + ('__' + r['programme'] if r['programme'] else '')), axis=1)
+            page['_source_order'] = page['source_feature'].map(source_order)
+            if page['_source_order'].isna().any():
+                raise ValueError('Unknown malignant feature in workbook')
+            page = page.sort_values(['significant', '_target_order', '_source_order'],
+                                    ascending=[False, True, True], kind='stable')
+            if dataset == 'scATLAS':
+                statistics = [('scatlas_rho', 'Spearman rho'), ('scatlas_p', 'Spearman P'),
+                              ('scatlas_fdr', 'BH FDR'), ('scatlas_shared_samples', 'N samples')]
+            elif dataset == 'pooled':
+                statistics = [('mean_log2_enrichment', 'Combined log2 enrichment'),
+                              ('pooled_p', 'Combined pooled P'), ('pooled_fdr', 'Combined pooled FDR'),
+                              ('n_statistical_units', 'N samples')]
+                for platform, label in [('visium_hd', 'HD'), ('xenium', 'Xenium')]:
+                    statistics.extend([(platform + '_mean_log2_enrichment', label + ' log2 enrichment'),
+                                       (platform + '_pooled_p', label + ' pooled P'),
+                                       (platform + '_pooled_fdr', label + ' pooled FDR'),
+                                       (platform + '_n_statistical_units', label + ' N samples')])
             else:
-                fig, ax = plt.subplots(figsize=(183 / 25.4, min(242, max(125, 72 + 4.0 * len(targets))) / 25.4))
-                fig.subplots_adjust(left=.265, right=.865, bottom=.215 if len(sources) == 5 else .13, top=.83)
-            im = ax.imshow(np.ma.masked_invalid(values.to_numpy()), cmap=colour_map, vmin=-2, vmax=2, aspect='auto')
-            if len(sources) == 5:
-                labels = ['Classic\nproliferation', 'Squamous-to-\nintestinal', 'Glandular-to-\nintestinal',
-                          'Stress-\nadaptive', 'Cancer-cell\nimmune mimicry']
-                ax.set_xticks(range(len(sources)), labels, rotation=45, ha='right')
-            else:
-                labels = [fill(mp_labels[source], width=30, break_long_words=False, break_on_hyphens=False)
-                          for source in sources] if cross_platform else sources
-                ax.set_xticks(range(len(sources)), labels, rotation=90)
-            ax.set_yticks(range(len(targets)), [feature_label(item) for item in targets])
-            ax.tick_params(length=0, pad=3)
-            ax.set_xticks(np.arange(-.5, len(sources), 1), minor=True)
-            ax.set_yticks(np.arange(-.5, len(targets), 1), minor=True)
-            ax.grid(which='minor', color='white', linewidth=.3)
-            ax.tick_params(which='minor', length=0)
-            for spine in ax.spines.values():
-                spine.set_visible(False)
-            significant = q_values.to_numpy() < .05
-            if cross_platform:
-                replication = page.pivot(index='target_feature', columns='source_feature', values='replication_fdr').reindex_like(values)
-                replicated = replication.to_numpy() < .05
-                for i, j in np.argwhere(significant & ~replicated):
-                    ax.scatter(j, i, s=11, facecolors='none', edgecolors='black', linewidths=.55)
-                for i, j in np.argwhere(replicated):
-                    ax.scatter(j, i, s=13, facecolors='black', edgecolors='white', linewidths=.35)
-                handles = [
-                    Line2D([], [], linestyle='none', marker='o', markersize=3.6,
-                           markerfacecolor='black', markeredgecolor='black', markeredgewidth=.55,
-                           label='Replicated\nFDR < 0.05'),
-                    Line2D([], [], linestyle='none', marker='o', markersize=3.4,
-                           markerfacecolor='none', markeredgecolor='black', markeredgewidth=.55,
-                           label='Pooled only\nFDR < 0.05'),
-                ]
-                fig.legend(handles=handles, loc='upper left', bbox_to_anchor=(.815, 1 - 12 / height),
-                           frameon=False, borderaxespad=0, handlelength=.8, handletextpad=.5, labelspacing=1.1)
-                fig.suptitle(MODE_TITLES[mode], x=.03, y=1 - 3 / height, ha='left', fontsize=9, fontweight='bold')
-                colour_ax = fig.add_axes([.835, label_height / height, .022, 32 / height])
-                colour_label = 'Mean log₂ enrichment'
-            else:
-                for i, j in np.argwhere(significant):
-                    ax.scatter(j, i, s=13, facecolors='black', edgecolors='white', linewidths=.35)
-                legend = '● donor-pooled q < 0.05\nGrey: fewer than two eligible donors; colours clipped at ±2'
-                subtitle = 'Six independent donors; eligible donors weighted equally'
-                fig.suptitle(title + '\n' + MODE_TITLES[mode], x=.03, y=.985, ha='left', fontsize=9, fontweight='bold')
-                fig.text(.03, .925, subtitle + '\n16-µm axis-distance window; local spatial null', ha='left', va='top', fontsize=7)
-                fig.text(.03, .015, legend, ha='left', va='bottom', fontsize=7)
-                colour_ax = fig.add_axes([.895, .30, .023, .40])
-                colour_label = 'Mean donor log₂ enrichment (descriptive)'
-            fig.colorbar(im, cax=colour_ax, extend='both', ticks=[-2, -1, 0, 1, 2])
-            colour_ax.set_ylabel(colour_label, fontsize=7)
-            pdf.savefig(fig)
-            plt.close(fig)
+                statistics = [('mean_log2_enrichment', 'Log2 enrichment'), ('pooled_p', 'Pooled P'),
+                              ('pooled_fdr', 'Pooled FDR'), ('n_statistical_units', 'N samples')]
+            specimens = []
+            if dataset != 'scATLAS':
+                platforms = ['visium_hd', 'xenium'] if dataset == 'pooled' else [dataset]
+                for platform in platforms:
+                    for sample in design.loc[design['platform'] == platform, 'orig.ident']:
+                        column = platform + '::' + sample
+                        label = ('HD ' if platform == 'visium_hd' else 'Xenium ') + sample + ' log2 enrichment'
+                        specimens.append((column, label))
+                        sample_data = raw.loc[(raw['platform'] == platform) & (raw['sample'] == sample) &
+                            (raw['mode_id'] == mode), ['source_feature', 'target_feature', 'log2_enrichment']]
+                        sample_data = sample_data.rename(columns={'log2_enrichment': column})
+                        page = page.merge(sample_data, on=['source_feature', 'target_feature'],
+                                          how='left', validate='one_to_one', sort=False)
+            headers = ['Significant (bubble rule)', 'Malignant feature', 'TME cell type', 'Direction']
+            headers += [label for _, label in statistics] + [label for _, label in specimens]
+            ws = book.create_sheet(sheet_name)
+            ws.append(headers)
+            significant_n = int(page['significant'].sum())
+            for index, (_, record) in enumerate(page.iterrows()):
+                if index == significant_n and significant_n > 0:
+                    for _ in range(3):
+                        ws.append([])
+                effect = record['effect']
+                direction = ('Positive' if dataset == 'scATLAS' else 'Enriched') if effect > 0 else (
+                    'Negative' if dataset == 'scATLAS' else 'Depleted') if effect < 0 else (
+                    'Zero' if pd.notna(effect) else 'Unavailable')
+                tested = pd.notna(record['scatlas_p' if dataset == 'scATLAS' else 'pooled_p'])
+                status = 'Yes' if record['significant'] else 'No' if tested else 'Not tested'
+                if dataset == 'pooled' and (pd.isna(record['visium_hd_pooled_fdr']) or pd.isna(record['xenium_pooled_fdr'])):
+                    status = 'Not jointly tested'
+                target = feature_label(record['celltype'])
+                if record['programme']:
+                    target += ' (' + record['programme'] + ')'
+                values = [status, labels.get(record['source_feature'], record['source_feature']), target, direction]
+                values += [record[key] for key, _ in statistics] + [record[key] for key, _ in specimens]
+                values = [value.item() if isinstance(value, (np.integer, np.floating)) else value for value in values]
+                values = [None if isinstance(value, float) and not np.isfinite(value) else value for value in values]
+                ws.append(values)
+            # Column widths keep plain data readable; there are no cell styles,
+            # titles, notes, colours, ranks, filters or extra annotations.
+            for column, label in enumerate(headers, 1):
+                ws.column_dimensions[get_column_letter(column)].width = (
+                    58 if label == 'Malignant feature' else 27 if label == 'TME cell type' else
+                    max(14, min(28, len(label) + 2)))
+            summaries.append({'dataset': dataset, 'file': files[dataset], 'sheet': sheet_name, 'mode_id': mode,
+                              'n_interactions': len(page), 'n_significant': significant_n,
+                              'n_bubble_pairs': int(page['in_bubble'].sum()),
+                              'blank_separator_rows': 3 if 0 < significant_n < len(page) else 0})
+        book.save(MOUT / 'tables' / files[dataset])
+    summary = pd.DataFrame(summaries)
+    summary.to_csv(MOUT / 'reports/Auto_interaction_workbook_summary.csv', index=False)
+    summary.to_csv(ROOT / 'updates/new_updates/summaries/Auto_spatial_interaction_workbooks.csv', index=False)
+    from scatlas_hd_xenium_directional import RAW
+    sources = list(RAW.values()) + [GROUPING, SAMPLE_DESIGN,
+        HDROOT / 'tables/Auto_spatial_interactions_by_sample.csv.gz',
+        XOUT / 'tables/Auto_xenium_neighbourhood_interactions_by_sample.csv.gz',
+        MOUT / 'tables/Auto_specimen_within_platform_meta.csv',
+        MOUT / 'tables/Auto_specimen_cross_platform_meta.csv',
+        ROOT / 'ref_outs/non_malignant_mp_correlations/tables/Auto_significant_comparison_figure_source.csv']
+    (MOUT / 'logs/Auto_interaction_workbook_provenance.json').write_text(json.dumps({
+        'inputs': {str(p): {'size_bytes': p.stat().st_size, 'mtime_ns': p.stat().st_mtime_ns} for p in sources},
+        'files': files, 'primary_ring': 1, 'HD_representation': '16um_bin',
+        'scatlas_significance': 'exact existing bubble selection, including mode-specific nominal-P display thresholds; BH FDR is a separate numeric statistic',
+        'spatial_significance': 'specimen-pooled BH FDR<0.05',
+        'pooled_significance': 'both within-platform FDR<0.05 with matching nonzero means',
+        'sorting': 'significant block first, three blank rows, other pairs; target celltype, programme and malignant-feature order'}, indent=2)+'\n')
+    (MOUT / 'reports/Auto_interaction_workbooks.md').write_text(
+        '# Plain interaction workbooks\n\n' + '\n'.join('- [' + titles[k] + '](../tables/' + v + ')' for k,v in files.items()) +
+        '\n\nEach workbook has four mode sheets. Significant rows precede three blank rows and the remaining observed/tested hypotheses. '
+        'Within each block, target cell type, target programme and current malignant feature order match the bubble plots. '
+        'The single significance flag matches the existing bubble selection in every dataset. scATLAS retains its mode-specific nominal-P display thresholds; BH FDR is shown numerically and does not define its plot flag. '
+        'HD/Xenium significance uses specimen-pooled FDR. Pooled significance requires separate HD and Xenium FDR <0.05 and matching nonzero means. '
+        'Combined pooled P/FDR are reported separately. Spatial workbooks retain specimen log2 enrichments only. Sheets are plain header/data tables without titles, notes, colours, ranks or additional display flags. Missing values remain blank.\n\n'
+        '[Counts and source selection](Auto_interaction_workbook_summary.csv)\n')
+    index = MOUT / 'reports/Auto_current_results.md'
+    marker = '[Plain interaction Excel workbooks](Auto_interaction_workbooks.md)'
+    if marker not in index.read_text():
+        with index.open('a') as handle:
+            handle.write('\n- ' + marker + '\n')
+    print(summary.to_string(index=False), flush=True)
+####################
+
+
+def reference_detail_pages(primary, selected, labels, target_root, effect_limit, cross_platform):
+    """Use the original scATLAS R function, retaining every aesthetic constant."""
+    nodes, edges = [], []
+    for mode in sorted(MODE_TITLES):
+        sources = list(labels) if mode.startswith(('01_', '03_')) else STATES
+        targets = sorted(primary.loc[primary['mode_id'] == mode, 'target_feature'].unique(), key=target_plot_key)
+        parents = list(dict.fromkeys(t.split('__')[0] for t in targets))
+        parent_labels = {p: 'Other cell types' if p == 'xenium_only' else p for p in parents}
+        for i, source in enumerate(sources):
+            nodes.append({'mode_id': mode, 'node_id': 'cancer::' + source,
+                          'node_label': labels.get(source, source), 'celltype_display': 'cancer',
+                          'celltype_order': 1, 'mp_plot_order': i + 1})
+        for j, target in enumerate(targets):
+            parent = target.split('__')[0]
+            target_label = (target.split('__', 1)[1] + ' ' + parent_labels[parent]
+                            if '__' in target and parent != 'xenium_only' else feature_label(target))
+            nodes.append({'mode_id': mode, 'node_id': 'target::' + target, 'node_label': target_label,
+                          'celltype_display': parent_labels[parent],
+                          'celltype_order': parents.index(parent) + 2, 'mp_plot_order': j + 1})
+        node_labels = {n['node_id']: n['node_label'] for n in nodes if n['mode_id'] == mode}
+        for row in selected.loc[selected['mode_id'] == mode].itertuples():
+            source_id, target_id = 'cancer::' + row.source_feature, 'target::' + row.target_feature
+            parent = parent_labels[row.target_feature.split('__')[0]]
+            edges.append({'mode_id': mode, 'edge_id': source_id + '::' + target_id,
+                          'node1_id': source_id, 'node2_id': target_id,
+                          'node1_label': node_labels[source_id], 'node2_label': node_labels[target_id],
+                          'mp1_name': row.source_feature, 'mp2_name': row.target_feature,
+                          'edge_label': node_labels[source_id] + ' <-> ' + node_labels[target_id],
+                          'celltype_pair': 'cancer vs ' + parent, 'pair_scope': 'cross',
+                          'shared_sample_n': np.nan, 'co_positive_sample_n': np.nan,
+                          'co_positive_sample_pct': np.nan, 'pearson_r': np.nan,
+                          'spearman_r': np.nan, 'spearman_p': np.nan, 'spearman_significance': np.nan,
+                          'n_lr_pairs': np.nan, 'top_lr_label': '',
+                          'dot_size': row.significance_strength, 'dot_fill': row.display_effect})
+    nodes_path = target_root / 'tables/Auto_comparison_detail_nodes.csv'
+    edges_path = target_root / 'tables/Auto_comparison_detail_edges.csv'
+    pd.DataFrame(nodes).to_csv(nodes_path, index=False)
+    pd.DataFrame(edges, columns=['mode_id', 'edge_id', 'node1_id', 'node2_id', 'node1_label', 'node2_label',
+        'mp1_name', 'mp2_name', 'edge_label', 'celltype_pair', 'pair_scope', 'shared_sample_n',
+        'co_positive_sample_n', 'co_positive_sample_pct', 'pearson_r', 'spearman_r', 'spearman_p',
+        'spearman_significance', 'n_lr_pairs', 'top_lr_label', 'dot_size', 'dot_fill']).to_csv(edges_path, index=False)
+    details = target_root / 'intermediate/Auto_comparison_details.pdf'
+    spec = target_root / 'logs/Auto_detail_plot_spec.json'
+    spec.write_text(json.dumps({'nodes': str(nodes_path), 'edges': str(edges_path), 'output': str(details),
+                               'titles': MODE_TITLES, 'effect_limit': effect_limit,
+                               'cross_platform': cross_platform}, indent=2) + '\n')
+    env = dict(os.environ, SCREF_DOTMAP_RENDER_SPEC=str(spec))
+    subprocess.run(['/rds/general/user/sg3723/home/anaconda3/envs/dmtcp/bin/Rscript',
+                    str(ROOT / 'analysis/non_malignant_nmf/mp_cross_celltype_correlations.R')],
+                   env=env, check=True)
+    return [details]
+
+
+def original_atlas_detail_pages(target_root):
+    """Copy original cancer-focal pages without changing any plotting property."""
+    from scatlas_hd_xenium_directional import RAW
+    pages = []
+    for mode, source in RAW.items():
+        original = source.parent / 'Auto_celltype_interaction_dotmap_with_neg.pdf'
+        pattern = target_root / 'intermediate' / ('Auto_' + mode + '_original_page%d.pdf')
+        subprocess.run(['/rds/general/user/sg3723/home/miniforge3/envs/bidcell_temp/bin/pdfseparate',
+                        '-f', '1', '-l', '1', str(original), str(pattern)], check=True)
+        pages.append(Path(str(pattern).replace('%d', '1')))
+    return pages
+####################
+
+
+def common_spatial_colour_limit():
+    native = pd.read_csv(MOUT / 'tables/Auto_specimen_within_platform_meta.csv')
+    hits = native.loc[(native['ring']==1) & (native['pooled_fdr']<.05) & (native['n_statistical_units']>=2)]
+    return max(.25, float(np.quantile(np.abs(hits['mean_log2_enrichment']), .95))) if len(hits) else .25
+
+
+def significant_comparison_figure(table, path, title, cross_platform, analysis=''):
+    """Four-mode significant-only bubble comparison in the HD reference layout."""
+    analysis = analysis or ('cross_platform' if cross_platform else 'xenium')
+    grouping = pd.read_csv(GROUPING)
+    if len(grouping) != 17 or grouping['mp'].duplicated().any() or grouping['plot_label'].isna().any():
+        raise ValueError('Expected current full labels for all 17 malignant MPs')
+    labels = grouping.set_index('mp')['plot_label'].to_dict()
+    primary = table.loc[table['ring'] == 1].copy()
+    if analysis == 'scatlas':
+        selected = primary.loc[primary['display_selected']].copy()
+        selected['significance_strength'] = selected['co_positive_sample_pct']
+    else:
+        display_q = primary['selection_fdr'] if 'selection_fdr' in primary else primary['pooled_fdr']
+        selected = primary.loc[(display_q < .05) & (primary['n_statistical_units' if 'n_statistical_units' in primary else 'n_donors_tested'] >= 2)].copy()
+        selected['selection_fdr'] = display_q.loc[selected.index]
+        selected['significance_strength'] = np.minimum(-np.log10(selected['selection_fdr']), 12)
+    if selected.empty:
+        effect_limit = .25
+    else:
+        effect_limit = 1.0 if analysis == 'scatlas' else common_spatial_colour_limit()
+    selected['display_effect'] = selected['scatlas_rho' if analysis == 'scatlas' else 'mean_log2_enrichment'].clip(-effect_limit, effect_limit)
+    target_root = {'cross_platform': MOUT, 'xenium': XOUT, 'visium_hd': HDROOT,
+                   'scatlas': ROOT / 'ref_outs/non_malignant_mp_correlations'}[analysis]
+    for tier in ['intermediate', 'logs']:
+        (target_root / tier).mkdir(exist_ok=True)
+    selected.to_csv(target_root / 'tables/Auto_significant_comparison_figure_source.csv', index=False)
+    summary = []
+    fig, axes = plt.subplots(2, 2, figsize=(610 / 25.4, 430 / 25.4))
+    fig.subplots_adjust(left=.255, right=.90, bottom=.16, top=.91, wspace=.16, hspace=.9)
+    cmap = LinearSegmentedColormap.from_list('contact_enrichment', ['#2166AC', 'white', '#B2182B'])
+    norm = Normalize(vmin=-effect_limit, vmax=effect_limit, clip=True)
+    mode_order = ['01_cancer_mps_vs_tme_mps', '03_cancer_mps_vs_whole_celltypes',
+                  '02_cancer_states_vs_tme_mps', '04_cancer_states_vs_whole_celltypes']
+    for ax, mode in zip(axes.ravel(), mode_order):
+        page = selected.loc[selected['mode_id'] == mode]
+        order = grouping['mp'].tolist() if mode.startswith(('01_', '03_')) else STATES
+        sources = order  # Shared full source axis across the two panels in each row.
+        targets = sorted(page['target_feature'].unique(), key=target_plot_key)
+        summary.append({'analysis': analysis, 'mode_id': mode,
+                        'ring': 1, 'selection_rule': ('original scATLAS positive and negative display' if analysis == 'scatlas' else 'both platform FDR<0.05, matching directions' if cross_platform else 'pooled FDR<0.05'), 'n_displayed_pairs': len(page),
+                        'effect_colour_limit': effect_limit})
+        ax.add_patch(Rectangle((0, 1.01), 1, .065, transform=ax.transAxes,
+                               facecolor='white', edgecolor='black', linewidth=1, clip_on=False))
+        panel_title = {'01_cancer_mps_vs_tme_mps': 'Malignant MPs vs TME MPs',
+                       '03_cancer_mps_vs_whole_celltypes': 'Malignant MPs vs cell types',
+                       '02_cancer_states_vs_tme_mps': 'Malignant states vs TME MPs',
+                       '04_cancer_states_vs_whole_celltypes': 'Malignant states vs cell types'}[mode]
+        ax.text(.5, 1.0425, panel_title, transform=ax.transAxes, fontsize=17,
+                fontweight='bold', ha='center', va='center')
+        if page.empty:
+            ax.text(.5, .5, 'No pooled FDR < 0.05 pairs', transform=ax.transAxes, ha='center', fontsize=17)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        else:
+            ax.scatter(page['target_feature'].map({v:i for i,v in enumerate(targets)}),
+                       page['source_feature'].map({v:i for i,v in enumerate(sources)}),
+                       s=25 + 230 * page['significance_strength'] / (100 if analysis == 'scatlas' else 12),
+                       c=page['display_effect'], cmap=cmap, norm=norm,
+                       edgecolors='black', linewidths=.6, alpha=.9)
+            ax.set_xticks(range(len(targets)), [feature_label(item) for item in targets], rotation=45, ha='right', fontsize=17)
+            ax.set_yticks(range(len(sources)), [labels[item] if item in labels else item for item in sources], fontsize=17)
+            ax.set_xlim(-.6, len(targets) - .4)
+            ax.set_ylim(len(sources) - .4, -.6)
+        if ax in axes[:, 1]:
+            ax.tick_params(axis='y', labelleft=False)
+        ax.tick_params(length=3, width=.7)
+        ax.spines[['top', 'right']].set_visible(False)
+    fig.suptitle(title, x=.255, y=.98, ha='left', fontsize=24, fontweight='bold')
+    strengths = [10, 25, 50, 75] if analysis == 'scatlas' else [0, 3, 6, 9, 12]
+    handles = [plt.scatter([], [], s=25 + 230 * value / (100 if analysis == 'scatlas' else 12), facecolors='white', edgecolors='black', linewidths=.6)
+               for value in strengths]
+    fig.legend(handles, [str(value) for value in strengths], title=('Co-positive\nsamples (%)' if analysis == 'scatlas' else '−log₁₀ FDR\n(maximum)' if cross_platform else '−log₁₀ FDR'), loc='upper left',
+               bbox_to_anchor=(.925, .63), frameon=False, fontsize=17, title_fontsize=17,
+               labelspacing=1.1, handletextpad=.6)
+    colour_ax = fig.add_axes([.94, .20, .012, .20])
+    fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), cax=colour_ax, extend='both')
+    colour_ax.tick_params(labelsize=17)
+    colour_ax.set_title('Spearman ρ' if analysis == 'scatlas' else 'Mean log₂\nenrichment', fontsize=17, loc='left', pad=14)
+    overview = target_root / 'intermediate/Auto_comparison_overview.pdf'
+    with PdfPages(overview) as pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    details = (original_atlas_detail_pages(target_root) if analysis == 'scatlas' else
+               reference_detail_pages(primary, selected, labels, target_root, effect_limit, cross_platform))
+    subprocess.run(['/rds/general/user/sg3723/home/miniforge3/envs/bidcell_temp/bin/pdfunite',
+                    str(overview), *[str(p) for p in details], str(path)], check=True)
+    result = pd.DataFrame(summary)
+    result.to_csv(target_root / 'reports/Auto_significant_comparison_summary.csv', index=False)
+    update = ROOT / 'updates/new_updates/summaries' / ('Auto_' + analysis + '_significant_figure.csv')
+    result.to_csv(update, index=False)
+    print(result.to_string(index=False), flush=True)
+    if analysis in ['visium_hd', 'scatlas']:
+        selection_note = ('Filtered 16-um bin proximity; specimen-pooled FDR < 0.05, primary window; three HD specimens, equal specimen weights. A1/D1 share one patient; statistical independence is an explicit working assumption, not biological replication.'
+                          if analysis == 'visium_hd' else
+                          'Original positive and negative cancer-focal selections. These use the upstream nominal Spearman/display rules, not a new BH-FDR gate. Bubble size is co-positive sample percentage and fill is Spearman rho. Pages 2–5 are the unmodified original cancer-focal negative-inclusive pages, retaining all LR annotations.')
+        report = target_root / 'reports/Auto_four_mode_comparison.md'
+        relative = '../figures/' + path.name if analysis == 'visium_hd' else '../' + path.name
+        report.write_text('# Four-mode interaction comparison\n\n' + selection_note + '\n\n' +
+            '[Comparison PDF](' + relative + ')\n\n' +
+            '[Exact figure source](../tables/Auto_significant_comparison_figure_source.csv)\n\n' +
+            '[Counts](Auto_significant_comparison_summary.csv)\n')
+        if analysis == 'visium_hd':
+            index = target_root / 'reports/CURRENT_RESULTS.md'
+            marker = '[Five-page four-mode comparison](Auto_four_mode_comparison.md)'
+            if marker not in index.read_text():
+                with index.open('a') as handle:
+                    handle.write('\n- ' + marker + '\n')
 
 
 def section_evidence_plot(primary, sections, donors, path):
@@ -1011,15 +1460,18 @@ def diagnostics_plot(availability, path):
 def write_results_indexes(figure_scope='all'):
     meta_lines = [
         '# Current spatial contact enrichment results', '',
-        'Primary inference uses 16-µm axis-distance windows and independent donors. '
-        'All three HD sections contribute, with FFPEA1 and FFPED1 sharing one donor weight. '
-        'Pooled evidence and cross-platform replication are reported separately.', '',
+        'HD uses filtered 16-µm bins and Xenium uses calibrated segmented-cell centroids; proximity does not establish membrane contact. '
+        'Comparison figures use the primary 16-µm window and equal specimen weights: three HD specimens '
+        'and six Xenium specimens. A1/D1 retain the same biological patient ID but are treated as distinct '
+        'statistical specimens, as explicitly requested. Independence of their tests is a working assumption. '
+        'Donor-aware numerical results remain separately labelled in the original tables.', '',
         '## Selected figures', '',
         '- [01 Cross-platform contact enrichment](../figures/Auto_final/01_cross_platform_contact_enrichment.pdf): '
-        'one page per source–target mode, showing rows with at least one pooled result; '
-        'all malignant MPs carry their current full descriptions. Open circles show pooled FDR < 0.05 '
-        'without replication FDR < 0.05; filled circles show replication FDR < 0.05. '
-        'Empty rows, including unmatched NK and plasma, are omitted from the figure and retained in availability tables.',
+        'five pages: a four-mode overview followed by one tiled detail page per mode. Display requires '
+        'FDR < 0.05 separately in HD and Xenium and matching nonzero mean directions. '
+        'Each platform requires two eligible specimens. Colour shows descriptive combined specimen mean; '
+        'size shows −log10 of the larger within-platform FDR. Combined pooled FDR and conjunction-based '
+        'replication remain separate fields in the tables.',
         '- [02 Section and donor evidence](../figures/Auto_supporting/02_section_and_donor_evidence.pdf): '
         'five selected pairs per mode, with all section effects and donor means.',
         '- [03 Eligibility and panel coverage](../figures/Auto_diagnostics/03_eligibility_and_coverage.pdf): '
@@ -1029,7 +1481,9 @@ def write_results_indexes(figure_scope='all'):
         '- [Section evidence](../tables/Auto_harmonised_interactions_by_sample.csv.gz)',
         '- [Donor evidence](../tables/Auto_harmonised_interactions_by_donor.csv.gz)',
         '- [Complete pooled and replication results](../tables/Auto_cross_platform_meta.csv)',
-        '- [Within-platform results](../tables/Auto_within_platform_meta.csv)',
+        '- [Specimen-pooled within-platform results](../tables/Auto_specimen_within_platform_meta.csv)',
+        '- [Specimen-pooled combined results](../tables/Auto_specimen_cross_platform_meta.csv)',
+        '- [Original donor-aware within-platform results](../tables/Auto_within_platform_meta.csv)',
         '- [Availability](../tables/Auto_cross_platform_availability.csv)',
         '- [Primary pooled evidence](../tables/Auto_cross_platform_pooled_primary.csv)',
         '- [Primary replicated evidence](../tables/Auto_cross_platform_replicated_primary.csv)',
@@ -1042,7 +1496,8 @@ def write_results_indexes(figure_scope='all'):
         '[Visium HD and scATLAS evidence](../../visium_hd_outs/spatial_interactions/figures/Auto_final/01_scatlas_spatial_evidence.pdf) '
         'for those calls; the cross-platform symbols do not encode scATLAS support. '
         'Plasma has no matched Xenium parent label and cannot enter the cross-platform pool.', '',
-        'The signed Stouffer result combines directional donor evidence. Mean donor log₂ enrichment is descriptive. '
+        'The comparison tables use equal-specimen signed-Stouffer evidence and descriptive mean specimen effects. '
+        'The original donor-aware pooling is preserved separately. '
         'Replication requires evidence in both platforms, with consistent inferential and descriptive directions. '
         'The paired section comparison involves one donor and cannot estimate a treatment effect. '
         'Spatial proximity does not establish physical contact or molecular signalling.', '',
@@ -1054,7 +1509,8 @@ def write_results_indexes(figure_scope='all'):
     xenium_lines = [
         '# Current Xenium spatial contact enrichment', '',
         '- [01 Xenium contact enrichment](../figures/Auto_final/01_xenium_contact_enrichment.pdf): '
-        'four complete source–target modes, one page per mode; six independent donors.',
+        'five pages: four-mode overview and four tiled detail pages; only primary-window pooled FDR < 0.05 pairs. '
+        'Colour shows mean specimen effect; dot size shows capped −log10 pooled FDR. Six Xenium specimens from six donors contribute.',
         '- [Donor-pooled results](../tables/Auto_xenium_interactions_pooled.csv)',
         '- [Per-section contact evidence](../tables/Auto_xenium_neighbourhood_interactions_by_sample.csv.gz)',
         '- [Coordinate calibration](../tables/Auto_coordinate_calibration_audit.csv)',
@@ -1082,30 +1538,89 @@ def plots(figure_scope='all'):
         if current.st_size != recorded['size_bytes'] or current.st_mtime_ns != recorded['mtime_ns']:
             raise ValueError(f'Input changed since meta-analysis: {path}; rebuild the dependent results')
     plot_settings()
-    pooled = pd.read_csv(MOUT / 'tables/Auto_cross_platform_meta.csv')
+    within, pooled = specimen_pooled_tables()
     availability = pd.read_csv(MOUT / 'tables/Auto_cross_platform_availability.csv')
     availability['replication_testable'] = strict_bool(availability['replication_testable'])
     (MOUT / 'figures/Auto_final').mkdir(parents=True, exist_ok=True)
-    heatmap_pages(pooled, availability, MOUT / 'figures/Auto_final/01_cross_platform_contact_enrichment.pdf',
-                  '', cross_platform=True)
+    platform_evidence = within.loc[within['ring'] == 1].pivot(index=KEYS, columns='platform',
+        values=['pooled_fdr', 'mean_log2_enrichment', 'n_donors_tested'])
+    platform_evidence.columns = [f'within_{platform}_{field}' for field,platform in platform_evidence.columns]
+    pooled = pooled.merge(platform_evidence.reset_index(), on=KEYS, how='left', validate='one_to_one')
+    both = (pooled['within_visium_hd_pooled_fdr'] < .05) & (pooled['within_xenium_pooled_fdr'] < .05) & (
+        pooled['within_visium_hd_mean_log2_enrichment'] * pooled['within_xenium_mean_log2_enrichment'] > 0)
+    pooled['selection_fdr'] = np.where(both, np.maximum(pooled['within_visium_hd_pooled_fdr'], pooled['within_xenium_pooled_fdr']), np.nan)
+    significant_comparison_figure(pooled, MOUT / 'figures/Auto_final/01_cross_platform_contact_enrichment.pdf',
+                                  'Significant cross-platform spatial interactions', cross_platform=True)
     if figure_scope == 'cross-platform-final':
         write_results_indexes(figure_scope)
         return
     sections = pd.read_csv(MOUT / 'tables/Auto_harmonised_interactions_by_sample.csv.gz')
     sections['eligible_pair'] = strict_bool(sections['eligible_pair'])
     donors = pd.read_csv(MOUT / 'tables/Auto_harmonised_interactions_by_donor.csv.gz')
-    within = pd.read_csv(MOUT / 'tables/Auto_within_platform_meta.csv')
     for tier in ['Auto_final', 'Auto_supporting', 'Auto_diagnostics']:
         (MOUT / 'figures' / tier).mkdir(parents=True, exist_ok=True)
     (XOUT / 'figures/Auto_final').mkdir(parents=True, exist_ok=True)
     xenium = within.loc[within['platform'] == 'xenium']
-    heatmap_pages(xenium, availability, XOUT / 'figures/Auto_final/01_xenium_contact_enrichment.pdf',
-                  'Xenium spatial enrichment', cross_platform=False)
-    section_evidence_plot(pooled.loc[pooled['ring'] == 1], sections, donors,
+    significant_comparison_figure(xenium, XOUT / 'figures/Auto_final/01_xenium_contact_enrichment.pdf',
+                                  'Significant Xenium spatial interactions', cross_platform=False)
+    if figure_scope == 'final-comparisons':
+        write_results_indexes()
+        return
+    support_pooled = pd.read_csv(MOUT / 'tables/Auto_cross_platform_meta.csv')
+    section_evidence_plot(support_pooled.loc[support_pooled['ring'] == 1], sections, donors,
                           MOUT / 'figures/Auto_supporting/02_section_and_donor_evidence.pdf')
     diagnostics_plot(availability, MOUT / 'figures/Auto_diagnostics/03_eligibility_and_coverage.pdf')
     write_results_indexes()
 ####################
+
+####################
+def comparison_figures(stage):
+    """Replot stored HD/scATLAS evidence; no score or permutation recomputation."""
+    if not os.getenv('PBS_JOBID'):
+        raise ValueError('Run comparison figures within PBS')
+    plot_settings()
+    if stage in ['hd-figures', 'comparison-figures']:
+        specimen_within, _ = specimen_pooled_tables()
+        hd = specimen_within.loc[specimen_within['platform']=='visium_hd'].copy()
+        for tier in ['tables', 'reports', 'figures']:
+            (HDROOT / tier).mkdir(exist_ok=True)
+        significant_comparison_figure(hd,
+            HDROOT / 'figures/Auto_spatial_interaction_four_mode_significant_comparison.pdf',
+            'Significant Visium HD spatial interactions', False, analysis='visium_hd')
+    if stage in ['atlas-figures', 'comparison-figures']:
+        from scatlas_hd_xenium_directional import read_atlas, RAW
+        grouping = pd.read_csv(GROUPING)
+        atlas = read_atlas(grouping)
+        parts = []
+        for mode,path in RAW.items():
+            dotmap = pd.read_csv(path.parent / 'Auto_celltype_interaction_dotmap_data.csv')
+            positive_ids = dotmap.loc[dotmap['focal_celltype'] == 'cancer', 'edge_id']
+            negative = pd.read_csv(path.parent / 'Auto_celltype_correlations_negative.csv')
+            negative_ids = negative.loc[(negative['compartment1'] == 'cancer') ^
+                                        (negative['compartment2'] == 'cancer'), 'edge_id']
+            if positive_ids.duplicated().any() or negative_ids.duplicated().any():
+                raise ValueError('Duplicated scATLAS displayed edge')
+            raw = pd.read_csv(path)[['edge_id', 'co_positive_sample_pct', 'pearson_r']]
+            part = atlas.loc[atlas['mode_id'] == mode].merge(raw, left_on='scrna_edge_id',
+                right_on='edge_id', how='left', validate='one_to_one')
+            display_ids = set(positive_ids) | set(negative_ids)
+            if not display_ids.issubset(set(part['scrna_edge_id'])):
+                raise ValueError('Unmatched scATLAS original display selection')
+            part['display_selected'] = part['scrna_edge_id'].isin(display_ids)
+            part['display_selection_sign'] = np.where(part['scrna_edge_id'].isin(positive_ids), 'positive',
+                np.where(part['scrna_edge_id'].isin(negative_ids), 'negative', 'not_selected'))
+            part['ring'] = 1
+            parts.append(part)
+        atlas = pd.concat(parts, ignore_index=True)
+        out = ROOT / 'ref_outs/non_malignant_mp_correlations'
+        for tier in ['tables', 'reports']:
+            (out / tier).mkdir(exist_ok=True)
+        significant_comparison_figure(atlas, out / 'Auto_four_mode_interaction_summary.pdf',
+            'scATLAS malignant–TME interactions', False, analysis='scatlas')
+    if stage == 'comparison-figures':
+        plots('final-comparisons')
+####################
+
 
 def validate_math():
     assert np.allclose(bh_adjust([.01,.04,.03]),[.03,.04,.04])
@@ -1163,8 +1678,8 @@ def validate_math():
 
 def main():
     parser=argparse.ArgumentParser(description='Corrected Xenium/Visium HD contacts and meta-analysis')
-    parser.add_argument('--stage',choices=['prepare','contacts','meta','replot','validate'],required=True)
-    parser.add_argument('--figure-scope', choices=['all', 'cross-platform-final'], default='all')
+    parser.add_argument('--stage',choices=['prepare','contacts','meta','replot','validate','hd-figures','atlas-figures','comparison-figures','restore-binned','workbooks'],required=True)
+    parser.add_argument('--figure-scope', choices=['all', 'cross-platform-final', 'final-comparisons'], default='all')
     parser.add_argument('--permutations',type=int,default=int(os.getenv('SCREF_SPATIAL_PERMUTATIONS','4999')))
     parser.add_argument('--workers',type=int,default=int(os.getenv('SCREF_NCORES','8')))
     parser.add_argument('--seed',type=int,default=47231)
@@ -1173,10 +1688,13 @@ def main():
         raise ValueError('A restricted figure scope is valid only for --stage replot')
     if args.permutations < 4999 or args.workers < 1:
         raise ValueError('HD alignment requires >=4999 permutations and >=1 worker')
-    if args.stage=='validate':validate_math()
+    if args.stage == 'restore-binned':restore_binned_outputs()
+    elif args.stage == 'workbooks':write_interaction_workbooks()
+    elif args.stage in ['hd-figures','atlas-figures','comparison-figures']:comparison_figures(args.stage)
+    elif args.stage=='validate':validate_math()
     elif args.stage=='prepare':prepare()
     elif args.stage=='contacts':contacts(args)
-    elif args.stage=='meta':meta_analysis();plots()
+    elif args.stage=='meta':meta_analysis();plots();write_interaction_workbooks()
     elif args.stage=='replot':plots(args.figure_scope)
 
 

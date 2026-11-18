@@ -1,6 +1,67 @@
 # Xenium and Visium HD contact recomputation and meta-analysis
 
+## Current HD 16-um-bin inputs
+
+The user restored the previous verified 16 µm binned HD analysis. Current
+meta-analysis requires `bin_size_um=16` in the HD parameters and uses the
+original saved section tests. Xenium retains its calibrated segmented-cell
+centroids and unchanged section tests. The shared 16/32/48 µm physical windows
+and conditional permutation settings are retained, but the measurement units
+remain bins versus cells. Segmented HD results are preserved only as reference
+outputs and do not supply current inference. The exact restoration/cache
+contract is in the [HD methodology](visium_hd_spatial_cancer_tme_interactions_methodology.md#current-16-um-bin-production-contract).
+
 ## Scope and execution
+
+### Plain Excel exports
+
+Four workbooks under `ref_outs/spatial_cross_platform/tables/` contain one
+worksheet per mode:
+
+- `Auto_01_scATLAS_TME_interactions.xlsx`
+- `Auto_02_VisiumHD_TME_interactions.xlsx`
+- `Auto_03_Xenium_TME_interactions.xlsx`
+- `Auto_04_pooled_TME_interactions.xlsx`
+
+Sheets are plain header/data tables: no titles, explanatory rows, colours,
+custom cell styles, ranks, filters or duplicate display flags. Basic column
+widths keep the full malignant MP descriptions readable. Rows retain the
+bubble-plot cell-type/programme order within the significant block and the
+remaining block, separated by three blank rows. TME programme IDs are included
+inside the TME cell-type value, so each interaction remains identifiable
+without a separate programme column.
+
+The single `Significant (bubble rule)` column matches the corresponding bubble
+selection exactly. For scATLAS this is the original exported positive/negative
+selection, using mode-specific nominal-P/display criteria. BH FDR remains a
+numeric diagnostic; it does not redefine this plot flag. The original plot
+criteria require finite nonzero Pearson direction and Spearman P <0.05, with
+additional -log10(P) >=4 for MP/TME-MP modes and >=1.5 for state/TME-MP modes;
+whole-cell-type modes have no additional display cutoff. The exported display
+source is authoritative, including preserved original selections. This fixes
+the earlier mismatch between a BH-based workbook flag and nominal-P bubbles,
+without altering the plots or their statistics.
+
+scATLAS exports only the flag, malignant feature, TME target, direction,
+Spearman rho/P, BH FDR and N samples. Spatial exports retain mean log2
+enrichment, pooled P/FDR, N samples and each individual specimen's log2
+enrichment. Per-specimen P/FDR, patient counts, co-positive percentages and
+study-name lists are omitted as requested. Pooled sheets also contain separate
+HD and Xenium mean/P/FDR/sample counts and combined mean/P/FDR. Combined
+statistics do not change the approved pooled flag, which still requires
+native FDR <0.05 in both spatial platforms and matching nonzero means.
+
+Every meta run updates the workbooks. `--stage workbooks` and the existing
+launcher's `SCREF_WORKBOOKS_ONLY=TRUE` export only matching current tables;
+input-provenance mismatches stop the export. Installed openpyxl is the sole
+writer. Missing values remain blank. Complete source inputs and exact rules
+are recorded in `logs/Auto_interaction_workbook_provenance.json`; sheet counts
+are in `reports/Auto_interaction_workbook_summary.csv`, with a compact update
+under `updates/new_updates/summaries/`. The external workbook index holds
+method details, keeping the Excel files data-only. Independent checks compare
+every exported value and significance flag with the original source tables
+and figure selections, verify ordering and separators, and reject any styled
+cells or extra content.
 
 This workflow measures local cancer–TME spatial enrichment in six Xenium donors
 and combines it with Visium HD evidence from three sections of two donors.
@@ -273,25 +334,157 @@ Meta output root: `ref_outs/spatial_cross_platform/`. Current tables are:
 - `Auto_cross_platform_pooled_primary.csv` and
   `Auto_cross_platform_replicated_primary.csv`.
 
-`figures/Auto_final/01_cross_platform_contact_enrichment.pdf` shows the four
-source–target modes, one intended comparison per page. Each malignant MP label
-includes its full current description from the centred refinement grouping
-table. TME programmes retain their compartment-specific identifiers; the
-malignant MP descriptions must not be assigned to identically numbered TME MPs.
-Rows without any pooled estimate are omitted, including unmatched NK and
-plasma targets. This display filter does not change the testing families or
-the complete availability tables. Partially unavailable rows remain, with
-missing cells shown in grey. Colour represents descriptive mean donor log2
-enrichment, clipped at ±2. A side legend distinguishes filled circles
-(replication FDR < 0.05) from open circles (pooled FDR < 0.05 without replication
-FDR < 0.05). The figure contains comparison titles and no explanatory subtitles
-or footnotes. HD scATLAS-candidate support belongs to a separate testing family
-and is displayed in the HD final evidence figure, linked from the current
-results index. Additional
-section/donor evidence is in `figures/Auto_supporting/`; coverage and eligibility
-are in `figures/Auto_diagnostics/`. Individual-effect plots do not fabricate
-confidence intervals. Text remains editable and layouts are checked at 183 mm
-width, following [Nature's artwork guidance](https://www.nature.com/documents/nature-final-artwork.pdf).
+## Shared five-page comparison reports
+
+The HD, Xenium and cross-platform comparison PDFs now use one shared renderer
+in `spatial_platform_neighbourhoods.py`. Page 1 is a less compact 610 × 430 mm
+four-panel overview, with a shared full MP/state row axis and wider plotting panels to prevent crowded target labels. Pages 2–5 are one mode each, in numeric mode order, at
+exactly 22 × 10.5 inches (558.8 × 266.7 mm), matching page 1 of the scATLAS
+`Auto_celltype_interaction_dotmap_with_neg.pdf`. Spatial detail pages call
+`plot_focal_interaction_dotmap()` in the original maintained
+`mp_cross_celltype_correlations.R` producer, through its
+`SCREF_DOTMAP_RENDER_SPEC` plot-only entry. They preserve its exact colours,
+22 × 10.5-inch canvas, fonts, tile/grid stroke, 48-degree labels, facet spacing,
+strip fill, margins, legend layout, point alpha/stroke and 1.3–8.6-mm point-size
+range. Only the measured quantities, scale labels and comparison title change. Spatial dot size
+represents FDR evidence, rather than borrowing the scATLAS co-positive-sample
+percentage; spatial fill represents mean log2 enrichment, not Spearman rho.
+No subtitles or LR-support marks are invented for spatial data.
+
+All plots use the upstream scATLAS parent order: fibroblast, endothelial, CD8,
+CD4, macrophage, NK, plasma. A whole T-cell spatial target occupies the T-cell
+position without implying a resolved CD4/CD8 subtype. Other spatial targets
+follow those shared parents. MP numbers are naturally ordered within parent.
+Detail pages show all source MPs/states and the available target universe,
+including blank tiles for interactions failing the figure selection.
+
+### Specimen-based comparison inference (user-requested update)
+
+Each HD section is treated as a separate statistical specimen: FFPED1, FFPEA1
+and SUR1231 receive equal weights, matching the per-specimen treatment of the
+six Xenium samples. Each retains its independently calculated local-permutation
+P value and descriptive log2 enrichment. The three HD section graphs and null
+tests are not recomputed. At least two eligible specimens are required for a
+pooled test. Convert each section P to signed normal evidence and combine
+`Z = sum(sign(effect) * normal_upper_quantile(P/2)) / sqrt(n_specimens)`.
+Apply a two-sided normal tail and BH over every mode/window's finite tests.
+Mean effects are arithmetic means of eligible specimen effects.
+
+This calculation explicitly **assumes statistical independence of specimen
+tests** for Stouffer pooling. The user requested this analysis after being told
+that A1/D1 share a patient and that different treatment conditions do not prove
+independence. Therefore it is specimen-based, conditional spatial evidence;
+it does not turn three specimens into three independent biological patients.
+Actual patient IDs are preserved. No estimated paired correction or mixed model
+is applied in this comparison calculation. The original donor-aware scientific
+tables remain available for sensitivity and do not supply the displayed means
+or within-HD FDR in these reports.
+
+Current comparison inputs/results are
+`tables/Auto_specimen_within_platform_meta.csv` and
+`tables/Auto_specimen_cross_platform_meta.csv` under spatial_cross_platform,
+plus `tables/Auto_specimen_pooled_interactions.csv` under the HD root.
+`logs/Auto_specimen_pooling_provenance.json` records the raw section inputs,
+unit and independence assumption. Source tables retain `n_statistical_units`,
+`n_donors_tested`, specimen IDs and biological patient IDs as distinct fields.
+
+### Selection rules
+
+- **HD:** primary-window specimen-pooled BH FDR < 0.05 and at least two eligible
+  specimens. All three sections receive equal weights when eligible.
+- **Xenium:** primary-window specimen-pooled BH FDR < 0.05 and at least two
+  specimens. Because there is one field per independent patient, this matches
+  the existing equal-donor Xenium calculation.
+- **Cross-platform:** BH FDR < 0.05 separately in the three-specimen HD pool
+  and the six-specimen Xenium pool, with matching nonzero platform mean-effect
+  directions. Each FDR is adjusted over its complete mode/window family. Dot
+  size uses the larger platform FDR. Displayed combined effects give every
+  eligible specimen equal weight. This is an intersection of separately
+  analysed datasets, not a new joint replicability-FDR guarantee.
+
+Overview fill is blue–white–red around zero, clipped symmetrically at the larger of
+0.25 or the 95th percentile absolute primary-window significant effect across both native spatial analyses. The same limit is shared by all three spatial comparison reports. Size uses capped
+−log10 FDR (maximum 12); the cross-platform legend names the maximum platform
+FDR explicitly. Means remain descriptive and have no estimated confidence
+intervals. Displaying only significant hypotheses does not remove cohort,
+coverage or annotation uncertainty.
+
+Detail fill uses the original scATLAS palette (`#08519C`, `#F8F4ED`, `#B7212E`)
+and the same shared spatial effect limits. Size retains the original physical
+range while replacing co-positive percentage with capped −log10 FDR, as
+confirmed by the user. No spatial effect or FDR value is described as a
+Spearman coefficient or co-positive percentage.
+
+Output locations:
+
+- HD: `ref_outs/visium_hd_outs/spatial_interactions/figures/Auto_spatial_interaction_four_mode_significant_comparison.pdf`.
+- Xenium: existing `figures/Auto_final/01_xenium_contact_enrichment.pdf`.
+- Cross-platform: existing `figures/Auto_final/01_cross_platform_contact_enrichment.pdf`.
+- Each root retains `tables/Auto_significant_comparison_figure_source.csv` and
+  `reports/Auto_significant_comparison_summary.csv` plus its compact update.
+- Spatial detail replot inputs are `tables/Auto_comparison_detail_{nodes,edges}.csv`
+  and `logs/Auto_detail_plot_spec.json`. Current assembly components are
+  `intermediate/Auto_comparison_{overview,details}.pdf`. They remain internal
+  reproducibility inputs rather than additional selected figures.
+
+The formerly historical HD PDF at the requested path is regenerated from the
+current specimen-pooled comparison tables under the explicitly documented
+independence assumption. Original section tests are reused without alteration. The original R HD producer calls the shared renderer after its
+scientific tables have been written, using the fixed bidcell_temp Python binary.
+
+### scATLAS summary
+
+`ref_outs/non_malignant_mp_correlations/Auto_four_mode_interaction_summary.pdf`
+is a five-page report directly under the requested parent folder. Its overview
+uses the union of original positive cancer-focal selections from each mode's
+`Auto_celltype_interaction_dotmap_data.csv` and cancer-focal edges from
+`Auto_celltype_correlations_negative.csv`. Consequently it preserves the
+upstream nominal Spearman/display rules; it does not silently substitute the
+separate FDR-based scATLAS/HD directional-screen rule. Colour is Spearman rho,
+size is co-positive sample percentage. Pages 2–5 are the original cancer-focal
+first pages extracted without alteration from modes 01, 03, 05 and 06
+`Auto_celltype_interaction_dotmap_with_neg.pdf`. Their colour scales, point
+sizes, fonts, legends, LR annotations and every drawing are preserved exactly;
+they are not reconstructed by the spatial renderer. Poppler `pdfseparate` and
+`pdfunite` in the existing bidcell_temp environment extract and assemble these
+pages. Live `intermediate/` keeps the current assembly components. Its exact source and counts are under
+the parent `tables/` and `reports/` tiers. The maintained scATLAS R producer
+calls the same renderer after exporting all mode tables. The canonical alias
+reader in `scatlas_hd_xenium_directional.py` is a maintained dependency.
+
+### Execution and validation
+
+The existing matching launcher supports `SCREF_COMPARISON_FIGURES_ONLY=TRUE`
+for the shared four-report redraw. Submit with one CPU, 8 GB and 30 minutes:
+
+```bash
+/opt/pbs/bin/qsub -l select=1:ncpus=1:mem=8gb -l walltime=00:30:00 -v SCREF_COMPARISON_FIGURES_ONLY=TRUE job_scripts/spatial/spatial_platform_neighbourhoods.sh
+```
+
+Other analytical/replot modes retain their previous launcher behavior.
+`--stage hd-figures` and `--stage atlas-figures` are the R producers' explicit
+plot-only callbacks. `--stage comparison-figures` regenerates all four reports.
+No scores or spatial permutations are recalculated by these commands. A
+separate audit reconstructs the cross-platform FDR intersection, checks native
+HD/Xenium significance, verifies five pages in each report, checks exact detail
+page dimensions, renders every page and checks text bounds. It also compares
+each appended scATLAS page against its original PDF page to verify identical
+rendering, text and drawing geometry. Figure reports
+and indexes identify the current selection rule; older full numerical results
+remain reproducible independently of these display changes.
+
+The exact non-malignant spatial signatures are the `gene_sets` member of
+`ref_outs/visium_hd_outs/spatial_interactions/intermediate/Auto_visiumhd_tme_mp_gene_sets.rds`.
+They retain GeneNMF silhouette >= 0 and the first 100 unique ranked genes per
+programme. Xenium intersects these same lists with its panel. Original complete
+lists are `$metaprograms.genes` in `ref_outs/nmf_<compartment>/MP_outs_default.rds`,
+for fibroblast, endothelial, macrophage, nk, plasma, cd4 and cd8. Reading a
+single spatial signature in R is reproducible directly from the canonical RDS:
+
+```r
+tme <- readRDS("ref_outs/visium_hd_outs/spatial_interactions/intermediate/Auto_visiumhd_tme_mp_gene_sets.rds")
+tme$gene_sets[["fibroblast__MP9"]]
+```
 
 The current index is `reports/Auto_current_results.md`. The current scientific
 report and compact result table are `reports/Auto_cross_platform_run_report.txt`
@@ -307,7 +500,9 @@ The orchestrator requires exactly one of `SCREF_FORCE_REBUILD`,
 `SCREF_CONTACT_ONLY`, `SCREF_META_ONLY` or `SCREF_REPLOT_ONLY` to be `TRUE`. Full PBS runs
 recompute metadata, UCell scores, contacts and pooling. `SCREF_REPLOT_ONLY=TRUE`
 regenerates figures from persistent meta/sample tables without rescoring.
-For a scoped update of the four-page cross-platform final PDF and its current
+Set `SCREF_FIGURE_SCOPE=final-comparisons` with `SCREF_REPLOT_ONLY=TRUE` to
+update both final bubble PDFs, their source/summary tables and indexes without
+regenerating supporting figures. For a scoped update of the one-page cross-platform final PDF and its current
 index, set `SCREF_FIGURE_SCOPE=cross-platform-final` together with
 `SCREF_REPLOT_ONLY=TRUE`. The default figure scope is `all`. The corresponding
 Python option is `--stage replot --figure-scope cross-platform-final`; a

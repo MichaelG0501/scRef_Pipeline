@@ -1,5 +1,8 @@
 ####################
 # Analysis registry:
+# Shared comparison renderer: analysis/spatial/spatial_platform_neighbourhoods.py
+#   (bidcell_temp Python); current four-mode comparison and source/summary tables
+#   are regenerated from saved results after this producer completes.
 #   Status: active
 #   Script: analysis/non_malignant_nmf/mp_cross_celltype_correlations.R
 #   Methodology: analysis/methodology/non_malignant_nmf/mp_cross_celltype_correlations_methodology.md
@@ -14,8 +17,17 @@
 #     tables/: ref_outs/non_malignant_mp_correlations/<01_*--06_*>/Auto_{adjusted_scores_*,celltype_*,whole_celltype_*}.{csv,xlsx}
 #     figures/: ref_outs/non_malignant_mp_correlations/<01_*--06_*>/Auto_{celltype_*,whole_celltype_*}.pdf
 #     summaries/: updates/new_updates/summaries/Auto_mp_cross_celltype_correlations_summary.csv
+#     ref_outs/non_malignant_mp_correlations/Auto_four_mode_interaction_summary.pdf;
+#     tables/Auto_significant_comparison_figure_source.csv; reports/Auto_significant_comparison_summary.csv
+#     Summary PDF has five pages, includes both correlation signs, and appends
+#     unchanged original cancer-focal negative-inclusive pages for modes 01/03/05/06.
 #   Cache/replot: AUTO_MPXCELL_FORCE_REBUILD=TRUE invalidates versioned caches;
 #     persistent adjusted-score and result tables support downstream plotting.
+#     SCREF_DOTMAP_RENDER_SPEC=<live JSON> is the original-renderer plot-only
+#     entry for spatial detail pages; it exits before loading the atlas. Spec
+#     names live node/edge CSV inputs, output PDF, mode titles and spatial scales.
+#     Run on an allocated node with dmtcp; the maintained Python comparison
+#     producer invokes this entry and assembles its four pages using Poppler.
 #   Run: /opt/pbs/bin/qsub -v AUTO_MPXCELL_FORCE_REBUILD=TRUE analysis/non_malignant_nmf/mp_cross_celltype_correlations.sh
 #   Environment: dmtcp
 ####################
@@ -61,6 +73,7 @@ library(tibble)
 library(purrr)
 library(grid)
 library(openxlsx)
+library(jsonlite)
 ####################
 source("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/shared/scRef_config.R")
 ####################
@@ -1311,7 +1324,8 @@ make_focal_interaction_grid <- function(node_df, focal, include_within = FALSE) 
     )
 }
 
-plot_focal_interaction_dotmap <- function(edge_df, node_df, focal, include_within = FALSE) {
+plot_focal_interaction_dotmap <- function(edge_df, node_df, focal, include_within = FALSE,
+                                        comparison_scale = NULL, title_text = NULL) {
   focal_grid <- make_focal_interaction_grid(node_df, focal, include_within = include_within)
   focal_levels <- levels(focal_grid$focal_label)
   partner_levels <- levels(focal_grid$partner_label)
@@ -1323,6 +1337,33 @@ plot_focal_interaction_dotmap <- function(edge_df, node_df, focal, include_withi
       partner_label = factor(partner_label, levels = partner_levels),
       partner_celltype = factor(partner_celltype, levels = partner_celltype_levels)
     )
+
+  ####################
+  # Spatial comparisons reuse this exact renderer. Only the measured quantities
+  # and their scale labels differ; every physical and aesthetic setting below
+  # remains identical to the original negative-inclusive scATLAS dotmap.
+  ####################
+  if (is.null(comparison_scale)) {
+    plot_df$dot_size <- plot_df$co_positive_sample_pct
+    plot_df$dot_fill <- plot_df$spearman_r
+    fill_limits <- c(min(c(0, plot_df$spearman_r), na.rm = TRUE),
+                     max(c(0, plot_df$spearman_r), na.rm = TRUE))
+    fill_name <- "Spearman\nrho"
+    size_limits <- c(0, 100)
+    size_breaks <- c(10, 25, 50, 75)
+    size_name <- "Co-positive\nsamples (%)"
+  } else {
+    stopifnot(!anyDuplicated(edge_df$edge_id))
+    plot_df <- plot_df %>%
+      left_join(select(edge_df, edge_id, dot_size, dot_fill), by = "edge_id")
+    fill_limits <- comparison_scale$fill_limits
+    fill_name <- comparison_scale$fill_name
+    size_limits <- comparison_scale$size_limits
+    size_breaks <- comparison_scale$size_breaks
+    size_name <- comparison_scale$size_name
+  }
+  if (is.null(title_text)) title_text <- paste0(focal, " interaction map")
+  ####################
 
   base_plot <- ggplot() +
     geom_tile(
@@ -1351,20 +1392,20 @@ plot_focal_interaction_dotmap <- function(edge_df, node_df, focal, include_withi
       plot.margin = margin(16, 26, 42, 18)
     ) +
     labs(
-      title = paste0(focal, " interaction map")
+      title = title_text
     )
 
   if (nrow(plot_df) == 0) {
     return(
       base_plot +
-        annotate("text", x = 1, y = 1, label = "No significant positive interactions", size = 4, color = "grey45")
+        annotate("text", x = 1, y = 1, label = "No retained interactions", size = 4, color = "grey45")
     )
   }
 
   dot_plot <- base_plot +
     geom_point(
       data = plot_df,
-      aes(x = partner_label, y = focal_label, size = co_positive_sample_pct, fill = spearman_r),
+      aes(x = partner_label, y = focal_label, size = dot_size, fill = dot_fill),
       shape = 21,
       color = "grey45",
       stroke = 0.28,
@@ -1375,18 +1416,15 @@ plot_focal_interaction_dotmap <- function(edge_df, node_df, focal, include_withi
       mid = "#F8F4ED",
       high = "#B7212E",
       midpoint = 0,
-      limits = c(
-        if(nrow(plot_df) > 0) min(c(0, plot_df$spearman_r), na.rm = TRUE) else -1,
-        if(nrow(plot_df) > 0) max(c(0, plot_df$spearman_r), na.rm = TRUE) else 1
-      ),
+      limits = fill_limits,
       oob = squish,
-      name = "Spearman\nrho"
+      name = fill_name
     ) +
     scale_size_continuous(
       range = c(1.3, 8.6),
-      limits = c(0, 100),
-      breaks = c(10, 25, 50, 75),
-      name = "Co-positive\nsamples (%)"
+      limits = size_limits,
+      breaks = size_breaks,
+      name = size_name
     ) +
     guides(
       fill = guide_colorbar(barheight = unit(55, "pt"), order = 1),
@@ -1401,7 +1439,7 @@ plot_focal_interaction_dotmap <- function(edge_df, node_df, focal, include_withi
   dot_plot +
     geom_point(
       data = lr_plot_df,
-      aes(x = partner_label, y = focal_label, size = co_positive_sample_pct, fill = spearman_r),
+      aes(x = partner_label, y = focal_label, size = dot_size, fill = dot_fill),
       shape = 21,
       color = "black",
       stroke = 0.95,
@@ -1426,6 +1464,38 @@ write_focal_interaction_dotmap <- function(edge_df, node_df, out_path, include_w
     print(plot_focal_interaction_dotmap(edge_df, node_df, focal, include_within = include_within))
   }
 }
+
+####################
+# Plot-only entry used by the maintained spatial comparison producer. Exit
+# before loading the atlas or any analytical cache. All replot inputs are live.
+####################
+dotmap_render_spec <- Sys.getenv("SCREF_DOTMAP_RENDER_SPEC", "")
+if (nzchar(dotmap_render_spec)) {
+  if (!nzchar(Sys.getenv("PBS_JOBID"))) stop("Submit dotmap rendering through PBS")
+  render_spec <- jsonlite::fromJSON(dotmap_render_spec)
+  render_nodes <- read.csv(render_spec$nodes, stringsAsFactors = FALSE, check.names = FALSE)
+  render_edges <- read.csv(render_spec$edges, stringsAsFactors = FALSE, check.names = FALSE)
+  stopifnot(identical(sort(unique(render_nodes$mode_id)), sort(names(render_spec$titles))))
+  comparison_scale <- list(
+    fill_limits = c(-render_spec$effect_limit, render_spec$effect_limit),
+    fill_name = "Mean log2\nenrichment",
+    size_limits = c(0, 12), size_breaks = c(0, 3, 6, 9, 12),
+    size_name = if (render_spec$cross_platform) "-log10 FDR\n(maximum)" else "-log10 FDR"
+  )
+  pdf(render_spec$output, width = 22, height = 10.5, onefile = TRUE)
+  for (render_mode in sort(names(render_spec$titles))) {
+    nodes <- render_nodes[render_nodes$mode_id == render_mode, , drop = FALSE]
+    edges <- render_edges[render_edges$mode_id == render_mode, , drop = FALSE]
+    celltype_display_order <- unique(nodes$celltype_display[order(nodes$celltype_order)])
+    print(plot_focal_interaction_dotmap(
+      edges, nodes, "cancer", include_within = FALSE,
+      comparison_scale = comparison_scale, title_text = render_spec$titles[[render_mode]]
+    ))
+  }
+  dev.off()
+  quit(save = "no", status = 0)
+}
+####################
 
 add_co_positive_support <- function(edge_df, compartment_data) {
   if (nrow(edge_df) == 0) {
@@ -4310,4 +4380,14 @@ write.csv(
   bind_rows(mode_summaries, whole_celltype_full_summaries),
   file.path(summary_dir, "Auto_mp_cross_celltype_correlations_summary.csv"), row.names = FALSE
 )
+####################
+
+####################
+# Regenerate the shared comparison layout from the current scientific tables.
+# This renderer uses the existing bidcell_temp environment and stops on failure.
+comparison_python <- '/rds/general/user/sg3723/home/miniforge3/envs/bidcell_temp/bin/python'
+comparison_script <- '/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/spatial/spatial_platform_neighbourhoods.py'
+if (!file.exists(comparison_python) || !file.exists(comparison_script)) stop('Missing shared comparison renderer')
+comparison_status <- system2(comparison_python, c(comparison_script, '--stage', 'atlas-figures'))
+if (comparison_status != 0L) stop('Shared comparison figures failed')
 ####################

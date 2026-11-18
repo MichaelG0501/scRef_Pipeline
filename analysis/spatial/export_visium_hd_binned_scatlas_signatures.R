@@ -4,7 +4,10 @@
 #   Status: active
 #   Script: analysis/spatial/export_visium_hd_binned_scatlas_signatures.R
 #   Description: Export current centred-refined scATLAS MP signatures and
-#     Approach-B state groups for malignant Visium HD bin mapping.
+#     Approach-B state groups for malignant Visium HD mapping in both
+#     representations. Current labels come from analysis/shared/scRef_config.R.
+#     First argument selects the exact live output directory; the segmented
+#     launcher uses state_mapping_segmented/intermediate/signatures/.
 #   Methodology:
 #     analysis/methodology/spatial/visium_hd_binned_state_mapping_methodology.md
 #   Inputs:
@@ -43,34 +46,18 @@ if (!file.exists(genes_path)) stop("Missing centred-refined MP genes: ", genes_p
 if (!file.exists(state_definition_path)) stop("Missing centred-refined state definition: ", state_definition_path)
 mp_genes <- readRDS(genes_path)
 
-cc_mps <- c("MP1", "MP5", "MP13+")
+####################
+# Use only the current central state/description contract for both spatial
+# representations. No legacy state labels or descriptions are exported.
+####################
+source(file.path(wd, "analysis/shared/scRef_config.R"))
+cc_mps <- SCREF_CC_MPS
+excluded_mps <- c("MP2x", "MP11c", "MP18a")
+state_groups <- SCREF_STATE_GROUPS
+mp_descriptions <- SCREF_MP_DESCRIPTIONS
+if (any(names(mp_genes) %in% excluded_mps)) stop("Excluded MP in current refined genes")
 excluded_mps <- character(0)
-state_groups <- list(
-  "Classic proliferation" = c("MP2+"),
-  "Basal to intestinal metaplasia" = c("MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"),
-  "SMG to intestinal metaplasia" = c("MP8+", "MP8b", "MP16", "MP18b", "MP17"),
-  "Stress adaptive" = c("MP12"),
-  "Cancer-cell immune mimicry" = c("MP15")
-)
-mp_descriptions <- c(
-  "MP1" = "G2/M cell cycle",
-  "MP5" = "G1/S cell cycle",
-  "MP13+" = "replication-stress-associated cell cycling",
-  "MP2+" = "MYC driven biosynthesis",
-  "MP14" = "Squamoid/basal transition",
-  "MP3+" = "Basal-columnar invasive epithelium",
-  "MP6+" = "Stress-reactive columnar epithelium",
-  "MP11+" = "Epithelial antiviral interferon response",
-  "MP9+" = "Metabolic columnar epithelium",
-  "MP10+" = "Intestinal metaplasia",
-  "MP8+" = "Glandular intestinal metaplasia",
-  "MP8b" = "Metabolic intestinal metaplasia",
-  "MP16" = "Mucous-secretory glandular epithelium",
-  "MP18b" = "Mucous-secretory differentiation",
-  "MP17" = "Immune-interactive glandular progenitor",
-  "MP12" = "Hypoxic inflammatory adaptive plasticity",
-  "MP15" = "T/NK-like cancer-cell immune mimicry"
-)
+####################
 
 required_mps <- unique(c(cc_mps, unlist(state_groups, use.names = FALSE), excluded_mps))
 missing_mps <- setdiff(required_mps, names(mp_genes))

@@ -1,6 +1,17 @@
 ####################
 # Visium HD Binned Post-annotation Filtering and Malignancy
 
+## Segmented representation
+
+`visium_hd_binned_malignancy.R` also supports explicit
+`SCREF_HD_REPRESENTATION=segmented`. The existing binned default remains
+unchanged. Segmented annotation inclusion, normal references and exact live
+outputs are defined in the [interaction representation contract](visium_hd_spatial_cancer_tme_interactions_methodology.md#current-16-um-bin-production-contract).
+Segmented analysis reads current annotations directly rather than running the
+binned postfilter. All segmented products and InferCNA caches live under
+`ref_outs/visium_hd_outs/segmented_malignancy/`, with `_segmented_` filenames.
+No legacy segmented annotation, CNA cache or state assignment is reused.
+
 ## Scope
 
 This workflow operates only on the final 16 um binned annotations for `SUR1231`,

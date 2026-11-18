@@ -1,5 +1,17 @@
 # Visium HD Binned Malignant scATLAS State Mapping
 
+## Segmented representation
+
+`--representation segmented` uses current segmented malignancy and counts,
+writing `ref_outs/visium_hd_outs/state_mapping_segmented/`. The existing binned
+default remains separately available. The exporter now sources current MP
+descriptions and state groups from `analysis/shared/scRef_config.R`; retired
+names are not exported. The exact signature/input/output contract and run
+order are documented in the [interaction representation methodology](visium_hd_spatial_cancer_tme_interactions_methodology.md#current-16-um-bin-production-contract).
+The matching launcher is `job_scripts/spatial/visium_hd_binned_state_mapping.sh`
+(4 CPUs, 32 GB, 4 h; dmtcp exporter followed by existing jupyter Python). Each
+representation reads its one exact H5 matrix path and fails if unavailable.
+
 ## Scope
 
 This workflow maps the current centred-refined scATLAS metaprograms and

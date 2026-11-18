@@ -1,5 +1,44 @@
 # Visium HD cancer–TME spatial association analysis
 
+## Current 16-um-bin production contract
+
+The user selected the previous verified 16 µm bin analysis as the current HD
+representation. Its saved section tests, pooled tables, figures and reports
+are restored from `spatial_interactions/reference/binned/` by copy. No previous
+P values, null draws or significance thresholds are replaced. The restoration
+checks the section-test SHA-256. Current HD/Xenium/meta evidence is regenerated
+from these original section tests and the unchanged Xenium tests.
+
+The maintained R producer again reads binned malignancy under `malignancy/`,
+binned states under `state_mapping/`, and the exact `square_016um` H5 matrices.
+It parses native 16 µm grid barcodes and links offsets up to one, two or three
+grid steps, excluding the same position. It does not use segmented expression
+or centroid geometry. All remaining scoring, eligibility and permutation
+settings below describe the current binned estimand. The five-page comparison
+retains the user-requested equal specimen weighting and explicit independence
+assumption; original donor-aware tables remain separately labelled.
+
+`SCREF_FORCE_REBUILD=TRUE,SCREF_MEMBERSHIPS_ONLY=TRUE` reconstructs binned UCell
+and membership caches without repeating spatial permutations. It verifies the
+original input fingerprint and writes
+`reports/Auto_binned_cache_restoration_validation.csv`. The normal rebuild and
+replot entries remain available through the matching existing PBS wrapper.
+
+Segmented HD results, caches and frozen producer source are preserved by copy
+under `spatial_interactions/reference/segmented/`. Its upstream segmented
+malignancy/state outputs remain live. They do not supply current HD inference.
+Cross-platform and directional segmented result references are retained under
+their respective `reference/segmented_hd/` tiers. No files are deleted or moved.
+Restoration provenance is recorded in `logs/Auto_binned_restoration.json`.
+
+The four ranked interaction workbooks are maintained by
+`spatial_platform_neighbourhoods.py` under `spatial_cross_platform/tables/`;
+see the shared methodology for dataset-specific significance and sheet layout.
+
+Bins can contain multiple cells or mixed RNA. The existing permissive
+postfilter does not establish physical singlets; adjacency is bin-level
+neighbourhood enrichment, not validated cell contact or molecular signalling.
+
 ## Purpose and scope
 
 This terminal workflow asks whether cancer–TME interactions identified by
@@ -331,3 +370,14 @@ The wrapper uses eight CPUs, 160 GB RAM, a 24-hour walltime, `#PBS -koed`, and
 the required `dmtcp` environment. PBS stdout/stderr go directly to the project
 root. The job must be monitored to terminal PBS
 status and the expected persistent outputs must be checked after completion.
+
+## Shared comparison report
+
+Pages 2–5 now call the original `plot_focal_interaction_dotmap()` in the
+maintained scATLAS R producer, preserving its exact palette, physical size
+range, fonts, margins, grid and facet layout. Spatial effect and FDR replace
+the original correlation and co-positive measurements; no statistical values
+are relabelled as different quantities. See the shared methodology for the
+live plot spec, source tables and current PDF assembly components.
+
+The requested `figures/Auto_spatial_interaction_four_mode_significant_comparison.pdf` is regenerated from specimen-pooled comparison tables, treating all three sections separately with equal weights under the explicitly requested specimen-independence assumption. The primary donor-aware tables produced earlier in this R workflow remain separately available. It has a common four-panel overview followed by four tiled detail pages, matching the scATLAS detail-page dimensions and shared cell-type order. The HD producer calls the maintained Python renderer after scientific exports. Selection is primary-window specimen-pooled BH FDR <0.05 with at least two eligible specimens. This does not establish biological independence of A1/D1; their shared patient identity is retained. Rendering methods, other platform criteria and exact execution are documented in [the shared figure methodology](xenium_visiumhd_meta_methodology.md#shared-five-page-comparison-reports).

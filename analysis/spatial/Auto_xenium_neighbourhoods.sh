@@ -19,6 +19,8 @@
 #   current meta tables only. No silent cache or analytical fallback.
 #   SCREF_FIGURE_SCOPE=cross-platform-final restricts replotting to the final
 #   cross-platform PDF and its index; all is the default.
+#   SCREF_FIGURE_SCOPE=final-comparisons updates the two final bubble PDFs,
+#   figure-source/summary tables and indexes without supporting figures.
 ####################
 set -eo pipefail
 echo "Start: $(date '+%Y-%m-%d %H:%M:%S')"

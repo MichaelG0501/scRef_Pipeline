@@ -1,11 +1,14 @@
 #!/usr/bin/env Rscript
 ####################
 # Analysis registry:
-#   Status: terminal
+# Shared comparison renderer: analysis/spatial/spatial_platform_neighbourhoods.py
+#   (bidcell_temp Python); current four-mode comparison and source/summary tables
+#   are regenerated from saved results after this producer completes.
+#   Status: active
 #   Script: analysis/spatial/visium_hd_spatial_cancer_tme_interactions.R
-#   Description: empirical local-neighbourhood validation of scRNA-predicted
-#     current malignant MP/state–TME interactions in filtered Visium HD 16 um
-#     bins from SUR1231, FFPEA1, and FFPED1 (D1).
+#   Description: current 16-um binned malignant MP/state-TME neighbourhood
+#     enrichment in SUR1231, FFPEA1 and FFPED1. The user restored the verified
+#     binned analysis; segmented outputs are retained only as reference data.
 #   Methodology:
 #     analysis/methodology/spatial/visium_hd_spatial_cancer_tme_interactions_methodology.md
 #   Inputs:
@@ -30,6 +33,7 @@
 #     tables/Auto_spatial_sample_design.csv, Auto_scatlas_figure_source.csv, Auto_malignant_mp_label_key.csv.
 #     figures/Auto_final/{01_scatlas_spatial_evidence,02_supported_tissue_context}.pdf;
 #     figures/Auto_supporting/Auto_primary_all_pairs.pdf;
+#     figures/Auto_spatial_interaction_four_mode_significant_comparison.pdf (five pages);
 #     figures/Auto_diagnostics/Auto_window_sensitivity.pdf.
 #     reports/CURRENT_RESULTS.md;
 #     logs/Auto_membership_input_provenance.csv;
@@ -46,6 +50,13 @@
 #   Run: /opt/pbs/bin/qsub -v SCREF_FORCE_REBUILD=TRUE job_scripts/spatial/visium_hd_spatial_cancer_tme_interactions.sh
 #   Direct run: Rscript analysis/spatial/visium_hd_spatial_cancer_tme_interactions.R
 #   Resources/environment: eight CPUs, 160 GB RAM, 24 hours; conda dmtcp.
+#   Cache-only reconstruction: SCREF_FORCE_REBUILD=TRUE,
+#     SCREF_MEMBERSHIPS_ONLY=TRUE rebuilds original bin memberships/UCell scores,
+#     verifies the original input fingerprint, and exits without permutations.
+#     reports/Auto_binned_cache_restoration_validation.csv records the check.
+#   Units: native 16-um bins; grid row/column identities come from exact Space
+#     Ranger bin barcodes. Same-position edges are excluded. Segmented sources
+#     and results are preserved in reference/segmented/ and are not current.
 ####################
 
 ####################
@@ -84,6 +95,12 @@ mp_grouping_path <- SCREF_MP_GROUPING_CSV
 cache_version <- "spatial_ucell_memberships_2026_10_22"
 force_rebuild <- tolower(Sys.getenv("SCREF_FORCE_REBUILD", "FALSE")) %in% c("true", "t", "1", "yes")
 replot_only <- tolower(Sys.getenv("SCREF_REPLOT_ONLY", "FALSE")) %in% c("true", "t", "1", "yes")
+####################
+# Explicit cache reconstruction preserves the saved section permutations.
+####################
+memberships_only <- identical(Sys.getenv("SCREF_MEMBERSHIPS_ONLY", "FALSE"), "TRUE")
+if (memberships_only && (!force_rebuild || replot_only)) stop("Membership reconstruction requires rebuild without replot")
+####################
 n_permutations <- as.integer(Sys.getenv("SCREF_SPATIAL_PERMUTATIONS", "4999"))
 n_cores <- max(1L, as.integer(Sys.getenv(
   "SCREF_NCORES",
@@ -219,6 +236,9 @@ as_bool <- function(x) {
   tolower(as.character(x)) %in% c("true", "t", "1", "yes")
 }
 
+####################
+# The current analysis uses native Space Ranger 16-um grid identities.
+####################
 parse_grid_coordinates <- function(barcodes) {
   matched <- regexec("^s_016um_([0-9]+)_([0-9]+)-[0-9]+$", as.character(barcodes))
   pieces <- regmatches(as.character(barcodes), matched)
@@ -228,6 +248,7 @@ parse_grid_coordinates <- function(barcodes) {
   col[valid] <- as.integer(vapply(pieces[valid], `[[`, character(1), 3L))
   data.table(grid_row = row, grid_col = col)
 }
+####################
 
 read_10x_counts <- function(input_dir) {
   path <- file.path(input_dir, "filtered_feature_bc_matrix.h5")
@@ -348,7 +369,7 @@ make_sparse_membership <- function(labels, levels) {
 
 make_adjacency <- function(source_meta, target_meta, ring) {
   target_keys <- paste(target_meta$grid_row, target_meta$grid_col, sep = ":")
-  if (anyDuplicated(target_keys)) stop("Duplicate target 16 um grid positions")
+  if (anyDuplicated(target_keys)) stop("Duplicate target 16-um grid positions")
   offsets <- CJ(dr = seq.int(-ring, ring), dc = seq.int(-ring, ring))
   offsets <- offsets[!(dr == 0L & dc == 0L)]
   edge_i <- edge_j <- vector("list", nrow(offsets))
@@ -359,10 +380,8 @@ make_adjacency <- function(source_meta, target_meta, ring) {
     edge_i[[idx]] <- keep
     edge_j[[idx]] <- matched[keep]
   }
-  i <- unlist(edge_i, use.names = FALSE)
-  j <- unlist(edge_j, use.names = FALSE)
   Matrix::sparseMatrix(
-    i = i, j = j, x = 1,
+    i = unlist(edge_i, use.names = FALSE), j = unlist(edge_j, use.names = FALSE), x = 1,
     dims = c(nrow(source_meta), nrow(target_meta)),
     dimnames = list(source_meta$barcode, target_meta$barcode)
   )
@@ -405,7 +424,7 @@ prepare_sample_membership <- function(sample_name, manifest, mapped_states, tme_
   source_grid <- parse_grid_coordinates(source_meta$barcode)
   source_meta[, `:=`(grid_row = source_grid$grid_row, grid_col = source_grid$grid_col)]
   if (any(!is.finite(source_meta$grid_row)) || any(!is.finite(source_meta$grid_col))) {
-    stop("Mapped source contains malformed 16-um coordinates: ", sample_name)
+    stop("Mapped source contains invalid 16-um grid identities: ", sample_name)
   }
   if (anyDuplicated(source_meta$barcode) || !all(source_meta$barcode %in% cell_table$barcode)) {
     stop("Mapped malignant identities must uniquely match retained annotation")
@@ -578,6 +597,7 @@ prepare_sample_membership <- function(sample_name, manifest, mapped_states, tme_
   tme_scores <- rbindlist(score_rows, fill = TRUE)
   membership <- list(
     cache_version = cache_version, sample = sample_name,
+    spatial_unit = "16um_bin", coordinate_units = "um",
     source_audit = rbindlist(list(
       data.table(source_kind = "cancer_mp", source_feature = names(mp_counts),
         n_positive_bins = as.integer(mp_counts), eligible = mp_counts >= min_source_bins),
@@ -651,7 +671,13 @@ if (replot_only) {
   if (need_build) {
     tme_reference <- load_tme_gene_sets()
     cancer_gene_sets <- load_cancer_gene_sets()
-    saveRDS(tme_reference, tme_gene_set_path)
+    if (file.exists(tme_gene_set_path)) {
+      existing_reference <- readRDS(tme_gene_set_path)
+      if (!identical(existing_reference$gene_sets, tme_reference$gene_sets) ||
+          !identical(as.data.frame(existing_reference$feature_table), as.data.frame(tme_reference$feature_table))) {
+        stop("TME signature contract changed; explicitly rebuild both platforms before replacing canonical signatures")
+      }
+    } else saveRDS(tme_reference, tme_gene_set_path)
     prepared <- lapply(
       samples, prepare_sample_membership,
       manifest = manifest, mapped_states = mapped_states,
@@ -684,6 +710,20 @@ target_audit <- rbindlist(lapply(memberships, function(x) {
 }), fill = TRUE)
 fwrite(source_audit, file.path(output_tiers[["tables"]], "Auto_spatial_interaction_source_feature_audit.csv"))
 fwrite(target_audit, file.path(output_tiers[["tables"]], "Auto_spatial_interaction_target_feature_audit.csv"))
+####################
+if (memberships_only) {
+  restored_parameters <- fread(file.path(output_tiers[["tables"]], "Auto_spatial_interaction_parameters.csv"))
+  expected_fingerprint <- restored_parameters[parameter == "input_fingerprint", value]
+  if (length(expected_fingerprint) != 1L || input_fingerprint != expected_fingerprint) {
+    stop("Reconstructed binned inputs differ from the saved 16-um analysis")
+  }
+  fwrite(data.table(sample = samples, cache_version = cache_version,
+                    input_fingerprint = input_fingerprint, spatial_unit = "16um_bin", passed = TRUE),
+         file.path(output_tiers[["reports"]], "Auto_binned_cache_restoration_validation.csv"))
+  message("Binned memberships and scores reconstructed; input fingerprint matches saved section tests")
+  quit(save = "no", status = 0)
+}
+####################
 ####################
 
 ####################
@@ -730,7 +770,7 @@ make_spatial_permutation_groups <- function(target_meta, target_kind) {
     mean(rep(lengths(groups), lengths(groups)) > 1L)
   }, numeric(1))
   if (any(movable_fraction < 0.5)) {
-    stop("Fewer than half of target bins are movable in a local permutation tiling")
+    stop("Fewer than half of target cells are movable in a local permutation tiling")
   }
   group_sets
 }
@@ -828,6 +868,7 @@ run_permutation_test <- function(membership, ring, target_kind) {
   matrix_lookup <- cbind(grid$source_index, grid$target_index)
   grid[, `:=`(
     sample = membership$sample, ring = ring, target_kind = target_kind,
+    spatial_unit = "16um_bin", coordinate_units = "um",
     observed_contacts = as.numeric(observed[matrix_lookup]),
     null_mean_contacts = as.numeric(null_mean[matrix_lookup]),
     null_sd_contacts = as.numeric(null_sd[matrix_lookup]),
@@ -1282,8 +1323,8 @@ for (mode in mode_table$mode_id) {
 }
 dev.off()
 
-# Maps are tissue context, not evidence of signalling. Use the 16-um lattice for
-# physical axes and a scale bar; do not invent a high-resolution contact image.
+# Maps show native bin positions in physical units. Bin proximity does not
+# establish membrane contact or molecular signalling.
 make_spatial_plot <- function(candidate) {
   points <- rbindlist(lapply(c('SUR1231', 'FFPED1', 'FFPEA1'), function(sample_name) {
     membership <- memberships[[sample_name]]
@@ -1309,7 +1350,7 @@ make_spatial_plot <- function(candidate) {
   bar_y <- max(points$y_um) + 160
   bars <- unique(points[, .(section)])[, `:=`(x_um = 0, y_um = bar_y)]
   ggplot(points, aes(x_um, y_um)) +
-    geom_point(aes(colour = population), size = 0.23, shape = 15) +
+    geom_point(aes(colour = population), size = 0.23, shape = 16) +
     geom_segment(data = bars, aes(xend = 500, yend = y_um), linewidth = 0.6) +
     geom_text(data = bars, aes(x = 250, y = y_um + 240), label = '500 um', size = 7 / ggplot2::.pt) +
     scale_colour_manual(values = c('Other retained bins' = '#E5E5E5', 'TME target' = '#0072B2',
@@ -1378,7 +1419,7 @@ parameters <- data.table(
     "spatial_permutation_block_bins", "spatial_permutation_block_um", "spatial_permutation_origins",
     "sample_fdr_cutoff", "pooled_fdr_cutoff", "sample_p_method", "pooled_method",
     "candidate_direction", "malignant_mp_plot_order", "state_plot_order",
-    "whole_celltype_null", "tme_mp_null", "state_crosswalk"
+    "whole_celltype_null", "tme_mp_null", "state_crosswalk", "primary_window_um", "coordinate_units", "cell_inclusion", "graph_definition"
   ),
   value = c(
     permutation_method, as.character(n_permutations * nrow(spatial_block_offsets)),
@@ -1394,7 +1435,9 @@ parameters <- data.table(
     "scRNA Spearman rho", paste(cancer_mp_order, collapse = ";"), paste(state_order, collapse = ";"),
     "permute whole-celltype labels within shifted local tiles and sample",
     "permute joint MP-positive matrix within parent celltype, shifted local tile, and sample",
-    paste(paste(names(state_crosswalk), state_crosswalk, sep = "->"), collapse = ";")
+    paste(paste(names(state_crosswalk), state_crosswalk, sep = "->"), collapse = ";"),
+    "16", "um", "original binned postfilter; RCTD classes retained as metadata",
+    "16-um lattice; max(abs(delta_row),abs(delta_col)) <= ring; exclude same grid position"
   )
 )
 fwrite(parameters, file.path(output_tiers[["tables"]], "Auto_spatial_interaction_parameters.csv"))
@@ -1435,7 +1478,7 @@ result_lines <- c(
     sprintf('| %s | %d | %d | %d |', row$mode_label, row$n_pooled_pair_tests,
       row$n_pooled_fdr_direction_concordant, row$n_scatlas_supported_candidates)
   }, character(1)), '',
-  sprintf('The primary test counts adjacency edges within one 16-um grid step, including diagonal neighbours. Each of four shifted 320-um tile origins has %s permutations. The section test takes the largest origin-specific two-sided p value and requires matching nonzero effect directions across origins. TME-programme permutations also condition on the parent cell type. These nulls preserve local composition, but not arbitrary fine-scale spatial autocorrelation.', format(n_permutations, big.mark = ',')), '',
+  sprintf('The primary test counts proximity edges between native 16-um bins within one grid step, including diagonal neighbours. Each of four shifted 320-um tile origins has %s permutations. The section test takes the largest origin-specific two-sided p value and requires matching nonzero effect directions across origins. TME-programme permutations also condition on the parent cell type. These nulls preserve local composition, but not arbitrary fine-scale spatial autocorrelation.', format(n_permutations, big.mark = ',')), '',
   'Both A1 and D1 contribute to their shared donor. Concordant section evidence is combined by a Bonferroni minimum-p rule; discordant paired directions contribute zero signed evidence. Equal-donor signed Stouffer pooling then combines the two independent donors. Plotted donor means are descriptive effects without estimated confidence intervals.', '',
   'Candidate support uses a separate BH family of unique scATLAS-selected spatial hypotheses and requires matching directions in both donors. Whole T-cell evidence cannot resolve CD4 from CD8. The source table retains unavailable candidates and the upstream correlation direction.', '',
   'The two-donor design limits generalisation. The single pre/post pair cannot establish a treatment effect. Bin proximity does not establish membrane contact, ligand-receptor signalling or causation.', '',
@@ -1459,4 +1502,14 @@ run_log <- c(
 )
 writeLines(run_log, file.path(output_tiers[["logs"]], "Auto_visium_hd_spatial_cancer_tme_interactions_run_summary.txt"))
 writeLines(capture.output(sessionInfo()), file.path(output_tiers[["logs"]], "Auto_visium_hd_spatial_cancer_tme_interactions_session_info.txt"))
+####################
+
+####################
+# Regenerate the shared comparison layout from the current scientific tables.
+# This renderer uses the existing bidcell_temp environment and stops on failure.
+comparison_python <- '/rds/general/user/sg3723/home/miniforge3/envs/bidcell_temp/bin/python'
+comparison_script <- '/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline/analysis/spatial/spatial_platform_neighbourhoods.py'
+if (!file.exists(comparison_python) || !file.exists(comparison_script)) stop('Missing shared comparison renderer')
+comparison_status <- system2(comparison_python, c(comparison_script, '--stage', 'hd-figures'))
+if (comparison_status != 0L) stop('Shared comparison figures failed')
 ####################

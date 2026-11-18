@@ -4,11 +4,18 @@
 #   Status: active
 #   Script: analysis/spatial/visium_hd_binned_state_mapping.py
 #   Description: Map current centred-refined scATLAS MPs and Approach-B states
-#     onto level-1/level-2 malignant epithelial Visium HD 16 um bins only.
+#     onto level-1/level-2 malignant epithelial observations. Explicit
+#     --representation segmented reads segmented_malignancy and exact segmented
+#     H5 matrices, writing state_mapping_segmented/{tables,figures,logs}/ and
+#     intermediate/signatures/ with _segmented_ filenames. Binned remains the
+#     existing default. No legacy segmented assignments or fallback inputs.
+#   Segmented PBS: job_scripts/spatial/visium_hd_binned_state_mapping.sh;
+#     4 CPUs, 32 GB, 4 h; dmtcp signature export then existing jupyter Python.
 #   Methodology:
 #     analysis/methodology/spatial/visium_hd_binned_state_mapping_methodology.md
 #   Inputs:
-#     analysis/spatial/visium_hd_samples.tsv
+#     Exact inline sample/representation paths below; --manifest may supply
+#     an explicit tab-separated table with sample and representation inputs.
 #     ref_outs/visium_hd_outs/malignancy/tables/
 #       Auto_<sample>_binned_malignancy.csv.gz
 #     ref_outs/visium_hd_outs/state_mapping/intermediate/signatures/
@@ -41,27 +48,28 @@ import scipy.sparse as sp
 
 
 WD = Path("/rds/general/project/tumourheterogeneity1/live/scRef_Pipeline")
+representation = 'binned'
 SAMPLES = ("SUR1231", "FFPEA1", "FFPED1")
 MALIGNANT_LEVELS = ("malignant_level_1", "malignant_level_2")
 CC_MPS = ("MP1", "MP5", "MP13+")
 EXCLUDED_MPS: tuple[str, ...] = ()
 STATE_GROUPS = {
     "Classic proliferation": ("MP2+",),
-    "Basal to intestinal metaplasia": (
+    "Squamous-to-intestinal": (
         "MP14", "MP3+", "MP6+", "MP11+", "MP9+", "MP10+"
     ),
-    "SMG to intestinal metaplasia": (
-        "MP8+", "MP8b", "MP16", "MP18b", "MP17"
+    "Glandular-to-intestinal": (
+        "MP18b", "MP16", "MP17", "MP8b", "MP8+"
     ),
-    "Stress adaptive": ("MP12",),
+    "Stress-adaptive": ("MP12",),
     "Cancer-cell immune mimicry": ("MP15",),
 }
 STATE_ORDER = tuple(STATE_GROUPS) + ("Unresolved", "Hybrid")
 STATE_COLOURS = {
     "Classic proliferation": "#E41A1C",
-    "Basal to intestinal metaplasia": "#4DAF4A",
-    "SMG to intestinal metaplasia": "#FF7F00",
-    "Stress adaptive": "#984EA3",
+    "Squamous-to-intestinal": "#4DAF4A",
+    "Glandular-to-intestinal": "#FF7F00",
+    "Stress-adaptive": "#984EA3",
     "Cancer-cell immune mimicry": "#377EB8",
     "Unresolved": "#9E9E9E",
     "Hybrid": "#111111",
@@ -78,24 +86,22 @@ MP_COLOURS = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--representation', choices=['binned', 'segmented'], default='binned')
     parser.add_argument(
         "--manifest",
         default="",
     )
     parser.add_argument(
         "--malignancy-dir",
-        default=str(WD / "ref_outs" / "visium_hd_outs" / "malignancy"),
+        default=None,
     )
     parser.add_argument(
         "--signature-dir",
-        default=str(
-            WD / "ref_outs" / "visium_hd_outs" / "state_mapping"
-            / "intermediate" / "signatures"
-        ),
+        default=None,
     )
     parser.add_argument(
         "--output-dir",
-        default=str(WD / "ref_outs" / "visium_hd_outs" / "state_mapping"),
+        default=None,
     )
     parser.add_argument("--top-n", type=int, default=100)
     parser.add_argument("--threshold", type=float, default=0.5)
@@ -112,19 +118,13 @@ def bool_values(values):
 
 def read_counts(input_dir):
     input_dir = Path(input_dir)
-    for name in ("filtered_feature_bc_matrix.h5", "filtered_feature_cell_matrix.h5"):
-        path = input_dir / name
-        if path.exists():
-            adata = sc.read_10x_h5(str(path), gex_only=True)
-            adata.var_names_make_unique()
-            return adata
-    for name in ("filtered_feature_bc_matrix", "filtered_feature_cell_matrix"):
-        path = input_dir / name
-        if path.exists():
-            adata = sc.read_10x_mtx(str(path), gex_only=True)
-            adata.var_names_make_unique()
-            return adata
-    raise FileNotFoundError(f"No filtered expression matrix under {input_dir}")
+    path = input_dir / ('filtered_feature_cell_matrix.h5' if representation == 'segmented' else
+                        'filtered_feature_bc_matrix.h5')
+    if not path.exists():
+        raise FileNotFoundError(path)
+    adata = sc.read_10x_h5(str(path), gex_only=True)
+    adata.var_names_make_unique()
+    return adata
 
 
 def normalise_log1p(matrix):
@@ -176,13 +176,17 @@ def load_malignant_inputs(manifest_path, malignancy_dir):
             '/rds/general/project/spatialtranscriptomics/live/Visium_HD/FFPE_batch/spaceranger_count/D1/outs/segmented_outputs'
         ]
     }).set_index("sample")
+    if manifest_path:
+        manifest = pd.read_csv(manifest_path, sep='\t').set_index('sample')
+        if not manifest.index.is_unique or representation + '_input' not in manifest:
+            raise ValueError('Invalid explicit representation manifest')
     loaded = []
     for sample in SAMPLES:
         if sample not in manifest.index:
             raise ValueError(f"Manifest lacks {sample}")
         table_path = (
             Path(malignancy_dir) / "tables"
-            / f"Auto_{sample}_binned_malignancy.csv.gz"
+            / f"Auto_{sample}_{representation}_malignancy.csv.gz"
         )
         columns = [
             "barcode", "sample", "is_epithelial_target", "Auto_malignancy",
@@ -203,7 +207,7 @@ def load_malignant_inputs(manifest_path, malignancy_dir):
         if table.index.has_duplicates:
             raise ValueError(f"Duplicate malignant barcodes for {sample}")
 
-        adata = read_counts(manifest.loc[sample, "binned_input"])
+        adata = read_counts(manifest.loc[sample, representation + "_input"])
         missing = table.index.difference(adata.obs_names)
         if len(missing):
             raise ValueError(f"{sample}: {len(missing)} malignant bins absent from count matrix")
@@ -357,25 +361,25 @@ def write_outputs_and_plots(
     log_dir = output_dir / "logs"
     for directory in (table_dir, figure_dir, log_dir):
         directory.mkdir(parents=True, exist_ok=True)
-    result_path = table_dir / "Auto_visiumhd_binned_malignant_state_annotations.csv.gz"
+    result_path = table_dir / f"Auto_visiumhd_{representation}_malignant_state_annotations.csv.gz"
     results.to_csv(result_path, index=False, compression="gzip")
     summary = state_summary(results)
     summary.to_csv(
-        table_dir / "Auto_visiumhd_binned_malignant_state_abundance.csv",
+        table_dir / f"Auto_visiumhd_{representation}_malignant_state_abundance.csv",
         index=False,
     )
     summary_dir = WD / "updates" / "new_updates" / "summaries"
     summary_dir.mkdir(parents=True, exist_ok=True)
-    summary.to_csv(summary_dir / "visium_hd_binned_malignant_state_abundance.csv", index=False)
+    summary.to_csv(summary_dir / f"visium_hd_{representation}_malignant_state_abundance.csv", index=False)
     pd.DataFrame(parameters.items(), columns=["parameter", "value"]).to_csv(
-        table_dir / "Auto_visiumhd_binned_state_mapping_parameters.csv",
+        table_dir / f"Auto_visiumhd_{representation}_state_mapping_parameters.csv",
         index=False,
     )
     for sample in SAMPLES:
         sample_data = results.loc[results["sample"].eq(sample)].copy()
         background_path = (
             Path(malignancy_dir) / "tables"
-            / f"Auto_{sample}_binned_malignancy.csv.gz"
+            / f"Auto_{sample}_{representation}_malignancy.csv.gz"
         )
         background = pd.read_csv(
             background_path,
@@ -395,7 +399,7 @@ def write_outputs_and_plots(
         plot_category_map(
             sample_data, "Auto_state_B", STATE_COLOURS, STATE_ORDER,
             f"{sample} | malignant epithelial scATLAS state",
-            figure_dir / f"Auto_{sample}_binned_malignant_scatlas_state_map",
+            figure_dir / f"Auto_{sample}_{representation}_malignant_scatlas_state_map",
             background_data=background,
         )
         mp_order = [mp for mps in STATE_GROUPS.values() for mp in mps] + ["Unresolved"]
@@ -407,14 +411,22 @@ def write_outputs_and_plots(
             sample_data, "Auto_top_mp_label", label_palette,
             [mp_labels[mp] for mp in mp_order],
             f"{sample} | malignant epithelial top scATLAS MP",
-            figure_dir / f"Auto_{sample}_binned_malignant_scatlas_top_mp_map",
+            figure_dir / f"Auto_{sample}_{representation}_malignant_scatlas_top_mp_map",
             background_data=background,
         )
     return summary
 
 
 def main():
+    global representation
     args = parse_args()
+    representation = args.representation
+    if args.malignancy_dir is None:
+        args.malignancy_dir = WD / 'ref_outs/visium_hd_outs' / ('segmented_malignancy' if representation == 'segmented' else 'malignancy')
+    if args.output_dir is None:
+        args.output_dir = WD / 'ref_outs/visium_hd_outs' / ('state_mapping_segmented' if representation == 'segmented' else 'state_mapping')
+    if args.signature_dir is None:
+        args.signature_dir = Path(args.output_dir) / 'intermediate/signatures'
     output_dir = Path(args.output_dir)
     table_dir = output_dir / "tables"
     log_dir = output_dir / "logs"
@@ -422,7 +434,7 @@ def main():
     ranked, mp_order, descriptions = load_signatures(args.signature_dir, args.top_n)
     parameters = {
         "samples": ";".join(SAMPLES),
-        "representation": "binned_16um",
+        "representation": 'segmented_cell' if representation == 'segmented' else 'binned_16um',
         "malignancy_levels": ";".join(MALIGNANT_LEVELS),
         "epithelial_gate": "is_epithelial_target_TRUE",
         "top_n_genes_per_mp": args.top_n,
@@ -434,7 +446,7 @@ def main():
         "excluded_mps_not_state_defining": ";".join(EXCLUDED_MPS),
     }
 
-    mapped_path = table_dir / "Auto_visiumhd_binned_malignant_state_annotations.csv.gz"
+    mapped_path = table_dir / f"Auto_visiumhd_{representation}_malignant_state_annotations.csv.gz"
     if args.replot_only:
         if not mapped_path.exists():
             raise FileNotFoundError(f"Missing mapped state table: {mapped_path}")
@@ -496,7 +508,7 @@ def main():
         ).reset_index(drop=True)
         table_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(coverage_rows).to_csv(
-            table_dir / "Auto_visiumhd_binned_state_signature_coverage.csv",
+            table_dir / f"Auto_visiumhd_{representation}_state_signature_coverage.csv",
             index=False,
         )
         summary = write_outputs_and_plots(
@@ -509,7 +521,7 @@ def main():
         f"samples={';'.join(SAMPLES)}", f"n_malignant_bins={len(results)}",
         f"state_counts={';'.join(f'{row.Auto_state_B}:{row.n_bins}' for row in summary.itertuples())}",
     ]
-    (log_dir / "Auto_visiumhd_binned_state_mapping_run_summary.txt").write_text(
+    (log_dir / f"Auto_visiumhd_{representation}_state_mapping_run_summary.txt").write_text(
         "\n".join(lines) + "\n"
     )
 

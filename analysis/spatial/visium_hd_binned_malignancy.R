@@ -3,8 +3,20 @@
 # Analysis registry:
 #   Status: active
 #   Script: analysis/spatial/visium_hd_binned_malignancy.R
-#   Description: binned-only Visium HD epithelial malignancy classification
-#     using InferCNA followed by scATLAS cancer-signature rescue.
+#   Description: Visium HD epithelial malignancy classification using InferCNA
+#     followed by scATLAS cancer-signature rescue. SCREF_HD_REPRESENTATION selects
+#     binned (existing default) or segmented cells; no cross-representation reuse.
+#     Segmented inputs: current tables/Auto_<sample>_segmented_cell_annotations.csv.gz
+#     and segmented_outputs/filtered_feature_cell_matrix.h5 from the exact roots below.
+#     Segmented outputs: ref_outs/visium_hd_outs/segmented_malignancy/
+#     {tables,figures,logs,intermediate}; all filenames use _segmented_.
+#     Segmented cell selection matches annotation-based Xenium inclusion: retain
+#     upstream QC and exact single-type labels; exclude unresolved/mixed labels;
+#     no new doublet classifier. Two largest available exact-label normal types
+#     with >=15 cells form reference groups; RCTD is a binned-only reference gate.
+#     Persistent segmented InferCNA matrices/cache metadata are in live intermediate/.
+#     PBS: qsub -v SCREF_FORCE_REBUILD=TRUE job_scripts/spatial/visium_hd_binned_malignancy.sh
+#     Resources: 8 CPUs, 160 GB, 24 h, dmtcp; scheduler logs in project root.
 #   Methodology:
 #     analysis/methodology/spatial/visium_hd_binned_filter_malignancy_methodology.md
 #   Inputs:
@@ -48,9 +60,19 @@ setwd(wd)
 
 samples <- c("SUR1231", "FFPEA1", "FFPED1")
 
+####################
+# The segmented branch uses current cell annotations directly, matching the
+# annotation-based Xenium inclusion contract. It does not call a droplet
+# doublet detector or reinterpret score labels as validated singlets.
+####################
+representation <- Sys.getenv("SCREF_HD_REPRESENTATION", "binned")
+if (!representation %in% c("binned", "segmented")) stop("Invalid SCREF_HD_REPRESENTATION")
+####################
 filter_dir <- file.path(wd, "ref_outs", "visium_hd_outs", "post_annotation_filter")
-output_dir <- file.path(wd, "ref_outs", "visium_hd_outs", "malignancy")
-ephemeral_dir <- "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/visium_hd_outs/malignancy/intermediate"
+output_dir <- file.path(wd, "ref_outs", "visium_hd_outs",
+                        if (representation == "segmented") "segmented_malignancy" else "malignancy")
+ephemeral_dir <- if (representation == "segmented") file.path(output_dir, "intermediate") else
+  "/rds/general/project/tumourheterogeneity1/ephemeral/scRef_Pipeline/ref_outs/visium_hd_outs/malignancy/intermediate"
 summary_dir <- file.path(wd, "updates", "new_updates", "summaries")
 for (subdir in c("tables", "figures", "logs")) {
   dir.create(file.path(output_dir, subdir), recursive = TRUE, showWarnings = FALSE)
@@ -88,14 +110,15 @@ genome_genes <- unique(gene_order[[1L]])
 read_10x_counts <- function(path) {
   counts <- Seurat::Read10X_h5(path)
   if (is.list(counts)) {
-    counts <- if ("Gene Expression" %in% names(counts)) counts[["Gene Expression"]] else counts[[1L]]
+    if (!"Gene Expression" %in% names(counts)) stop("Missing Gene Expression assay")
+    counts <- counts[["Gene Expression"]]
   }
   Matrix::Matrix(counts, sparse = TRUE)
 }
 
 to_cpm <- function(counts) {
   library_size <- Matrix::colSums(counts)
-  library_size[!is.finite(library_size) | library_size <= 0] <- 1
+  if (any(!is.finite(library_size) | library_size <= 0)) stop("Non-positive library size")
   Matrix::t(Matrix::t(counts) * (1e6 / library_size))
 }
 
@@ -169,21 +192,21 @@ make_spatial_plot <- function(cell_table, sample_name) {
 save_diagnostic_plots <- function(cell_table, sample_name) {
   scatter_plot <- make_scatter_plot(cell_table, sample_name)
   spatial_plot <- make_spatial_plot(cell_table, sample_name)
-  pdf_path <- file.path(output_dir, "figures", paste0("Auto_", sample_name, "_binned_malignancy_diagnostics.pdf"))
+  pdf_path <- file.path(output_dir, "figures", paste0("Auto_", sample_name, "_", representation, "_malignancy_diagnostics.pdf"))
   pdf(pdf_path, width = 11, height = 8.5, onefile = TRUE, useDingbats = FALSE)
   print(scatter_plot)
   print(spatial_plot)
   dev.off()
   ggsave(
-    file.path(output_dir, "figures", paste0("Auto_", sample_name, "_binned_infercna_scatter.png")),
+    file.path(output_dir, "figures", paste0("Auto_", sample_name, "_", representation, "_infercna_scatter.png")),
     scatter_plot, width = 10, height = 7.5, dpi = 300
   )
   ggsave(
-    file.path(output_dir, "figures", paste0("Auto_", sample_name, "_binned_malignancy_spatial.png")),
+    file.path(output_dir, "figures", paste0("Auto_", sample_name, "_", representation, "_malignancy_spatial.png")),
     spatial_plot, width = 11, height = 8.5, dpi = 300
   )
   ggsave(
-    file.path(output_dir, "figures", paste0("Auto_", sample_name, "_binned_malignancy_spatial.pdf")),
+    file.path(output_dir, "figures", paste0("Auto_", sample_name, "_", representation, "_malignancy_spatial.pdf")),
     spatial_plot, width = 11, height = 8.5, device = cairo_pdf
   )
 }
@@ -211,7 +234,7 @@ save_malignancy_count_plot <- function() {
 
   count_rows <- lapply(samples, function(sample_name) {
     table_path <- file.path(
-      output_dir, "tables", paste0("Auto_", sample_name, "_binned_malignancy.csv.gz")
+      output_dir, "tables", paste0("Auto_", sample_name, "_", representation, "_malignancy.csv.gz")
     )
     if (!file.exists(table_path)) stop("Missing malignancy table for count plot: ", table_path)
     cell_table <- fread(table_path, select = c("is_epithelial_target", "Auto_malignancy"))
@@ -295,18 +318,18 @@ save_malignancy_count_plot <- function() {
   )
   fwrite(
     count_table,
-    file.path(output_dir, "tables", "Auto_visium_hd_binned_malignancy_class_counts.csv")
+    file.path(output_dir, "tables", paste0("Auto_visium_hd_", representation, "_malignancy_class_counts.csv"))
   )
   fwrite(
     count_table[, .(sample, Auto_malignancy, malignancy, N, percent_epithelial_bins, total_epithelial_bins)],
-    file.path(summary_dir, "visium_hd_binned_malignancy_class_counts.csv")
+    file.path(summary_dir, paste0("visium_hd_", representation, "_malignancy_class_counts.csv"))
   )
   ggsave(
-    file.path(output_dir, "figures", "Auto_visium_hd_binned_malignancy_class_counts.pdf"),
+    file.path(output_dir, "figures", paste0("Auto_visium_hd_", representation, "_malignancy_class_counts.pdf")),
     count_plot, width = 10, height = 9, device = cairo_pdf
   )
   ggsave(
-    file.path(output_dir, "figures", "Auto_visium_hd_binned_malignancy_class_counts.png"),
+    file.path(output_dir, "figures", paste0("Auto_visium_hd_", representation, "_malignancy_class_counts.png")),
     count_plot, width = 10, height = 9, dpi = 300
   )
   invisible(count_table)
@@ -331,7 +354,7 @@ run_log <- c(
 )
 
 for (sample_name in samples) {
-  output_table_path <- file.path(output_dir, "tables", paste0("Auto_", sample_name, "_binned_malignancy.csv.gz"))
+  output_table_path <- file.path(output_dir, "tables", paste0("Auto_", sample_name, "_", representation, "_malignancy.csv.gz"))
   if (replot_only) {
     if (!file.exists(output_table_path)) stop("Missing live malignancy table for replot: ", output_table_path)
     cell_table <- fread(output_table_path)
@@ -340,11 +363,27 @@ for (sample_name in samples) {
     next
   }
 
-  annotation_path <- file.path(
-    filter_dir, "tables", paste0("Auto_", sample_name, "_binned_filtered_annotations.csv.gz")
-  )
+  annotation_path <- if (representation == "segmented") file.path(
+    wd, "ref_outs/visium_hd_outs/tables", paste0("Auto_", sample_name, "_segmented_cell_annotations.csv.gz")
+  ) else file.path(filter_dir, "tables", paste0("Auto_", sample_name, "_", representation, "_filtered_annotations.csv.gz"))
   if (!file.exists(annotation_path)) stop("Missing filtered annotation: ", annotation_path)
   annotation <- fread(annotation_path)
+  ####################
+  if (representation == "segmented") {
+    required_segmented <- c("sample", "method", "Auto_annotation_celltype", "total_counts", "pct_counts_mt")
+    if (!all(required_segmented %in% names(annotation))) stop("Incomplete segmented annotation")
+    if (!all(annotation$sample == sample_name) || !all(annotation$method == "segmented") ||
+        anyDuplicated(annotation$barcode) || any(annotation$total_counts < 100) ||
+        any(annotation$pct_counts_mt >= 15)) stop("Segmented cell identity or upstream QC mismatch")
+    annotation[, Auto_postfilter_celltype := as.character(Auto_annotation_celltype)]
+    annotation[, Auto_postfilter_keep := !is.na(Auto_postfilter_celltype) &
+      Auto_postfilter_celltype != "unresolved" & !grepl("|", Auto_postfilter_celltype, fixed = TRUE)]
+    annotation[, Auto_postfilter_reason := fifelse(Auto_postfilter_keep, "single_annotation_label",
+                                                  "unresolved_or_mixed_annotation_label")]
+    annotation[, Auto_measurement_unit := "segmented_cell"]
+    fwrite(annotation, file.path(output_dir, "tables", paste0("Auto_", sample_name, "_segmented_filtered_annotations.csv.gz")))
+  }
+  ####################
   needed <- c(
     "barcode", "Auto_postfilter_celltype", "Auto_postfilter_keep",
     "pxl_col_in_fullres", "pxl_row_in_fullres"
@@ -352,8 +391,8 @@ for (sample_name in samples) {
   missing <- setdiff(needed, names(annotation))
   if (length(missing)) stop("Filtered annotation missing columns: ", paste(missing, collapse = ", "))
 
-  input_dir <- manifest[sample == sample_name, binned_input][1L]
-  counts_path <- file.path(input_dir, "filtered_feature_bc_matrix.h5")
+  input_dir <- manifest[sample == sample_name, get(paste0(representation, "_input"))][1L]
+  counts_path <- file.path(input_dir, if (representation == "segmented") "filtered_feature_cell_matrix.h5" else "filtered_feature_bc_matrix.h5")
   if (!file.exists(counts_path)) stop("Missing count matrix: ", counts_path)
   counts <- read_10x_counts(counts_path)
   annotation <- annotation[barcode %in% colnames(counts)]
@@ -365,17 +404,20 @@ for (sample_name in samples) {
     }, integer(1)),
     normal_types
   )
-  annotation[, Auto_reference_rctd_manual_concordant :=
-    Auto_postfilter_keep %in% TRUE &
-      !grepl("\\|", Auto_annotation_celltype) &
-      Auto_annotation_celltype == Auto_postfilter_celltype &
-      Auto_rctd_is_singlet %in% TRUE &
-      Auto_rctd_first_type == Auto_postfilter_celltype &
-      Auto_postfilter_celltype %in% normal_types]
+  annotation[, Auto_reference_eligible := Auto_postfilter_keep %in% TRUE &
+    !grepl("|", Auto_annotation_celltype, fixed = TRUE) &
+    Auto_annotation_celltype == Auto_postfilter_celltype & Auto_postfilter_celltype %in% normal_types]
+  if (representation == "binned") {
+    annotation[, Auto_reference_eligible := Auto_reference_eligible &
+      Auto_rctd_is_singlet %in% TRUE & Auto_rctd_first_type == Auto_postfilter_celltype]
+    annotation[, Auto_reference_rctd_manual_concordant := Auto_reference_eligible]
+  }
+  reference_definition <- if (representation == "segmented") "current_QC_segmented_single_annotation_label" else
+    "postfilter_exact_manual_label_and_RCTD_singlet_concordant"
   reference_counts <- setNames(
     vapply(normal_types, function(type) {
       annotation[
-        Auto_reference_rctd_manual_concordant %in% TRUE &
+        Auto_reference_eligible %in% TRUE &
           Auto_postfilter_celltype == type, .N
       ]
     }, integer(1)),
@@ -426,7 +468,7 @@ for (sample_name in samples) {
   # reference bin to estimate each group mean as precisely as possible.
   ref_barcodes <- lapply(selected_types, function(type) {
     sort(annotation[
-      Auto_reference_rctd_manual_concordant %in% TRUE &
+      Auto_reference_eligible %in% TRUE &
         Auto_postfilter_celltype == type, barcode
     ])
   })
@@ -438,7 +480,7 @@ for (sample_name in samples) {
     data.table(
       sample = sample_name,
       reference_type = type,
-      reference_definition = "postfilter_exact_manual_label_and_RCTD_singlet_concordant",
+      reference_definition = reference_definition,
       barcode = ref_barcodes[[type]]
     )
   }))
@@ -460,8 +502,8 @@ for (sample_name in samples) {
   rm(counts)
   gc()
 
-  cache_path <- file.path(ephemeral_dir, paste0("Auto_", sample_name, "_binned_infercna_outs.rds"))
-  cache_metadata_path <- file.path(ephemeral_dir, paste0("Auto_", sample_name, "_binned_infercna_cache_metadata.rds"))
+  cache_path <- file.path(ephemeral_dir, paste0("Auto_", sample_name, "_", representation, "_infercna_outs.rds"))
+  cache_metadata_path <- file.path(ephemeral_dir, paste0("Auto_", sample_name, "_", representation, "_infercna_cache_metadata.rds"))
   reused_cache <- FALSE
   if (!force_rebuild && file.exists(cache_path) && file.exists(cache_metadata_path)) {
     cache_metadata <- readRDS(cache_metadata_path)
@@ -518,8 +560,7 @@ for (sample_name in samples) {
   ref_scatter <- scatter[is_reference %in% TRUE]
   threshold_signal <- mean(ref_scatter$cna.signal, na.rm = TRUE) + cna_sd_k * sd(ref_scatter$cna.signal, na.rm = TRUE)
   threshold_cor <- mean(ref_scatter$cna.cor, na.rm = TRUE) + cna_sd_k * sd(ref_scatter$cna.cor, na.rm = TRUE)
-  if (!is.finite(threshold_signal)) threshold_signal <- max(ref_scatter$cna.signal, na.rm = TRUE)
-  if (!is.finite(threshold_cor)) threshold_cor <- max(ref_scatter$cna.cor, na.rm = TRUE)
+  if (!is.finite(threshold_signal) || !is.finite(threshold_cor)) stop("Non-finite reference CNA thresholds")
 
   scatter[, Auto_cna_class := "not_assessed"]
   scatter[is_reference %in% TRUE, Auto_cna_class := "reference"]
@@ -666,18 +707,18 @@ if (!length(failed_samples)) {
 
 if (!replot_only) {
   summary_table <- rbindlist(summary_rows, use.names = TRUE, fill = TRUE)
-  fwrite(summary_table, file.path(output_dir, "tables", "Auto_visium_hd_binned_malignancy_summary.csv"))
-  fwrite(summary_table, file.path(summary_dir, "visium_hd_binned_malignancy_summary.csv"))
+  fwrite(summary_table, file.path(output_dir, "tables", paste0("Auto_visium_hd_", representation, "_malignancy_summary.csv")))
+  fwrite(summary_table, file.path(summary_dir, paste0("visium_hd_", representation, "_malignancy_summary.csv")))
   if (length(selected_reference_rows)) {
     fwrite(
       rbindlist(selected_reference_rows, use.names = TRUE, fill = TRUE),
-      file.path(output_dir, "tables", "Auto_visium_hd_binned_selected_reference_bins.csv.gz")
+      file.path(output_dir, "tables", paste0("Auto_visium_hd_", representation, "_selected_reference_bins.csv.gz"))
     )
   }
   if (length(signature_gene_rows)) {
     fwrite(
       rbindlist(signature_gene_rows, use.names = TRUE, fill = TRUE),
-      file.path(output_dir, "tables", "Auto_visium_hd_binned_selected_cancer_signature_genes.csv")
+      file.path(output_dir, "tables", paste0("Auto_visium_hd_", representation, "_selected_cancer_signature_genes.csv"))
     )
   }
   parameters <- data.table(
@@ -691,7 +732,8 @@ if (!replot_only) {
     value = c(
       paste(samples, collapse = ";"), paste(normal_types, collapse = ";"), "2",
       as.character(min_reference_cells),
-      "postfilter exact manual label concordant with an RCTD singlet first type",
+      if (representation == "segmented") "current QC-passing segmented cells with an exact single annotation label" else
+        "postfilter exact manual label concordant with an RCTD singlet first type",
       "all qualifying bins retained; InferCNA corrects against separate group means",
       as.character(min_epithelial_cells),
       paste0("both metrics > pooled reference mean + ", cna_sd_k, " SD"),
@@ -700,7 +742,7 @@ if (!replot_only) {
       ephemeral_dir
     )
   )
-  fwrite(parameters, file.path(output_dir, "tables", "Auto_visium_hd_binned_malignancy_parameters.csv"))
+  fwrite(parameters, file.path(output_dir, "tables", paste0("Auto_visium_hd_", representation, "_malignancy_parameters.csv")))
 }
 
 run_log <- c(
@@ -708,7 +750,7 @@ run_log <- c(
   paste0("end=", format(Sys.time(), tz = "Europe/London")),
   "session_info:", capture.output(sessionInfo())
 )
-writeLines(run_log, file.path(output_dir, "logs", "Auto_visium_hd_binned_malignancy_run_summary.txt"))
+writeLines(run_log, file.path(output_dir, "logs", paste0("Auto_visium_hd_", representation, "_malignancy_run_summary.txt")))
 
 if (length(failed_samples)) {
   stop("Malignancy classification failed for: ", paste(unique(failed_samples), collapse = ", "),
